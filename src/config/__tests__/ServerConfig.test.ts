@@ -50,6 +50,7 @@ describe('ServerConfig', () => {
     expect(config.serverName).toBe('sub-agents-mcp-server')
     expect(config.agentsDir).toBe('./agents')
     expect(config.cliCommand).toBe('claude-code')
+    expect(config.executionTimeoutMs).toBe(90000)
   })
 
   it('should validate required environment variables', () => {
@@ -75,10 +76,69 @@ describe('ServerConfig', () => {
     }).toThrow('Configuration validation failed: AGENTS_DIR does not exist or is not readable')
   })
 
+  describe('execution timeout validation', () => {
+    it('should use default timeout when EXECUTION_TIMEOUT_MS is not set', () => {
+      vi.stubEnv('EXECUTION_TIMEOUT_MS', undefined)
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+
+      const config = new ServerConfig()
+
+      expect(config.executionTimeoutMs).toBe(90000) // 90 seconds default
+    })
+
+    it('should use valid timeout from environment variable', () => {
+      vi.stubEnv('EXECUTION_TIMEOUT_MS', '120000') // 2 minutes
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+
+      const config = new ServerConfig()
+
+      expect(config.executionTimeoutMs).toBe(120000)
+    })
+
+    it('should use default timeout for invalid values', () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+
+      // Test invalid values
+      const invalidValues = ['invalid', '500', '300000', '-1000'] // too low, too high, negative
+
+      for (const invalidValue of invalidValues) {
+        vi.stubEnv('EXECUTION_TIMEOUT_MS', invalidValue)
+
+        const config = new ServerConfig()
+
+        expect(config.executionTimeoutMs).toBe(90000) // Should use default
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining(`Invalid EXECUTION_TIMEOUT_MS value: ${invalidValue}`)
+        )
+      }
+
+      consoleSpy.mockRestore()
+    })
+
+    it('should accept timeout values within valid range', () => {
+      const validValues = [
+        { input: '1000', expected: 1000 }, // minimum
+        { input: '60000', expected: 60000 }, // 1 minute
+        { input: '240000', expected: 240000 }, // maximum (4 minutes)
+      ]
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+
+      for (const { input, expected } of validValues) {
+        vi.stubEnv('EXECUTION_TIMEOUT_MS', input)
+
+        const config = new ServerConfig()
+
+        expect(config.executionTimeoutMs).toBe(expected)
+      }
+    })
+  })
+
   it('should provide configuration as readonly object', () => {
     vi.stubEnv('SERVER_NAME', 'test-server')
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('CLI_COMMAND', 'test-cli')
+    vi.stubEnv('EXECUTION_TIMEOUT_MS', '90000')
 
     const config = new ServerConfig()
     const configObject = config.toObject()
@@ -91,6 +151,7 @@ describe('ServerConfig', () => {
       maxOutputSize: 1048576,
       enableCache: true,
       logLevel: 'info',
+      executionTimeoutMs: 90000,
     })
 
     // Verify it's readonly (modification should throw error)

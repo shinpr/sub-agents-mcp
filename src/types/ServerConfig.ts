@@ -45,4 +45,11 @@ export interface ServerConfigInterface {
    * Controls verbosity of server logging output.
    */
   logLevel: 'debug' | 'info' | 'warn' | 'error'
+
+  /**
+   * Maximum execution timeout in milliseconds for agent execution.
+   * Configurable via EXECUTION_TIMEOUT_MS environment variable.
+   * Default: 90000ms (90 seconds), Range: 1000ms - 240000ms (4 minutes)
+   */
+  executionTimeoutMs: number
 }

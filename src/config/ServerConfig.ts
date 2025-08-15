@@ -39,6 +39,9 @@ export class ServerConfig implements ServerConfigInterface {
   /** Log level for server operations */
   public readonly logLevel: 'debug' | 'info' | 'warn' | 'error'
 
+  /** Maximum execution timeout in milliseconds for agent execution */
+  public readonly executionTimeoutMs: number
+
   /**
    * Creates a new ServerConfig instance by loading values from environment variables
    * or using default values. Validates the configuration upon creation.
@@ -54,6 +57,7 @@ export class ServerConfig implements ServerConfigInterface {
     const maxOutputSizeEnv = process.env['MAX_OUTPUT_SIZE']
     const enableCacheEnv = process.env['ENABLE_CACHE']
     const logLevelEnv = process.env['LOG_LEVEL']
+    const executionTimeoutEnv = process.env['EXECUTION_TIMEOUT_MS']
 
     this.serverName = serverNameEnv || 'sub-agents-mcp-server'
     this.serverVersion = serverVersionEnv || '1.0.0'
@@ -62,6 +66,7 @@ export class ServerConfig implements ServerConfigInterface {
     this.maxOutputSize = maxOutputSizeEnv ? Number.parseInt(maxOutputSizeEnv, 10) : 1048576 // 1MB default
     this.enableCache = enableCacheEnv !== 'false' // default to true
     this.logLevel = this.validateLogLevel(logLevelEnv) || 'info'
+    this.executionTimeoutMs = this.validateExecutionTimeout(executionTimeoutEnv)
 
     // Validate configuration
     this.validate(serverNameEnv)
@@ -89,6 +94,35 @@ export class ServerConfig implements ServerConfigInterface {
     }
 
     return undefined
+  }
+
+  /**
+   * Validates execution timeout value from environment variable.
+   *
+   * @param executionTimeoutEnv - Raw EXECUTION_TIMEOUT_MS environment variable value
+   * @returns Valid execution timeout in milliseconds (90000ms default)
+   */
+  private validateExecutionTimeout(executionTimeoutEnv: string | undefined): number {
+    const DEFAULT_TIMEOUT = 90000 // 90 seconds
+    const MIN_TIMEOUT = 1000 // 1 second minimum
+    const MAX_TIMEOUT = 240000 // 4 minutes maximum
+
+    if (!executionTimeoutEnv) {
+      return DEFAULT_TIMEOUT
+    }
+
+    const timeoutMs = Number.parseInt(executionTimeoutEnv, 10)
+
+    if (Number.isNaN(timeoutMs) || timeoutMs < MIN_TIMEOUT || timeoutMs > MAX_TIMEOUT) {
+      // Log warning but don't throw - use default value
+      console.warn(
+        `Invalid EXECUTION_TIMEOUT_MS value: ${executionTimeoutEnv}. ` +
+          `Must be between ${MIN_TIMEOUT} and ${MAX_TIMEOUT}ms. Using default: ${DEFAULT_TIMEOUT}ms`
+      )
+      return DEFAULT_TIMEOUT
+    }
+
+    return timeoutMs
   }
 
   /**
@@ -150,6 +184,7 @@ export class ServerConfig implements ServerConfigInterface {
       maxOutputSize: this.maxOutputSize,
       enableCache: this.enableCache,
       logLevel: this.logLevel,
+      executionTimeoutMs: this.executionTimeoutMs,
     })
   }
 }

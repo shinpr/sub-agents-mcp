@@ -20,7 +20,7 @@ export interface ExecutionLimitsConfig {
   /** Maximum output size in bytes (default: 1MB) */
   maxOutputSizeBytes: number
 
-  /** Maximum execution time in milliseconds (default: 30000) */
+  /** Maximum execution time in milliseconds (default: 90000) */
   maxExecutionTimeMs: number
 
   /** Enable resource monitoring (default: true) */
@@ -51,7 +51,7 @@ export const DEFAULT_EXECUTION_LIMITS: ExecutionLimitsConfig = {
   maxConcurrentExecutions: 5,
   maxMemoryUsageMB: 100,
   maxOutputSizeBytes: 1024 * 1024, // 1MB
-  maxExecutionTimeMs: 30000, // 30 seconds
+  maxExecutionTimeMs: 90000, // 90 seconds
   enableResourceMonitoring: true,
 }
 
