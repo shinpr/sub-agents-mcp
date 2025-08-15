@@ -369,7 +369,7 @@ export class AgentExecutor {
       let assistantResponse: string | null = null
       let idleTimer: NodeJS.Timeout | null = null
       let assistantStarted = false
-      const IDLE_TIMEOUT = 3000 // 3 seconds of no data AFTER assistant starts responding
+      const IDLE_TIMEOUT = 60000 // 60 seconds of no data AFTER assistant starts responding
 
       // Close stdin immediately as we're not sending any input
       childProcess.stdin?.end()

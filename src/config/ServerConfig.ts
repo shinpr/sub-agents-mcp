@@ -100,12 +100,12 @@ export class ServerConfig implements ServerConfigInterface {
    * Validates execution timeout value from environment variable.
    *
    * @param executionTimeoutEnv - Raw EXECUTION_TIMEOUT_MS environment variable value
-   * @returns Valid execution timeout in milliseconds (90000ms default)
+   * @returns Valid execution timeout in milliseconds (180000ms default)
    */
   private validateExecutionTimeout(executionTimeoutEnv: string | undefined): number {
-    const DEFAULT_TIMEOUT = 90000 // 90 seconds
+    const DEFAULT_TIMEOUT = 180000 // 3 minutes default
     const MIN_TIMEOUT = 1000 // 1 second minimum
-    const MAX_TIMEOUT = 240000 // 4 minutes maximum
+    const MAX_TIMEOUT = 300000 // 5 minutes maximum
 
     if (!executionTimeoutEnv) {
       return DEFAULT_TIMEOUT
