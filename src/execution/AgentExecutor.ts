@@ -64,7 +64,7 @@ export interface ExecutionConfig {
 
   /**
    * Maximum execution timeout in milliseconds.
-   * Default: 30 seconds (30000ms)
+   * Default: 5 minutes (300000ms)
    */
   executionTimeout: number
 
@@ -81,7 +81,7 @@ export interface ExecutionConfig {
  */
 export const DEFAULT_EXECUTION_THRESHOLDS = {
   outputSizeThreshold: 1024 * 1024, // 1MB
-  executionTimeout: 30000, // 30 seconds
+  executionTimeout: 300000, // 5 minutes (MCP -> AI execution)
 }
 
 /**

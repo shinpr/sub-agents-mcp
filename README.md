@@ -86,10 +86,29 @@ npx -y https://github.com/shinpr/sub-agents-mcp
 
 **Note:** For complex agents that require longer processing times (e.g., document reviewers, code analyzers), you can increase the timeout by setting `EXECUTION_TIMEOUT_MS` to a higher value, up to 600000 (10 minutes).
 
-**Timeout Hierarchy:**
-- **AI->MCP timeout**: 11 minutes (660 seconds) - Maximum time AI waits for MCP server response
-- **MCP->AI timeout**: 5-10 minutes (configurable via `EXECUTION_TIMEOUT_MS`) - Maximum time MCP waits for AI response  
-- **Idle timeout**: 2 minutes (120 seconds) - Time without data before terminating stuck processes
+### Timeout Hierarchy
+
+The system implements a hierarchical timeout structure to handle long-running operations gracefully:
+
+1. **AI→MCP Maximum Timeout**: 11 minutes (660000ms)
+   - Absolute maximum time the AI waits for MCP server response
+   - Cannot be reset by progress updates
+   - Prevents infinite waiting
+
+2. **AI→MCP Progressive Timeout**: 6 minutes (360000ms) 
+   - Default timeout for AI waiting for MCP response
+   - Resets on progress updates (up to the maximum)
+   - Provides responsive feedback
+
+3. **MCP→AI Execution Timeout**: 5 minutes (300000ms default)
+   - Time MCP waits for AI agent execution
+   - Configurable via `EXECUTION_TIMEOUT_MS` (1s to 10min)
+   - Controls actual agent processing time
+
+4. **Idle Timeout**: 2 minutes (120000ms)
+   - Activated after assistant starts responding
+   - Terminates if no data received for 2 minutes
+   - Prevents hanging on stalled processes
 
 ### Agent Definition Format
 

@@ -114,10 +114,9 @@ export class RunAgentTool {
 
     // Initialize MCP-level timeout management (AI -> MCP)
     // This is separate from AgentExecutor timeout (MCP -> AI)
+    // Uses default values from McpRequestTimeout (6min/11min)
     this.mcpTimeout = new McpRequestTimeout(
       {
-        defaultTimeoutMs: 180000, // 3 minutes for MCP request
-        maxTimeoutMs: 360000, // 6 minutes absolute maximum
         progressResetEnabled: true,
         warningThresholdMs: 60000, // 1 minute warning
         enableDebugLogging: logLevel === 'debug',
