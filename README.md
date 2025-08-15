@@ -82,6 +82,9 @@ npx -y https://github.com/shinpr/sub-agents-mcp
 | `AGENTS_DIR` | Directory containing agent definition files | ✓ | - |
 | `CLI_COMMAND` | CLI command to execute (`cursor-agent` or `claude`) | ✓ | - |
 | `CLI_API_KEY` | API key for cursor-agent (Anthropic or OpenAI API key) | ✓ (for cursor-agent) | - |
+| `EXECUTION_TIMEOUT_MS` | Maximum execution time for agent operations in milliseconds | | 180000 (3 minutes) |
+
+**Note:** For complex agents that require longer processing times (e.g., document reviewers, code analyzers), you can increase the timeout by setting `EXECUTION_TIMEOUT_MS` to a higher value, up to 300000 (5 minutes).
 
 ### Agent Definition Format
 
@@ -177,7 +180,7 @@ Add to your project's `.cursor/claude_desktop_config.json`:
       "env": {
         "AGENTS_DIR": "./agents",
         "CLI_COMMAND": "cursor-agent",
-        "CLI_API_KEY": "your-anthropic-api-key"
+        "CLI_API_KEY": "your-cursor-api-key"
       }
     }
   }
