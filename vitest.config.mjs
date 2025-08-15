@@ -7,6 +7,9 @@ const __dirname = path.dirname(__filename)
 
 export default defineConfig({
   test: {
+    typecheck: {
+      tsconfig: './tsconfig.test.json'
+    },
     globals: true,
     environment: 'node',
     // Process management improvements

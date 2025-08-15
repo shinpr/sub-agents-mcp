@@ -1,12 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import type { ExecutionParams, ExecutionResult } from '../../src/types/ExecutionParams'
+import type { ExecutionParams, ExecutionResult } from 'src/types/ExecutionParams'
+import { describe, expect, it } from 'vitest'
 
 describe('ExecutionParams', () => {
   it('should have required properties: agent, prompt and optional cwd, extra_args', () => {
     // This test will fail until we implement the ExecutionParams interface
     const executionParams: ExecutionParams = {
       agent: 'test-agent',
-      prompt: 'Test prompt for execution'
+      prompt: 'Test prompt for execution',
     }
 
     expect(executionParams.agent).toBe('test-agent')
@@ -20,7 +20,7 @@ describe('ExecutionParams', () => {
       agent: 'test-agent',
       prompt: 'Test prompt',
       cwd: '/working/directory',
-      extra_args: ['--verbose', '--debug']
+      extra_args: ['--verbose', '--debug'],
     }
 
     expect(executionParams.cwd).toBe('/working/directory')
@@ -30,7 +30,7 @@ describe('ExecutionParams', () => {
   it('should validate agent and prompt are non-empty strings', () => {
     const executionParams: ExecutionParams = {
       agent: 'valid-agent',
-      prompt: 'Valid prompt'
+      prompt: 'Valid prompt',
     }
 
     expect(executionParams.agent.length).toBeGreaterThan(0)
@@ -43,7 +43,7 @@ describe('ExecutionResult', () => {
     // This test will fail until we implement the ExecutionResult interface
     const successResult: ExecutionResult = {
       success: true,
-      output: 'Execution completed successfully'
+      output: 'Execution completed successfully',
     }
 
     expect(successResult.success).toBe(true)
@@ -55,7 +55,7 @@ describe('ExecutionResult', () => {
     const errorResult: ExecutionResult = {
       success: false,
       output: 'Execution failed',
-      error: 'Agent not found'
+      error: 'Agent not found',
     }
 
     expect(errorResult.success).toBe(false)
@@ -66,7 +66,7 @@ describe('ExecutionResult', () => {
   it('should have output as string', () => {
     const result: ExecutionResult = {
       success: true,
-      output: 'Test output'
+      output: 'Test output',
     }
 
     expect(typeof result.output).toBe('string')

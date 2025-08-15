@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import type { AgentDefinition } from '../../src/types/AgentDefinition'
+import type { AgentDefinition } from 'src/types/AgentDefinition'
+import { describe, expect, it } from 'vitest'
 
 describe('AgentDefinition', () => {
   it('should have required properties: name, description, content, filePath, lastModified', () => {
@@ -9,7 +9,7 @@ describe('AgentDefinition', () => {
       description: 'Test agent description',
       content: 'Test content for agent',
       filePath: '/path/to/agent.md',
-      lastModified: new Date('2025-01-01T00:00:00.000Z')
+      lastModified: new Date('2025-01-01T00:00:00.000Z'),
     }
 
     expect(agentDefinition.name).toBe('test-agent')
@@ -26,7 +26,7 @@ describe('AgentDefinition', () => {
       description: 'Valid description',
       content: 'Some content',
       filePath: '/valid/path.md',
-      lastModified: new Date()
+      lastModified: new Date(),
     }
 
     expect(agentDefinition.name.length).toBeGreaterThan(0)
@@ -41,7 +41,7 @@ describe('AgentDefinition', () => {
       description: 'Test description',
       content: 'Test content',
       filePath: '/test/path.md',
-      lastModified: now
+      lastModified: now,
     }
 
     expect(agentDefinition.lastModified).toBeInstanceOf(Date)

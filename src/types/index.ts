@@ -9,14 +9,10 @@
  *
  * @example
  * ```typescript
- * import type { AgentDefinition, ExecutionParams } from './types'
- * import { isAgentDefinition, isExecutionParams } from './types'
+ * import type { AgentDefinition, ExecutionParams } from 'src/types/types'
+ * import { isAgentDefinition, isExecutionParams } from 'src/types/types'
  * ```
  */
-export type { AgentDefinition } from './AgentDefinition'
-export type { ExecutionParams, ExecutionResult } from './ExecutionParams'
-export type { ServerConfigInterface } from './ServerConfig'
-
-// Export type guards for runtime validation
-export { isAgentDefinition } from './AgentDefinition'
-export { isExecutionParams, isExecutionResult } from './ExecutionParams'
+export type { AgentDefinition } from 'src/types/AgentDefinition'
+export type { ExecutionParams, ExecutionResult } from 'src/types/ExecutionParams'
+export type { ServerConfigInterface } from 'src/types/ServerConfig'

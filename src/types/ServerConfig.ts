@@ -11,6 +11,12 @@ export interface ServerConfigInterface {
   serverName: string
 
   /**
+   * Version of the MCP server.
+   * Used in server identification and client compatibility checking.
+   */
+  serverVersion: string
+
+  /**
    * Directory path containing agent definition files.
    * The server scans this directory for .md files containing agent definitions.
    */
@@ -21,4 +27,22 @@ export interface ServerConfigInterface {
    * Typically 'claude-code' but can be customized for different environments.
    */
   cliCommand: string
+
+  /**
+   * Maximum output size in bytes for agent execution.
+   * When exceeded, execution switches to spawn mode.
+   */
+  maxOutputSize: number
+
+  /**
+   * Whether to enable agent definition caching.
+   * Improves performance by caching parsed agent definitions.
+   */
+  enableCache: boolean
+
+  /**
+   * Log level for server operations.
+   * Controls verbosity of server logging output.
+   */
+  logLevel: 'debug' | 'info' | 'warn' | 'error'
 }

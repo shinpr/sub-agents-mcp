@@ -48,4 +48,7 @@ tmp/
 .claude/
 docs/
 scripts/
+!scripts/quality-check.js
+!scripts/cleanup-test-processes.sh
+!scripts/show-coverage.js
 CLAUDE.md
