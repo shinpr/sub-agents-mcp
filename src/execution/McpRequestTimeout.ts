@@ -40,8 +40,8 @@ export interface McpTimeoutConfig {
  * Based on MCP best practices and LLM operation characteristics
  */
 export const DEFAULT_MCP_TIMEOUT_CONFIG: McpTimeoutConfig = {
-  defaultTimeoutMs: 120000, // 2 minutes - considering LLM processing time
-  maxTimeoutMs: 300000, // 5 minutes - absolute maximum
+  defaultTimeoutMs: 360000, // 6 minutes - considering complex agent operations
+  maxTimeoutMs: 660000, // 11 minutes - absolute maximum for AI->MCP
   progressResetEnabled: true,
   warningThresholdMs: 60000, // 1 minute - send progress notification
   enableDebugLogging: false,

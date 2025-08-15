@@ -69,7 +69,7 @@ describe('McpRequestTimeout', () => {
 
       timeout.startTimeout('test-req-3', onTimeout, onProgress)
 
-      // Fast-forward to default timeout (2 minutes by default)
+      // Fast-forward to default timeout (6 minutes by default)
       vi.advanceTimersByTime(DEFAULT_MCP_TIMEOUT_CONFIG.defaultTimeoutMs)
 
       expect(onTimeout).toHaveBeenCalledTimes(1)
@@ -96,8 +96,8 @@ describe('McpRequestTimeout', () => {
       vi.advanceTimersByTime(60000) // 3 minutes total
       timeout.reportProgress('test-req-4', 'Almost done', 75)
 
-      // Fast-forward to max timeout (5 minutes by default)
-      vi.advanceTimersByTime(120000) // 5 minutes total
+      // Fast-forward to max timeout (11 minutes by default)
+      vi.advanceTimersByTime(480000) // Advance 8 more minutes (total 11 minutes)
 
       expect(onTimeout).toHaveBeenCalledTimes(1)
     })
@@ -123,22 +123,22 @@ describe('McpRequestTimeout', () => {
 
       timeout.startTimeout('test-req-6', onTimeout)
 
-      // Advance to 90 seconds (less than default timeout of 2 minutes)
-      vi.advanceTimersByTime(90000)
+      // Advance to 300 seconds (less than default timeout of 6 minutes = 360 seconds)
+      vi.advanceTimersByTime(300000)
 
       // Report progress - should reset timeout
       timeout.reportProgress('test-req-6', 'Still processing')
 
-      // Advance another 90 seconds (total 180 seconds)
-      vi.advanceTimersByTime(90000)
+      // Advance another 300 seconds (total 600 seconds = 10 minutes)
+      vi.advanceTimersByTime(300000)
 
       // Should not have timed out yet because of reset
       expect(onTimeout).not.toHaveBeenCalled()
 
-      // Advance to new timeout (30 more seconds to reach 210 seconds total)
-      vi.advanceTimersByTime(30000) // Total 210 seconds
+      // Advance to new timeout (60 more seconds to reach 11 minutes total)
+      vi.advanceTimersByTime(60000) // Total 11 minutes
 
-      // Now it should timeout (90s + 120s after reset = 210s total)
+      // Now it should timeout
       expect(onTimeout).toHaveBeenCalledTimes(1)
     })
 
