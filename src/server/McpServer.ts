@@ -78,7 +78,7 @@ export class McpServer {
     // Create ExecutionConfig with the CLI command from server config
     const executionConfig = createExecutionConfig(config.cliCommand, {
       outputSizeThreshold: config.maxOutputSize || 1024 * 1024, // Use maxOutputSize from config
-      executionTimeout: 30000, // 30 seconds
+      executionTimeout: config.executionTimeoutMs, // Use timeout from config (env var or 90s default)
     })
 
     // Create logger with log level from config
