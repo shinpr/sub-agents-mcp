@@ -1,14 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
 import { type LogLevel, Logger } from 'src/utils/Logger'
-
-// Type definition for global object with garbage collection
-interface GlobalWithGC {
-  gc?: () => void
-  vi?: unknown
-}
-
-declare const global: GlobalWithGC
+import { StreamProcessor } from './StreamProcessor'
 
 /**
  * Detailed execution result that includes performance metrics and method information.
@@ -40,28 +33,22 @@ export interface AgentExecutionResult {
   executionTime: number
 
   /**
-   * The execution method used (always spawn for Claude Code CLI).
+   * Whether a result JSON was successfully obtained from the agent.
+   * True when StreamProcessor detects a valid JSON response.
    */
-  executionMethod: 'spawn'
+  hasResult?: boolean
 
   /**
-   * Estimated output size that determined the execution method.
-   * Used for method selection analysis and optimization.
+   * The parsed JSON result from the agent if available.
+   * Contains the structured response data when hasResult is true.
    */
-  estimatedOutputSize: number
+  resultJson?: unknown
 }
 
 /**
- * Configuration for execution thresholds.
- * Contains settings for output size and timeout handling.
+ * Simplified execution configuration.
  */
 export interface ExecutionConfig {
-  /**
-   * Output size threshold in bytes for performance monitoring.
-   * Default: 1MB (1024 * 1024 bytes)
-   */
-  outputSizeThreshold: number
-
   /**
    * Maximum execution timeout in milliseconds.
    * Default: 5 minutes (300000ms)
@@ -69,34 +56,27 @@ export interface ExecutionConfig {
   executionTimeout: number
 
   /**
-   * CLI command used to execute agents.
-   * In production: 'cursor-agent' or 'codex'
-   * In tests: 'echo' for mocking
+   * Type of agent to use for execution.
+   * 'cursor' or 'claude'
    */
-  cliCommand: string
+  agentType: 'cursor' | 'claude'
 }
 
-/**
- * Default thresholds for agent execution.
- */
-export const DEFAULT_EXECUTION_THRESHOLDS = {
-  outputSizeThreshold: 1024 * 1024, // 1MB
-  executionTimeout: 300000, // 5 minutes (MCP -> AI execution)
-}
+export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
 
 /**
- * Creates a complete ExecutionConfig with the provided CLI command.
- * @param cliCommand - The CLI command to execute agents with
+ * Creates a complete ExecutionConfig with the provided agent type.
+ * @param agentType - The type of agent to use
  * @param overrides - Optional overrides for thresholds
  */
 export function createExecutionConfig(
-  cliCommand: string,
-  overrides?: Partial<Omit<ExecutionConfig, 'cliCommand'>>
+  agentType: 'cursor' | 'claude',
+  overrides?: Partial<Omit<ExecutionConfig, 'agentType'>>
 ): ExecutionConfig {
   return {
-    ...DEFAULT_EXECUTION_THRESHOLDS,
+    executionTimeout: DEFAULT_EXECUTION_TIMEOUT,
     ...overrides,
-    cliCommand,
+    agentType,
   }
 }
 
@@ -172,67 +152,33 @@ export class AgentExecutor {
       await new Promise((resolve) => setTimeout(resolve, 1))
 
       // Use spawn method for proper TTY handling
-      const adaptiveConfig = this.getAdaptiveConfig()
-      const executionMethod = 'spawn' as const
-      const estimatedOutputSize = this.estimateOutputSize(params)
-
-      this.logger.info('Execution method selected', {
-        requestId,
-        executionMethod,
-        estimatedOutputSize,
-        threshold: adaptiveConfig.outputSizeThreshold,
-      })
-
-      // Monitor memory usage before execution
-      this.monitorMemoryUsage(`before_execution_${executionMethod}`)
 
       // Execute using spawn for proper TTY handling
       const result = await this.executeWithSpawn(params)
 
       const executionTime = Date.now() - startTime
 
-      // Monitor memory usage after execution
-      this.monitorMemoryUsage(`after_execution_${executionMethod}`)
-
-      // Log detailed execution results including stderr content for debugging
-      if (result.stderr && result.stderr.length > 0) {
-        this.logger.warn('Agent execution completed with stderr output', {
-          requestId,
-          executionMethod,
-          exitCode: result.exitCode,
-          executionTime,
-          stdoutLength: result.stdout.length,
-          stderrLength: result.stderr.length,
-          stderrContent: result.stderr.substring(0, 1000), // First 1000 chars of stderr
-        })
-      } else {
-        this.logger.info('Agent execution completed', {
-          requestId,
-          executionMethod,
-          exitCode: result.exitCode,
-          executionTime,
-          stdoutLength: result.stdout.length,
-          stderrLength: result.stderr.length,
-        })
-      }
+      this.logger.info('Agent execution completed', {
+        requestId,
+        exitCode: result.exitCode,
+        executionTime,
+        hasResult: result.hasResult,
+      })
 
       return {
         stdout: result.stdout,
         stderr: result.stderr,
         exitCode: result.exitCode,
         executionTime,
-        executionMethod,
-        estimatedOutputSize,
+        ...(result.hasResult !== undefined && { hasResult: result.hasResult }),
+        ...(result.resultJson !== undefined && { resultJson: result.resultJson }),
       }
     } catch (error) {
       const executionTime = Date.now() - startTime
-      const executionMethod = this.selectExecutionMethod(params)
-      const estimatedOutputSize = this.estimateOutputSize(params)
 
       this.logger.error('Agent execution failed', error instanceof Error ? error : undefined, {
         requestId,
         executionTime,
-        executionMethod,
       })
 
       // Re-throw enhancement errors
@@ -249,61 +195,10 @@ export class AgentExecutor {
         stderr: error instanceof Error ? error.message : 'Unknown execution error',
         exitCode: 1,
         executionTime,
-        executionMethod,
-        estimatedOutputSize,
+        hasResult: false,
+        resultJson: undefined,
       }
     }
-  }
-
-  /**
-   * Returns the execution method (always 'spawn' for proper TTY handling).
-   *
-   * Claude Code CLI requires proper TTY and stdin/stdout handling,
-   * so this method always returns 'spawn'.
-   *
-   * @param params - Execution parameters (unused)
-   * @returns Always returns 'spawn'
-   */
-  selectExecutionMethod(params: ExecutionParams): 'spawn' {
-    // params is intentionally unused but kept for interface consistency
-    void params
-    return 'spawn'
-  }
-
-  /**
-   * Estimates the expected output size for the given execution parameters.
-   *
-   * This is a heuristic method that analyzes the prompt content and agent type
-   * to predict whether the output will exceed the configured threshold. Used
-   * internally by selectExecutionMethod for decision making.
-   *
-   * @private
-   * @param params - Execution parameters to analyze
-   * @returns Estimated output size in bytes
-   */
-  private estimateOutputSize(params: ExecutionParams): number {
-    // Simple heuristic: assume output is roughly based on prompt characteristics
-    // plus some base overhead for detailed responses
-    const baseSize = 1024 // 1KB base size
-    const promptMultiplier = 100
-    const promptSize = params.prompt.length * promptMultiplier
-
-    // Add extra estimation for certain agent types that tend to produce more output
-    let sizeMultiplier = 1
-    if (
-      params.agent.includes('detailed') ||
-      params.agent.includes('thorough') ||
-      params.agent.includes('analyzer')
-    ) {
-      sizeMultiplier = 50
-    }
-
-    // For very long prompts (>1000 chars), assume large output
-    if (params.prompt.length > 1000) {
-      sizeMultiplier = Math.max(sizeMultiplier, 200)
-    }
-
-    return (baseSize + promptSize) * sizeMultiplier
   }
 
   /**
@@ -313,146 +208,81 @@ export class AgentExecutor {
    * @param params - Execution parameters
    * @returns Promise resolving to execution result
    */
-  private async executeWithSpawn(
-    params: ExecutionParams
-  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  private async executeWithSpawn(params: ExecutionParams): Promise<{
+    stdout: string
+    stderr: string
+    exitCode: number
+    hasResult?: boolean
+    resultJson?: unknown
+  }> {
     return new Promise((resolve) => {
-      // Parse command to separate binary and arguments from cliCommand
-      const commandParts = this.config.cliCommand.trim().split(/\s+/)
-      const command = commandParts[0]!
-      const commandArgs = commandParts.slice(1)
-
-      // Resolve the actual executable path
-      // If command contains '/', use it as-is (absolute path)
-      // Otherwise, let the system find it in PATH
-      const cliPath = command
-
-      // Build arguments array with improved prompt format
-      // Format: [System Context] agent definition content
-      //         [User Prompt] actual user request
+      // Generate command and args - both CLIs use the same interface
       const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
-      const args = [...commandArgs]
+      const args = ['--output-format', 'json', '-p', formattedPrompt]
 
-      // Only add prompt if -p flag is present (it should be for non-interactive mode)
-      if (commandArgs.includes('-p')) {
-        // -p flag is already in commandArgs, just add the formatted prompt
-        args.push(formattedPrompt)
-      } else {
-        // Add both -p flag and prompt (shouldn't happen with current setup)
-        args.push('-p', formattedPrompt)
-      }
+      // Determine command based on agent type
+      const command = this.config.agentType === 'claude' ? 'claude' : 'cursor-agent'
 
-      // Add API key for cursor-cli using -a option
-      if (process.env['CLI_API_KEY'] && command.includes('cursor')) {
+      // Add API key for cursor-cli if available
+      if (this.config.agentType === 'cursor' && process.env['CLI_API_KEY']) {
         args.push('-a', process.env['CLI_API_KEY'])
       }
 
-      // Log execution details at debug level
-      this.logger.debug('Executing with spawn (direct, no shell)', {
-        cliPath,
-        args,
+      this.logger.debug('Executing with spawn', {
+        command,
         cwd: params.cwd || process.cwd(),
-        env: 'inheriting process.env',
       })
 
-      // Use spawn WITHOUT shell for direct execution
-      const childProcess: ChildProcess = spawn(cliPath, args, {
+      // Spawn process
+      const childProcess: ChildProcess = spawn(command, args, {
         cwd: params.cwd || process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: false, // Direct execution, no shell interpretation
-        env: process.env, // Explicitly inherit all environment variables
+        shell: false,
+        env: process.env,
       })
 
+      // Initialize stream processor and buffers
+      const streamProcessor = new StreamProcessor()
       let stdout = ''
       let stderr = ''
       let stdoutBuffer = ''
-      let assistantResponse: string | null = null
-      let idleTimer: NodeJS.Timeout | null = null
-      let assistantStarted = false
-      const IDLE_TIMEOUT = 120000 // 2 minutes of no data AFTER assistant starts responding
 
-      // Close stdin immediately as we're not sending any input
       childProcess.stdin?.end()
+      const executionTimeout = setTimeout(() => {
+        this.logger.warn('Execution timeout reached', {
+          timeout: this.config.executionTimeout,
+        })
+        childProcess.kill('SIGTERM')
 
-      // Function to handle idle timeout
-      const resetIdleTimer = () => {
-        if (idleTimer) {
-          clearTimeout(idleTimer)
-        }
+        // Get any result collected so far
+        const result = streamProcessor.getResult()
+        resolve({
+          stdout: result ? JSON.stringify(result) : stdout,
+          stderr: stderr || `Execution timeout: ${this.config.executionTimeout}ms`,
+          exitCode: 124, // Standard timeout exit code
+          hasResult: result !== null,
+          resultJson: result !== null ? result : undefined,
+        })
+      }, this.config.executionTimeout)
 
-        // Only start idle timer AFTER assistant starts responding
-        if (assistantStarted) {
-          idleTimer = setTimeout(() => {
-            this.logger.debug('Idle timeout reached, terminating process', {
-              stdoutLength: stdout.length,
-              assistantResponseLength: assistantResponse?.length || 0,
-            })
-            childProcess.kill('SIGTERM')
-          }, IDLE_TIMEOUT)
-        }
-      }
-
-      // Parse JSON lines from cursor-agent output
-      const parseJsonLine = (line: string) => {
-        try {
-          const json = JSON.parse(line)
-          // Log JSON parsing at trace level (would need to add trace level support)
-          // For now, skip detailed JSON parsing logs to reduce noise
-
-          // Look for assistant's response
-          if (json.type === 'assistant' && json.message) {
-            // Mark that assistant has started responding
-            if (!assistantStarted) {
-              assistantStarted = true
-              // Mark assistant response start silently
-            }
-
-            // Extract the actual response content
-            if (json.message.content && Array.isArray(json.message.content)) {
-              const textContent = json.message.content
-                .filter((c: unknown) => {
-                  const content = c as { type?: string; text?: string }
-                  return content.type === 'text'
-                })
-                .map((c: unknown) => {
-                  const content = c as { text?: string }
-                  return content.text || ''
-                })
-                .join('\n')
-
-              if (textContent) {
-                // Accumulate response instead of overwriting
-                if (assistantResponse === null) {
-                  assistantResponse = textContent
-                } else {
-                  assistantResponse += textContent
-                }
-                // Track response accumulation silently
-                // Only log issues or final results
-              }
-            }
-          }
-        } catch (e) {
-          // Not all lines are JSON, ignore parse errors
-        }
-      }
-
-      // Handle stdout stream
+      // Handle stdout stream with simplified processing
       childProcess.stdout?.on('data', (data: Buffer) => {
         const chunk = data.toString()
         stdout += chunk
         stdoutBuffer += chunk
-
-        // Reset idle timer if assistant has started responding
-        resetIdleTimer()
 
         // Process complete lines
         const lines = stdoutBuffer.split('\n')
         stdoutBuffer = lines.pop() || '' // Keep incomplete line in buffer
 
         for (const line of lines) {
-          if (line.trim()) {
-            parseJsonLine(line)
+          // Process line returns true when final JSON is detected
+          const isComplete = streamProcessor.processLine(line)
+
+          if (isComplete) {
+            // Processing complete, kill the process
+            childProcess.kill('SIGTERM')
+            break
           }
         }
       })
@@ -462,56 +292,35 @@ export class AgentExecutor {
         stderr += data.toString()
       })
 
-      // Handle process completion
       childProcess.on('close', (code: number | null) => {
-        // Clear timers
-        if (idleTimer) {
-          clearTimeout(idleTimer)
-        }
+        clearTimeout(executionTimeout)
 
-        // If we have an assistant response, return it as the main output
-        const finalOutput = assistantResponse || stdout
+        // Get the final result JSON
+        const result = streamProcessor.getResult()
+
         resolve({
-          stdout: finalOutput,
+          stdout: result ? JSON.stringify(result) : stdout,
           stderr,
           exitCode: code || 0,
+          hasResult: result !== null,
+          resultJson: result !== null ? result : undefined,
         })
       })
 
       // Handle process errors
       childProcess.on('error', (error: Error) => {
-        // Clear timers
-        if (idleTimer) {
-          clearTimeout(idleTimer)
-        }
+        clearTimeout(executionTimeout)
+
+        // Get any result collected before error
+        const result = streamProcessor.getResult()
 
         resolve({
-          stdout: assistantResponse || stdout,
+          stdout: result ? JSON.stringify(result) : stdout,
           stderr: stderr || error.message,
           exitCode: 1,
+          hasResult: result !== null,
+          resultJson: result !== null ? result : undefined,
         })
-      })
-
-      // Set overall execution timeout from config
-      const executionTimeout = setTimeout(() => {
-        if (idleTimer) {
-          clearTimeout(idleTimer)
-        }
-        this.logger.warn('Overall execution timeout reached', {
-          assistantStarted,
-          assistantResponseLength: assistantResponse?.length || 0,
-        })
-        childProcess.kill('SIGTERM')
-        resolve({
-          stdout: assistantResponse || stdout,
-          stderr: stderr || 'Execution timeout exceeded',
-          exitCode: 124,
-        })
-      }, this.config.executionTimeout)
-
-      // Clear execution timeout on close
-      childProcess.on('exit', () => {
-        clearTimeout(executionTimeout)
       })
     })
   }
@@ -524,66 +333,5 @@ export class AgentExecutor {
    */
   private generateRequestId(): string {
     return `req_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
-  }
-
-  /**
-   * Monitors memory usage and triggers garbage collection if needed.
-   * Implements memory management strategy for large output scenarios.
-   *
-   * @private
-   * @param context - Context information for logging
-   */
-  private monitorMemoryUsage(context: string): void {
-    if (process.memoryUsage && typeof global !== 'undefined' && typeof global.gc === 'function') {
-      const memUsage = process.memoryUsage()
-      const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024)
-
-      this.logger.debug('Memory usage check', {
-        context,
-        heapUsedMB,
-        heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
-        rss: Math.round(memUsage.rss / 1024 / 1024),
-      })
-
-      // Trigger garbage collection if heap usage exceeds 500MB
-      if (heapUsedMB > 500) {
-        this.logger.warn('High memory usage detected, triggering garbage collection', {
-          context,
-          heapUsedMB,
-        })
-        global.gc()
-      }
-    }
-  }
-
-  /**
-   * Validates execution configuration and adjusts settings if needed.
-   * Implements adaptive configuration based on system resources.
-   *
-   * @private
-   * @returns Adjusted execution configuration
-   */
-  private getAdaptiveConfig(): ExecutionConfig {
-    // Check available memory and adjust thresholds accordingly
-    if (process.memoryUsage) {
-      const memUsage = process.memoryUsage()
-      const availableHeapMB = Math.round((memUsage.heapTotal - memUsage.heapUsed) / 1024 / 1024)
-
-      // If available heap is low, use smaller threshold to prefer exec over spawn
-      if (availableHeapMB < 100) {
-        this.logger.warn('Low memory detected, adjusting output size threshold', {
-          availableHeapMB,
-          originalThreshold: this.config.outputSizeThreshold,
-          adjustedThreshold: this.config.outputSizeThreshold / 2,
-        })
-
-        return {
-          ...this.config,
-          outputSizeThreshold: this.config.outputSizeThreshold / 2,
-        }
-      }
-    }
-
-    return this.config
   }
 }

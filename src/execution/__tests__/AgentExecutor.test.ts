@@ -1,6 +1,6 @@
 import {
   AgentExecutor,
-  DEFAULT_EXECUTION_THRESHOLDS,
+  DEFAULT_EXECUTION_TIMEOUT,
   createExecutionConfig,
 } from 'src/execution/AgentExecutor'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
@@ -57,7 +57,7 @@ describe('AgentExecutor', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    const testConfig = createExecutionConfig('echo')
+    const testConfig = createExecutionConfig('cursor') // Use real agent type
     executor = new AgentExecutor(testConfig)
 
     // Setup spawn mock
@@ -78,15 +78,14 @@ describe('AgentExecutor', () => {
           on: vi.fn((event, callback) => {
             if (event === 'data') {
               if (isTestAgent) {
-                // Success case - simulate assistant response
+                // Success case - simulate single JSON response (--output-format json)
                 setTimeout(() => {
+                  // Send only the final result JSON
                   callback(
                     Buffer.from(
                       `${JSON.stringify({
-                        type: 'assistant',
-                        message: {
-                          content: [{ type: 'text', text: 'Test execution success' }],
-                        },
+                        type: 'result',
+                        data: 'Test execution successful',
                       })}\n`
                     )
                   )
@@ -94,15 +93,13 @@ describe('AgentExecutor', () => {
               } else if (isBadAgent || isSlowAgent) {
                 // Don't send successful data for bad agents or slow agents
               } else {
-                // Default success
+                // Default success - send result JSON (cursor format)
                 setTimeout(() => {
                   callback(
                     Buffer.from(
                       `${JSON.stringify({
-                        type: 'assistant',
-                        message: {
-                          content: [{ type: 'text', text: 'Default execution' }],
-                        },
+                        type: 'result',
+                        data: 'Default execution',
                       })}\n`
                     )
                   )
@@ -157,51 +154,17 @@ describe('AgentExecutor', () => {
 
   describe('constructor', () => {
     it('should create instance with config', () => {
-      const config = createExecutionConfig('echo')
+      const config = createExecutionConfig('cursor')
       const defaultExecutor = new AgentExecutor(config)
       expect(defaultExecutor).toBeInstanceOf(AgentExecutor)
     })
 
     it('should create instance with custom config', () => {
-      const customConfig = createExecutionConfig('echo', {
-        outputSizeThreshold: 512 * 1024,
+      const customConfig = createExecutionConfig('cursor', {
         executionTimeout: 15000,
       })
       const customExecutor = new AgentExecutor(customConfig)
       expect(customExecutor).toBeInstanceOf(AgentExecutor)
-    })
-  })
-
-  describe('selectExecutionMethod', () => {
-    it('should always return spawn for proper TTY handling', () => {
-      const params: ExecutionParams = {
-        agent: 'test-agent',
-        prompt: 'Simple help request',
-        cwd: '/tmp',
-      }
-
-      const method = executor.selectExecutionMethod(params)
-      expect(method).toBe('spawn')
-    })
-
-    it('should return spawn regardless of output size', () => {
-      const smallParams: ExecutionParams = {
-        agent: 'test-agent',
-        prompt: 'Small task',
-        cwd: '/tmp',
-      }
-
-      const largeParams: ExecutionParams = {
-        agent: 'test-agent',
-        prompt:
-          'Generate a very large response with detailed code examples and documentation'.repeat(
-            100
-          ),
-        cwd: '/tmp',
-      }
-
-      expect(executor.selectExecutionMethod(smallParams)).toBe('spawn')
-      expect(executor.selectExecutionMethod(largeParams)).toBe('spawn')
     })
   })
 
@@ -220,8 +183,8 @@ describe('AgentExecutor', () => {
         stderr: expect.any(String),
         exitCode: expect.any(Number),
         executionTime: expect.any(Number),
-        executionMethod: 'spawn',
-        estimatedOutputSize: expect.any(Number),
+        hasResult: expect.any(Boolean),
+        resultJson: expect.anything(),
       })
       expect(result.exitCode).toBe(0)
       expect(result.executionTime).toBeGreaterThan(0)
@@ -238,7 +201,7 @@ describe('AgentExecutor', () => {
 
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toBeTruthy()
-      expect(result.executionMethod).toBe('spawn')
+      expect(result.exitCode).toBeDefined()
     })
 
     it('should execute agent successfully with spawn for large output', async () => {
@@ -255,12 +218,10 @@ describe('AgentExecutor', () => {
         stderr: expect.any(String),
         exitCode: expect.any(Number),
         executionTime: expect.any(Number),
-        executionMethod: 'spawn',
-        estimatedOutputSize: expect.any(Number),
+        hasResult: expect.any(Boolean),
+        resultJson: expect.anything(),
       })
-      expect(result.estimatedOutputSize).toBeGreaterThan(
-        DEFAULT_EXECUTION_THRESHOLDS.outputSizeThreshold
-      )
+      expect(result.stdout.length).toBeGreaterThan(0)
     })
 
     it('should handle spawn execution failure', async () => {
@@ -274,7 +235,7 @@ describe('AgentExecutor', () => {
 
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toBeTruthy()
-      expect(result.executionMethod).toBe('spawn')
+      expect(result.exitCode).toBeDefined()
     })
   })
 
@@ -294,7 +255,7 @@ describe('AgentExecutor', () => {
       expect(result.executionTime).toBeLessThanOrEqual(endTime - startTime + 100) // Allow 100ms tolerance
     })
 
-    it('should include execution method in result', async () => {
+    it('should execute agents with different prompt sizes', async () => {
       const smallParams: ExecutionParams = {
         agent: 'test-agent',
         prompt: 'Small task',
@@ -310,8 +271,8 @@ describe('AgentExecutor', () => {
       const smallResult = await executor.executeAgent(smallParams)
       const largeResult = await executor.executeAgent(largeParams)
 
-      expect(smallResult.executionMethod).toBe('spawn')
-      expect(largeResult.executionMethod).toBe('spawn')
+      expect(smallResult.exitCode).toBeDefined()
+      expect(largeResult.exitCode).toBeDefined()
     })
   })
 
@@ -327,8 +288,7 @@ describe('AgentExecutor', () => {
     })
 
     it('should handle timeout scenarios', async () => {
-      const timeoutConfig = createExecutionConfig('echo', {
-        outputSizeThreshold: 1024 * 1024,
+      const timeoutConfig = createExecutionConfig('cursor', {
         executionTimeout: 100,
       })
       const timeoutExecutor = new AgentExecutor(timeoutConfig)
@@ -342,6 +302,139 @@ describe('AgentExecutor', () => {
       const result = await timeoutExecutor.executeAgent(params)
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toContain('timeout')
+    })
+  })
+
+  describe('AgentExecutionResult extended fields', () => {
+    it('should include hasResult field in execution result', async () => {
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Generate JSON response',
+        cwd: '/tmp',
+      }
+
+      const result = await executor.executeAgent(params)
+
+      // Test that hasResult field exists and is true when JSON is detected
+      expect(result).toHaveProperty('hasResult')
+      expect(result.hasResult).toBe(true)
+    })
+
+    it('should include resultJson field with parsed JSON when available', async () => {
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Generate structured data',
+        cwd: '/tmp',
+      }
+
+      const result = await executor.executeAgent(params)
+
+      // Test that resultJson field exists with the parsed JSON
+      expect(result).toHaveProperty('resultJson')
+      expect(result.resultJson).toEqual({
+        type: 'result',
+        data: 'Test execution successful',
+      })
+    })
+
+    it('should set hasResult to false when no JSON is detected', async () => {
+      const params: ExecutionParams = {
+        agent: 'bad-agent',
+        prompt: 'This will fail',
+        cwd: '/tmp',
+      }
+
+      const result = await executor.executeAgent(params)
+
+      // Test that hasResult is false when execution fails
+      // For failed executions, hasResult and resultJson are explicitly set
+      expect(result.hasResult).toBe(false)
+      expect(result.resultJson).toBeUndefined()
+    })
+
+    it('should handle SIGTERM (exit code 143) as normal when hasResult is true', async () => {
+      // Mock a scenario where process is killed with SIGTERM after getting JSON
+      const mockProcess = {
+        stdin: { end: vi.fn() },
+        stdout: {
+          on: vi.fn((event, callback) => {
+            if (event === 'data') {
+              // Send result JSON
+              setTimeout(() => {
+                callback(Buffer.from('{"type": "result", "data": "Success"}\n'))
+              }, 10)
+            }
+          }),
+        },
+        stderr: { on: vi.fn() },
+        on: vi.fn((event, callback) => {
+          if (event === 'close') {
+            // Return exit code 143 (SIGTERM)
+            setTimeout(() => callback(143), 50)
+          }
+        }),
+        kill: vi.fn(),
+      }
+
+      mockSpawn.mockImplementationOnce(() => mockProcess as any)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Stream JSON data',
+        cwd: '/tmp',
+      }
+
+      const result = await executor.executeAgent(params)
+
+      // Should recognize exit code 143 with hasResult=true as success
+      expect(result.exitCode).toBe(143)
+      expect(result.hasResult).toBe(true)
+      expect(result.resultJson).toBeDefined()
+    })
+
+    it('should distinguish timeout with partial result from complete timeout', async () => {
+      const timeoutConfig = createExecutionConfig('cursor', {
+        executionTimeout: 100,
+      })
+      const timeoutExecutor = new AgentExecutor(timeoutConfig)
+
+      // Mock process that sends JSON but times out
+      const mockProcess = {
+        stdin: { end: vi.fn() },
+        stdout: {
+          on: vi.fn((event, callback) => {
+            if (event === 'data') {
+              // Send partial result before timeout
+              setTimeout(() => {
+                callback(Buffer.from('{"type": "result", "partial": true}\n'))
+              }, 50)
+            }
+          }),
+        },
+        stderr: { on: vi.fn() },
+        on: vi.fn((event, callback) => {
+          if (event === 'close') {
+            // Simulate timeout exit code 124
+            setTimeout(() => callback(124), 150)
+          }
+        }),
+        kill: vi.fn(),
+      }
+
+      mockSpawn.mockImplementationOnce(() => mockProcess as any)
+
+      const params: ExecutionParams = {
+        agent: 'partial-agent',
+        prompt: 'Partial completion',
+        cwd: '/tmp',
+      }
+
+      const result = await timeoutExecutor.executeAgent(params)
+
+      // Should have partial result even with timeout
+      expect(result.exitCode).toBe(124)
+      expect(result.hasResult).toBe(true)
+      expect(result.resultJson).toEqual({ type: 'result', partial: true })
     })
   })
 })

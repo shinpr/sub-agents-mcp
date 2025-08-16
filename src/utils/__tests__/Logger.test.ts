@@ -1,4 +1,4 @@
-import { type LogEntry, type LogLevel, Logger, createLogger } from 'src/utils/Logger'
+import { type LogEntry, type LogLevel, Logger } from 'src/utils/Logger'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('Logger', () => {
@@ -16,64 +16,62 @@ describe('Logger', () => {
   })
 
   describe('Log Level Management', () => {
-    it('should set and get log level correctly', () => {
-      // Act & Assert
-      expect(logger.getLevel()).toBe('info')
-
-      logger.setLevel('debug')
-      expect(logger.getLevel()).toBe('debug')
-
-      logger.setLevel('error')
-      expect(logger.getLevel()).toBe('error')
-    })
-
-    it('should filter logs based on level hierarchy', () => {
+    it('should filter logs based on constructor level', () => {
       // Arrange
-      logger.setLevel('warn')
+      const warnLogger = new Logger('warn')
+      const warnSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
       // Act
-      logger.debug('Debug message')
-      logger.info('Info message')
-      logger.warn('Warning message')
-      logger.error('Error message')
+      warnLogger.debug('Debug message')
+      warnLogger.info('Info message')
+      warnLogger.warn('Warning message')
+      warnLogger.error('Error message')
 
       // Assert
-      expect(consoleSpy).toHaveBeenCalledTimes(2) // Only warn and error should be logged
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('WARN: Warning message'))
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
+      expect(warnSpy).toHaveBeenCalledTimes(2) // Only warn and error should be logged
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('WARN: Warning message'))
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
+
+      warnSpy.mockRestore()
     })
 
-    it('should log all levels when set to debug', () => {
+    it('should log all levels when created with debug level', () => {
       // Arrange
-      logger.setLevel('debug')
+      const debugLogger = new Logger('debug')
+      const debugSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
       // Act
-      logger.debug('Debug message')
-      logger.info('Info message')
-      logger.warn('Warning message')
-      logger.error('Error message')
+      debugLogger.debug('Debug message')
+      debugLogger.info('Info message')
+      debugLogger.warn('Warning message')
+      debugLogger.error('Error message')
 
       // Assert
-      expect(consoleSpy).toHaveBeenCalledTimes(4)
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('DEBUG: Debug message'))
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('INFO: Info message'))
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('WARN: Warning message'))
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
+      expect(debugSpy).toHaveBeenCalledTimes(4)
+      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('DEBUG: Debug message'))
+      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('INFO: Info message'))
+      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('WARN: Warning message'))
+      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
+
+      debugSpy.mockRestore()
     })
 
-    it('should only log errors when set to error level', () => {
+    it('should only log errors when created with error level', () => {
       // Arrange
-      logger.setLevel('error')
+      const errorLogger = new Logger('error')
+      const errorSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
       // Act
-      logger.debug('Debug message')
-      logger.info('Info message')
-      logger.warn('Warning message')
-      logger.error('Error message')
+      errorLogger.debug('Debug message')
+      errorLogger.info('Info message')
+      errorLogger.warn('Warning message')
+      errorLogger.error('Error message')
 
       // Assert
-      expect(consoleSpy).toHaveBeenCalledTimes(1)
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
+      expect(errorSpy).toHaveBeenCalledTimes(1)
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
+
+      errorSpy.mockRestore()
     })
   })
 
@@ -179,15 +177,18 @@ describe('Logger', () => {
   describe('Log Methods', () => {
     it('should provide debug logging method', () => {
       // Arrange
-      logger.setLevel('debug')
+      const debugLogger = new Logger('debug')
+      const debugSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
       // Act
-      logger.debug('Debug information', { component: 'test' })
+      debugLogger.debug('Debug information', { component: 'test' })
 
       // Assert
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('DEBUG: Debug information'), {
+      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('DEBUG: Debug information'), {
         component: 'test',
       })
+
+      debugSpy.mockRestore()
     })
 
     it('should provide info logging method', () => {
@@ -212,40 +213,44 @@ describe('Logger', () => {
     })
   })
 
-  describe('Constructor and Factory', () => {
+  describe('Constructor', () => {
     it('should use default info level when no level provided', () => {
       // Arrange
       const defaultLogger = new Logger()
+      const infoSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      // Act - info should log, debug should not
+      defaultLogger.debug('Debug msg')
+      defaultLogger.info('Info msg')
 
       // Assert
-      expect(defaultLogger.getLevel()).toBe('info')
+      expect(infoSpy).toHaveBeenCalledTimes(1)
+      expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining('INFO: Info msg'))
+
+      infoSpy.mockRestore()
     })
 
     it('should accept custom level in constructor', () => {
       // Arrange
       const debugLogger = new Logger('debug')
       const errorLogger = new Logger('error')
+      const debugSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
-      // Assert
-      expect(debugLogger.getLevel()).toBe('debug')
-      expect(errorLogger.getLevel()).toBe('error')
-    })
-
-    it('should create logger with factory function', () => {
       // Act
-      const factoryLogger = createLogger('warn')
+      debugLogger.debug('Debug from debug logger')
+      errorLogger.debug('Debug from error logger')
+      errorLogger.error('Error from error logger')
 
       // Assert
-      expect(factoryLogger.getLevel()).toBe('warn')
-      expect(factoryLogger).toBeInstanceOf(Logger)
-    })
+      expect(debugSpy).toHaveBeenCalledTimes(2) // debug logger's debug + error logger's error
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining('DEBUG: Debug from debug logger')
+      )
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining('ERROR: Error from error logger')
+      )
 
-    it('should create logger with default level via factory', () => {
-      // Act
-      const defaultFactoryLogger = createLogger()
-
-      // Assert
-      expect(defaultFactoryLogger.getLevel()).toBe('info')
+      debugSpy.mockRestore()
     })
   })
 

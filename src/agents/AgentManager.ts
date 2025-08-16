@@ -1,36 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import type { ServerConfig } from 'src/config/ServerConfig'
 import type { AgentDefinition } from 'src/types/AgentDefinition'
-import type { ServerConfigInterface } from 'src/types/ServerConfig'
-import { type Logger, createLogger } from 'src/utils/Logger'
-
-/**
- * Interface for agent management operations.
- * Defines methods for discovering, loading, and caching agent definitions.
- */
-export interface AgentManagerInterface {
-  /**
-   * Retrieves a specific agent definition by name.
-   *
-   * @param name - The name of the agent to retrieve
-   * @returns Promise resolving to the agent definition or undefined if not found
-   */
-  getAgent(name: string): Promise<AgentDefinition | undefined>
-
-  /**
-   * Lists all available agent definitions.
-   *
-   * @returns Promise resolving to an array of all agent definitions
-   */
-  listAgents(): Promise<AgentDefinition[]>
-
-  /**
-   * Refreshes the agent cache by re-scanning the agents directory.
-   *
-   * @returns Promise resolving when refresh is complete
-   */
-  refreshAgents(): Promise<void>
-}
+import { type Logger, Logger as LoggerClass } from 'src/utils/Logger'
 
 /**
  * AgentManager class for discovering, loading, parsing, and caching agent definitions.
@@ -39,11 +11,11 @@ export interface AgentManagerInterface {
  * parsing of Claude Code sub-agent format, and efficient caching with
  * file change detection.
  */
-export class AgentManager implements AgentManagerInterface {
+export class AgentManager {
   private logger: Logger
 
-  constructor(private config: ServerConfigInterface) {
-    this.logger = createLogger(config.logLevel)
+  constructor(private config: ServerConfig) {
+    this.logger = new LoggerClass(config.logLevel)
   }
 
   /**
