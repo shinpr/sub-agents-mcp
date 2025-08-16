@@ -36,6 +36,13 @@ curl https://cursor.com/install -fsS | bash
 3. Create agent definition files in your agents directory
 4. Use agents through your IDE's MCP interface
 
+**⚠️ Important Note for Cursor CLI Users:**
+If you encounter timeout errors when using the MCP server with Cursor CLI, your login session may have expired. Please re-authenticate using:
+```bash
+cursor-agent login
+```
+This is required periodically as Cursor CLI sessions expire and need to be renewed.
+
 ### 3. Using with Claude Code
 
 #### Install Claude Code
@@ -79,17 +86,24 @@ npx -y https://github.com/shinpr/sub-agents-mcp
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `AGENTS_DIR` | Directory containing agent definition files | ✓ | - |
-| `CLI_COMMAND` | CLI command to execute (`cursor-agent` or `claude`) | ✓ | - |
-| `CLI_API_KEY` | API key for cursor-agent (Anthropic or OpenAI API key) | ✓ (for cursor-agent) | - |
+| `AGENTS_DIR` | Directory containing agent definition files | | `./agents` |
+| `AGENT_TYPE` | Type of agent to use (`cursor` or `claude`) | | `cursor` |
+| `CLI_API_KEY` | API key for cursor-agent (Anthropic or OpenAI API key) | ✓ (for cursor) | - |
 | `EXECUTION_TIMEOUT_MS` | Maximum execution time for agent operations in milliseconds (MCP->AI) | | 300000 (5 minutes) |
 
 **Note:** For complex agents that require longer processing times (e.g., document reviewers, code analyzers), you can increase the timeout by setting `EXECUTION_TIMEOUT_MS` to a higher value, up to 600000 (10 minutes).
 
-**Timeout Hierarchy:**
-- **AI->MCP timeout**: 11 minutes (660 seconds) - Maximum time AI waits for MCP server response
-- **MCP->AI timeout**: 5-10 minutes (configurable via `EXECUTION_TIMEOUT_MS`) - Maximum time MCP waits for AI response  
-- **Idle timeout**: 2 minutes (120 seconds) - Time without data before terminating stuck processes
+### Execution Timeout
+
+The system implements a single, configurable timeout for agent execution:
+
+- **MCP→AI Execution Timeout**: 5 minutes (300000ms default)
+  - Time MCP waits for AI agent execution to complete
+  - Configurable via `EXECUTION_TIMEOUT_MS` environment variable
+  - Range: 1 second to 10 minutes (1000ms - 600000ms)
+  - Controls the maximum time an agent can run before being terminated
+
+When an agent execution exceeds the timeout, the process is terminated with exit code 124.
 
 ### Agent Definition Format
 
@@ -156,26 +170,32 @@ Executes another agent with specified parameters.
 
 ### Execution Errors
 
-1. Verify `CLI_COMMAND` is set correctly (`cursor-agent` or `claude`)
-2. Ensure the CLI tool is installed and accessible
+1. Verify `AGENT_TYPE` is set correctly (`cursor` or `claude`)
+2. Ensure the CLI tool is installed and accessible:
+   - For `cursor`: Ensure `cursor-agent` CLI is installed
+   - For `claude`: Ensure Claude Code CLI is installed
 3. Check environment variables are properly set
-4. For cursor-agent, ensure `CLI_API_KEY` is set with valid API key
+4. For cursor agent type, ensure `CLI_API_KEY` is set with valid API key
 
 ## How It Works
 
 This MCP server acts as a bridge between IDEs and CLI tools:
 
 1. **IDE** (Cursor/Claude Desktop) connects to the MCP server
-2. **MCP Server** receives agent execution requests
-3. **MCP Server** calls the appropriate CLI tool (`cursor-agent` or `claude`)
-4. **CLI Tool** executes the agent and returns results
+2. **MCP Server** receives agent execution requests via the `run_agent` tool
+3. **MCP Server** determines the CLI command based on `AGENT_TYPE`:
+   - `cursor`: Executes via `cursor-agent` CLI
+   - `claude`: Executes via `claude` CLI with `--output-format json`
+4. **Stream Processing**: Unified handling of output streams
+   - For Cursor: Waits for `{"type": "result"}` JSON to signal completion
+   - For Claude: Captures the first complete JSON response
 5. **Results** are passed back through MCP to the IDE
 
 ## MCP Configuration
 
 ### Cursor IDE
 
-Add to your project's `.cursor/claude_desktop_config.json`:
+Add to your project's `.cursor/mcp_config.json` (or appropriate MCP config file):
 ```json
 {
   "mcpServers": {
@@ -184,8 +204,8 @@ Add to your project's `.cursor/claude_desktop_config.json`:
       "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "./agents",
-        "CLI_COMMAND": "cursor-agent",
-        "CLI_API_KEY": "your-cursor-api-key"
+        "AGENT_TYPE": "cursor",
+        "CLI_API_KEY": "your-api-key"
       }
     }
   }
@@ -203,7 +223,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/path/to/agents",
-        "CLI_COMMAND": "claude"
+        "AGENT_TYPE": "claude"
       }
     }
   }
@@ -220,18 +240,44 @@ You can use different agent directories by updating the `AGENTS_DIR` in your IDE
 {
   "mcpServers": {
     "sub-agents-dev": {
+      "command": "npx",
+      "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
       "env": {
-        "AGENTS_DIR": "./dev-agents"
+        "AGENTS_DIR": "./dev-agents",
+        "AGENT_TYPE": "cursor",
+        "CLI_API_KEY": "your-api-key"
       }
     },
     "sub-agents-prod": {
+      "command": "npx",
+      "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
       "env": {
-        "AGENTS_DIR": "./prod-agents"
+        "AGENTS_DIR": "./prod-agents",
+        "AGENT_TYPE": "cursor",
+        "CLI_API_KEY": "your-api-key"
       }
     }
   }
 }
 ```
+
+### Architecture Details
+
+#### Stream Processing
+The server uses a unified `StreamProcessor` class to handle output from both Cursor and Claude agents:
+- **Cursor**: Streams multiple JSON objects, ends with `{"type": "result", ...}`
+- **Claude**: Returns a single JSON response when using `--output-format json`
+- Both formats are processed to extract the final result JSON
+
+#### Agent Management
+- Agents are loaded dynamically from the configured `AGENTS_DIR`
+- Each `.md` or `.txt` file becomes an available agent
+- Agent content is passed as system context to the CLI tool
+
+#### Error Handling
+- Comprehensive error recovery with retry logic for transient failures
+- Graceful timeout handling with proper process cleanup
+- Detailed logging at multiple levels (debug, info, warn, error)
 
 ## Building from Source
 

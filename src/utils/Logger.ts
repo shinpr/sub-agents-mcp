@@ -23,50 +23,12 @@ export interface LogEntry {
 }
 
 /**
- * Logger interface for structured logging operations.
- */
-export interface LoggerInterface {
-  /**
-   * Logs a debug message.
-   *
-   * @param message - The message to log
-   * @param context - Optional context data
-   */
-  debug(message: string, context?: Record<string, unknown>): void
-
-  /**
-   * Logs an info message.
-   *
-   * @param message - The message to log
-   * @param context - Optional context data
-   */
-  info(message: string, context?: Record<string, unknown>): void
-
-  /**
-   * Logs a warning message.
-   *
-   * @param message - The message to log
-   * @param context - Optional context data
-   */
-  warn(message: string, context?: Record<string, unknown>): void
-
-  /**
-   * Logs an error message.
-   *
-   * @param message - The message to log
-   * @param error - Optional error object
-   * @param context - Optional context data
-   */
-  error(message: string, error?: Error, context?: Record<string, unknown>): void
-}
-
-/**
  * Logger utility class for structured logging.
  *
  * Provides consistent logging format with timestamps, levels, and context data.
  * Supports filtering by log level and structured output for debugging.
  */
-export class Logger implements LoggerInterface {
+export class Logger {
   private currentLevel: LogLevel
   private readonly logFilePath?: string
   private fileWriteErrorShown = false
@@ -89,24 +51,6 @@ export class Logger implements LoggerInterface {
     if (logFile?.trim()) {
       this.logFilePath = logFile.trim()
     }
-  }
-
-  /**
-   * Sets the current log level.
-   *
-   * @param level - The new log level
-   */
-  setLevel(level: LogLevel): void {
-    this.currentLevel = level
-  }
-
-  /**
-   * Gets the current log level.
-   *
-   * @returns The current log level
-   */
-  getLevel(): LogLevel {
-    return this.currentLevel
   }
 
   /**
@@ -241,14 +185,4 @@ export class Logger implements LoggerInterface {
     // Append to file
     await fs.appendFile(this.logFilePath, jsonLine, 'utf8')
   }
-}
-
-/**
- * Creates a new Logger instance with the specified level.
- *
- * @param level - The log level for the new logger
- * @returns A new Logger instance
- */
-export function createLogger(level: LogLevel = 'info'): Logger {
-  return new Logger(level)
 }

@@ -26,10 +26,10 @@ import {
   type ReadResourceResult,
 } from '@modelcontextprotocol/sdk/types.js'
 import { AgentManager } from 'src/agents/AgentManager'
+import type { ServerConfig } from 'src/config/ServerConfig'
 import { AgentExecutor, createExecutionConfig } from 'src/execution/AgentExecutor'
 import { AgentResources } from 'src/resources/AgentResources'
 import { RunAgentTool } from 'src/tools/RunAgentTool'
-import type { ServerConfigInterface } from 'src/types'
 import { AppError, ValidationError } from 'src/utils/ErrorHandler'
 import { Logger } from 'src/utils/Logger'
 
@@ -52,7 +52,7 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 export class McpServer {
   private server: Server
   private transport: StdioServerTransport | null = null
-  private config: ServerConfigInterface
+  private config: ServerConfig
   private agentManager: AgentManager
   private agentExecutor: AgentExecutor
   private runAgentTool: RunAgentTool
@@ -63,7 +63,7 @@ export class McpServer {
    * @param config Server configuration object
    * @throws {Error} When server name is empty
    */
-  constructor(config: ServerConfigInterface) {
+  constructor(config: ServerConfig) {
     this.validateConfig(config)
     this.config = config
 
@@ -75,9 +75,8 @@ export class McpServer {
     // Initialize agent management components
     this.agentManager = new AgentManager(config)
 
-    // Create ExecutionConfig with the CLI command from server config
-    const executionConfig = createExecutionConfig(config.cliCommand, {
-      outputSizeThreshold: config.maxOutputSize || 1024 * 1024, // Use maxOutputSize from config
+    // Create ExecutionConfig with the agent type from server config
+    const executionConfig = createExecutionConfig(config.agentType, {
       executionTimeout: config.executionTimeoutMs, // Use timeout from config (env var or 90s default)
     })
 
@@ -116,7 +115,7 @@ export class McpServer {
    * @param config Configuration to validate
    * @throws {Error} When configuration is invalid
    */
-  private validateConfig(config: ServerConfigInterface): void {
+  private validateConfig(config: ServerConfig): void {
     if (!config.serverName || config.serverName.trim() === '') {
       throw new Error('Server name cannot be empty')
     }

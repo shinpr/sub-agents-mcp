@@ -43,7 +43,6 @@ describe('Startup Performance Tests', () => {
       ...process.env,
       SERVER_NAME: 'startup-performance-test',
       AGENTS_DIR: testAgentsDir,
-      CLI_COMMAND: 'echo',
     }
 
     // Start server process
@@ -135,7 +134,6 @@ describe('Startup Performance Tests', () => {
         ...process.env,
         SERVER_NAME: 'startup-stress-test',
         AGENTS_DIR: stressTestDir,
-        CLI_COMMAND: 'echo',
       }
 
       const serverPath = path.join(__dirname, '../../../dist/index.js')
@@ -206,10 +204,12 @@ describe('Startup Performance Tests', () => {
       ...process.env,
       SERVER_NAME: 'minimal-startup-test',
       AGENTS_DIR: testAgentsDir, // Use basic test directory
-      CLI_COMMAND: 'echo',
     }
 
-    const config = await ServerConfig.fromEnvironment(minimalEnv)
+    // Set environment variables
+    process.env.SERVER_NAME = minimalEnv.SERVER_NAME
+    process.env.AGENTS_DIR = minimalEnv.AGENTS_DIR
+    const config = new ServerConfig()
     const server = new McpServer(config)
 
     try {
@@ -234,15 +234,23 @@ describe('Startup Performance Tests', () => {
       ...process.env,
       SERVER_NAME: 'concurrent-startup-test',
       AGENTS_DIR: testAgentsDir,
-      CLI_COMMAND: 'echo',
     }
 
     // Start multiple server configurations simultaneously
-    const configs = await Promise.all([
-      ServerConfig.fromEnvironment(testEnv),
-      ServerConfig.fromEnvironment({ ...testEnv, SERVER_NAME: 'concurrent-test-2' }),
-      ServerConfig.fromEnvironment({ ...testEnv, SERVER_NAME: 'concurrent-test-3' }),
-    ])
+    const originalEnv = { ...process.env }
+
+    Object.assign(process.env, testEnv)
+    const config1 = new ServerConfig()
+
+    process.env.SERVER_NAME = 'concurrent-test-2'
+    const config2 = new ServerConfig()
+
+    process.env.SERVER_NAME = 'concurrent-test-3'
+    const config3 = new ServerConfig()
+
+    // Restore original environment
+    Object.assign(process.env, originalEnv)
+    const configs = [config1, config2, config3]
 
     const servers = configs.map((config) => new McpServer(config))
 
@@ -272,7 +280,6 @@ describe('Startup Performance Tests', () => {
       ...process.env,
       SERVER_NAME: 'env-heavy-test',
       AGENTS_DIR: testAgentsDir,
-      CLI_COMMAND: 'echo',
       // Add extra variables to test processing
       TEST_VAR_1: 'value1',
       TEST_VAR_2: 'value2',
@@ -282,7 +289,9 @@ describe('Startup Performance Tests', () => {
       PROMPT_ENHANCEMENT_ENABLED: 'true',
     }
 
-    const config = await ServerConfig.fromEnvironment(heavyEnv)
+    // Set heavy environment variables
+    Object.assign(process.env, heavyEnv)
+    const config = new ServerConfig()
     const configLoadTime = Date.now() - startTime
 
     // Configuration loading should be very fast

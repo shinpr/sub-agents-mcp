@@ -126,42 +126,6 @@ export class ValidationError extends AppError {
 }
 
 /**
- * Timeout error class for execution time limit violations.
- *
- * Used when an operation exceeds its allocated execution time limit.
- * Automatically sets HTTP status code to 408 (Request Timeout).
- *
- * @example
- * ```typescript
- * throw new TimeoutError('Agent execution exceeded 30 seconds', 'EXECUTION_TIMEOUT', 30000, {
- *   operation: 'agent_execution',
- *   metadata: { agentName: 'test-agent', actualDuration: 35000 }
- * })
- * ```
- */
-export class TimeoutError extends AppError {
-  /** The timeout duration in milliseconds */
-  public readonly timeoutMs: number
-
-  /**
-   * Creates a new TimeoutError instance.
-   *
-   * @param message - Description of the timeout failure
-   * @param code - Error code for the specific timeout type
-   * @param timeoutMs - The timeout duration that was exceeded
-   * @param context - Additional context information
-   */
-  constructor(message: string, code: string, timeoutMs: number, context: ErrorContext = {}) {
-    super(message, code, 408, {
-      component: 'TimeoutManager',
-      metadata: { timeoutMs, ...context.metadata },
-      ...context,
-    })
-    this.timeoutMs = timeoutMs
-  }
-}
-
-/**
  * Resource limit error class for resource constraint violations.
  *
  * Used when an operation exceeds allocated resource limits such as
@@ -200,7 +164,7 @@ export class ResourceLimitError extends AppError {
     context: ErrorContext = {}
   ) {
     super(message, code, 429, {
-      component: 'ExecutionLimits',
+      component: 'AgentExecutor',
       metadata: { resourceType, limitValue, ...context.metadata },
       ...context,
     })
@@ -310,13 +274,6 @@ export interface ErrorRecoveryStrategy {
  * Default error recovery strategies for different error types.
  */
 export const DEFAULT_RECOVERY_STRATEGIES: Record<string, ErrorRecoveryStrategy> = {
-  timeout: {
-    maxRetries: 2,
-    baseDelayMs: 1000,
-    backoffMultiplier: 2,
-    maxDelayMs: 10000,
-    isRecoverable: (error) => error instanceof TimeoutError,
-  },
   resource_limit: {
     maxRetries: 3,
     baseDelayMs: 500,

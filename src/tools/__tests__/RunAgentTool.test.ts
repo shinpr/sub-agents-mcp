@@ -22,13 +22,12 @@ describe('RunAgentTool', () => {
       serverName: 'test-server',
       serverVersion: '1.0.0',
       agentsDir: './test-agents',
-      cliCommand: 'echo',
-      maxOutputSize: 1024 * 1024,
-      enableCache: true,
+      agentType: 'cursor',
       logLevel: 'info',
+      executionTimeoutMs: 300000,
     }
 
-    const executionConfig = createExecutionConfig('echo')
+    const executionConfig = createExecutionConfig('cursor')
     mockAgentExecutor = new AgentExecutor(executionConfig)
     mockAgentManager = new AgentManager(mockConfig)
 
@@ -143,7 +142,8 @@ describe('RunAgentTool', () => {
         stderr: '',
         exitCode: 0,
         executionTime: 100,
-        executionMethod: 'exec',
+        hasResult: false,
+        resultJson: undefined,
         estimatedOutputSize: 1024,
       })
 
@@ -175,8 +175,8 @@ describe('RunAgentTool', () => {
         stderr: '',
         exitCode: 0,
         executionTime: 150,
-        executionMethod: 'exec' as const,
-        estimatedOutputSize: 2048,
+        hasResult: false,
+        resultJson: undefined,
       }
 
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
@@ -204,8 +204,8 @@ describe('RunAgentTool', () => {
         stderr: 'Non-critical warning message',
         exitCode: 0,
         executionTime: 200,
-        executionMethod: 'exec' as const,
-        estimatedOutputSize: 1024,
+        hasResult: false,
+        resultJson: undefined,
       }
 
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
@@ -214,7 +214,8 @@ describe('RunAgentTool', () => {
 
       const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent?.text).toContain('Warning output')
-      expect(textContent?.text).toContain('Non-critical warning message')
+      // stderr is included in structured content, not in text content when stdout exists
+      expect(result.structuredContent).toHaveProperty('stderr', 'Non-critical warning message')
     })
 
     it('should handle agent execution failure', async () => {
@@ -228,8 +229,8 @@ describe('RunAgentTool', () => {
         stderr: 'Agent execution failed',
         exitCode: 1,
         executionTime: 50,
-        executionMethod: 'exec' as const,
-        estimatedOutputSize: 512,
+        hasResult: false,
+        resultJson: undefined,
       }
 
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
@@ -238,7 +239,8 @@ describe('RunAgentTool', () => {
 
       const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent?.text).toContain('failed')
-      expect(textContent?.text).toContain('exit code: 1')
+      // exit code is in structured content, not text content
+      expect(result.structuredContent).toHaveProperty('exitCode', 1)
     })
 
     it('should include execution metadata in response', async () => {
@@ -252,8 +254,8 @@ describe('RunAgentTool', () => {
         stderr: '',
         exitCode: 0,
         executionTime: 300,
-        executionMethod: 'spawn' as const,
-        estimatedOutputSize: 2048000,
+        hasResult: false,
+        resultJson: undefined,
       }
 
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
@@ -261,8 +263,10 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toContain('**Execution Time:** 300ms')
-      expect(textContent?.text).toContain('**Method:** spawn')
+      expect(textContent?.text).toContain('Success')
+      // Metadata is in structured content, not text content
+      expect(result.structuredContent).toHaveProperty('executionTime', 300)
+      expect(result.structuredContent).toHaveProperty('exitCode', 0)
     })
   })
 
@@ -370,8 +374,8 @@ describe('RunAgentTool', () => {
         stderr: 'Warning message',
         exitCode: 0,
         executionTime: 250,
-        executionMethod: 'spawn' as const,
-        estimatedOutputSize: 5000000,
+        hasResult: false,
+        resultJson: undefined,
       }
 
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
@@ -379,10 +383,12 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toContain('**Agent:** test-agent')
-      expect(textContent?.text).toContain('**Exit Code:** 0')
-      expect(textContent?.text).toContain('**Execution Time:** 250ms')
-      expect(textContent?.text).toContain('**Method:** spawn')
+      expect(textContent?.text).toContain('Detailed output')
+      // All metadata is in structured content, not text content
+      expect(result.structuredContent).toHaveProperty('agent', 'test-agent')
+      expect(result.structuredContent).toHaveProperty('exitCode', 0)
+      expect(result.structuredContent).toHaveProperty('executionTime', 250)
+      expect(result.structuredContent).toHaveProperty('stderr', 'Warning message')
     })
   })
 
@@ -427,6 +433,198 @@ describe('RunAgentTool', () => {
       expect(result).toBeDefined()
       const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent?.text).toMatch(/error.*loading|failed.*load/i)
+    })
+  })
+
+  describe('exit code interpretation with hasResult', () => {
+    beforeEach(() => {
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'Test content',
+        filePath: '/test/test-agent.md',
+        lastModified: new Date(),
+      })
+    })
+
+    it('should treat exit code 143 with hasResult=true as success', async () => {
+      const params = {
+        agent: 'streaming-agent',
+        prompt: 'Test streaming',
+      }
+
+      // Mock SIGTERM termination after successful JSON retrieval
+      const mockResult = {
+        stdout: '{"type":"result","data":"Streaming completed"}',
+        stderr: '',
+        exitCode: 143, // SIGTERM
+        executionTime: 150,
+        hasResult: true,
+        resultJson: { type: 'result', data: 'Streaming completed' },
+      }
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await runAgentTool.execute(params)
+      const textContent = result.content.find((c) => c.type === 'text')
+
+      // Content should be the agent output
+      expect(textContent?.text).toBe('{"type":"result","data":"Streaming completed"}')
+      // Check status in structuredContent
+      expect(result.structuredContent).toMatchObject({
+        status: 'success',
+        exitCode: 143,
+        hasResult: true,
+      })
+    })
+
+    it('should treat exit code 124 with hasResult=true as partial success', async () => {
+      const params = {
+        agent: 'timeout-agent',
+        prompt: 'Test timeout with partial',
+      }
+
+      // Mock timeout but with partial result
+      const mockResult = {
+        stdout: '{"type":"partial","data":"Partial result"}',
+        stderr: 'Execution timeout: 300000ms',
+        exitCode: 124, // Timeout
+        executionTime: 300000,
+        hasResult: true,
+        resultJson: { type: 'partial', data: 'Partial result' },
+      }
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await runAgentTool.execute(params)
+      const textContent = result.content.find((c) => c.type === 'text')
+
+      // Content should be the agent output
+      expect(textContent?.text).toBe('{"type":"partial","data":"Partial result"}')
+      // Check partial status in structuredContent
+      expect(result.structuredContent).toMatchObject({
+        status: 'partial',
+        exitCode: 124,
+        hasResult: true,
+      })
+    })
+
+    it('should treat exit code 124 with hasResult=false as complete timeout', async () => {
+      const params = {
+        agent: 'timeout-agent',
+        prompt: 'Test complete timeout',
+      }
+
+      // Mock complete timeout without any result
+      const mockResult = {
+        stdout: '',
+        stderr: 'Execution timeout: 300000ms',
+        exitCode: 124, // Timeout
+        executionTime: 300000,
+        hasResult: false,
+        resultJson: undefined,
+      }
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await runAgentTool.execute(params)
+      const textContent = result.content.find((c) => c.type === 'text')
+
+      // Content should be the stderr message
+      expect(textContent?.text).toBe('Execution timeout: 300000ms')
+      // Check error status in structuredContent
+      expect(result.structuredContent).toMatchObject({
+        status: 'error',
+        exitCode: 124,
+        hasResult: false,
+      })
+    })
+
+    it('should treat exit code 0 as success regardless of hasResult', async () => {
+      const params = {
+        agent: 'normal-agent',
+        prompt: 'Test normal completion',
+      }
+
+      // Mock normal completion
+      const mockResult = {
+        stdout: 'Normal output',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false, // Even without JSON result
+        resultJson: undefined,
+      }
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await runAgentTool.execute(params)
+      const textContent = result.content.find((c) => c.type === 'text')
+
+      // Content should be the agent output
+      expect(textContent?.text).toBe('Normal output')
+      // Check success status in structuredContent
+      expect(result.structuredContent).toMatchObject({
+        status: 'success',
+        exitCode: 0,
+        hasResult: false,
+      })
+    })
+
+    it('should include isError flag in response based on exit code and hasResult', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test isError flag',
+      }
+
+      // Test failure case
+      const mockResult = {
+        stdout: '',
+        stderr: 'Error message',
+        exitCode: 1,
+        executionTime: 50,
+        hasResult: false,
+        resultJson: undefined,
+      }
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await runAgentTool.execute(params)
+
+      // Should have isError flag set to true for failures
+      expect(result).toHaveProperty('isError')
+      expect(result.isError).toBe(true)
+    })
+
+    it('should include structuredContent with status and result', async () => {
+      const params = {
+        agent: 'json-agent',
+        prompt: 'Return structured data',
+      }
+
+      const mockResult = {
+        stdout: '{"type":"result","data":"test"}',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: true,
+        resultJson: { type: 'result', data: 'test' },
+      }
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await runAgentTool.execute(params)
+
+      // Verify structuredContent
+      expect(result).toHaveProperty('structuredContent')
+      expect(result.structuredContent).toMatchObject({
+        agent: 'json-agent',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: true,
+        status: 'success',
+        result: { type: 'result', data: 'test' },
+      })
     })
   })
 })

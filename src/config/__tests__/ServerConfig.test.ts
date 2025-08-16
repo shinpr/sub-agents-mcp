@@ -25,55 +25,46 @@ describe('ServerConfig', () => {
     }
   })
 
-  it('should load environment variables: SERVER_NAME, AGENTS_DIR, CLI_COMMAND', () => {
+  it('should load environment variables: SERVER_NAME, AGENTS_DIR, AGENT_TYPE', () => {
     // Mock environment variables
     vi.stubEnv('SERVER_NAME', 'test-server')
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('CLI_COMMAND', 'test-cli')
+    vi.stubEnv('AGENT_TYPE', 'claude')
 
     // This test will fail until we implement the ServerConfig class
     const config = new ServerConfig()
 
     expect(config.serverName).toBe('test-server')
     expect(config.agentsDir).toBe(testAgentsDir)
-    expect(config.cliCommand).toBe('test-cli')
+    expect(config.agentType).toBe('claude')
   })
 
   it('should use default values when environment variables are not set', () => {
     // Ensure environment variables are not set
     vi.stubEnv('SERVER_NAME', undefined)
     vi.stubEnv('AGENTS_DIR', undefined)
-    vi.stubEnv('CLI_COMMAND', undefined)
+    vi.stubEnv('AGENT_TYPE', undefined)
 
     const config = new ServerConfig()
 
-    expect(config.serverName).toBe('sub-agents-mcp-server')
+    expect(config.serverName).toBe('sub-agents-mcp')
     expect(config.agentsDir).toBe('./agents')
-    expect(config.cliCommand).toBe('claude-code')
+    expect(config.agentType).toBe('cursor')
     expect(config.executionTimeoutMs).toBe(300000)
   })
 
-  it('should validate required environment variables', () => {
-    // Mock missing required environment variable
+  it('should handle empty environment variables gracefully', () => {
+    // Mock empty environment variables
     vi.stubEnv('SERVER_NAME', '')
-    vi.stubEnv('AGENTS_DIR', '/test/agents')
-    vi.stubEnv('CLI_COMMAND', 'test-cli')
+    vi.stubEnv('AGENTS_DIR', '')
+    vi.stubEnv('AGENT_TYPE', '')
 
-    expect(() => {
-      new ServerConfig()
-    }).toThrow('Configuration validation failed: SERVER_NAME cannot be empty')
-  })
+    const config = new ServerConfig()
 
-  it('should validate directory paths exist and are readable', () => {
-    const nonExistentDir = path.join(tmpdir(), `nonexistent-${Date.now()}`)
-
-    vi.stubEnv('SERVER_NAME', 'test-server')
-    vi.stubEnv('AGENTS_DIR', nonExistentDir)
-    vi.stubEnv('CLI_COMMAND', 'test-cli')
-
-    expect(() => {
-      new ServerConfig()
-    }).toThrow('Configuration validation failed: AGENTS_DIR does not exist or is not readable')
+    // Should fall back to defaults when empty
+    expect(config.serverName).toBe('sub-agents-mcp')
+    expect(config.agentsDir).toBe('./agents')
+    expect(config.agentType).toBe('cursor')
   })
 
   describe('execution timeout validation', () => {
@@ -96,11 +87,10 @@ describe('ServerConfig', () => {
     })
 
     it('should use default timeout for invalid values', () => {
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       vi.stubEnv('AGENTS_DIR', testAgentsDir)
 
-      // Test invalid values
-      const invalidValues = ['invalid', '500', '700000', '-1000'] // too low, too high, negative
+      // Test invalid values (non-numeric will be parsed as NaN)
+      const invalidValues = ['invalid', 'not-a-number', '']
 
       for (const invalidValue of invalidValues) {
         vi.stubEnv('EXECUTION_TIMEOUT_MS', invalidValue)
@@ -108,12 +98,7 @@ describe('ServerConfig', () => {
         const config = new ServerConfig()
 
         expect(config.executionTimeoutMs).toBe(300000) // Should use default
-        expect(consoleSpy).toHaveBeenCalledWith(
-          expect.stringContaining(`Invalid EXECUTION_TIMEOUT_MS value: ${invalidValue}`)
-        )
       }
-
-      consoleSpy.mockRestore()
     })
 
     it('should accept timeout values within valid range', () => {
@@ -132,32 +117,5 @@ describe('ServerConfig', () => {
         expect(config.executionTimeoutMs).toBe(expected)
       }
     })
-  })
-
-  it('should provide configuration as readonly object', () => {
-    vi.stubEnv('SERVER_NAME', 'test-server')
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('CLI_COMMAND', 'test-cli')
-    vi.stubEnv('EXECUTION_TIMEOUT_MS', '300000')
-
-    const config = new ServerConfig()
-    const configObject = config.toObject()
-
-    expect(configObject).toEqual({
-      serverName: 'test-server',
-      serverVersion: '1.0.0',
-      agentsDir: testAgentsDir,
-      cliCommand: 'test-cli',
-      maxOutputSize: 1048576,
-      enableCache: true,
-      logLevel: 'info',
-      executionTimeoutMs: 300000,
-    })
-
-    // Verify it's readonly (modification should throw error)
-    expect(() => {
-      ;(configObject as any).serverName = 'modified'
-    }).toThrow()
-    expect(config.serverName).toBe('test-server')
   })
 })

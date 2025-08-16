@@ -54,12 +54,11 @@ describe('AgentManager', () => {
     // Create mock config
     mockConfig = {
       agentsDir: '/test/agents',
-      enableCache: true,
       serverName: 'test-server',
       serverVersion: '1.0.0',
-      cliCommand: 'test-cli',
-      maxOutputSize: 1024,
+      agentType: 'cursor',
       logLevel: 'info',
+      executionTimeoutMs: 300000,
     } as ServerConfig
 
     agentManager = new AgentManager(mockConfig)

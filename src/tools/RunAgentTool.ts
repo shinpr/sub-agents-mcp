@@ -8,7 +8,6 @@
 
 import type { AgentManager } from 'src/agents/AgentManager'
 import type { AgentExecutionResult, AgentExecutor } from 'src/execution/AgentExecutor'
-import { McpRequestTimeout, type ProgressNotification } from 'src/execution/McpRequestTimeout'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
 import { type LogLevel, Logger } from 'src/utils/Logger'
 
@@ -25,6 +24,8 @@ interface McpTextContent {
  */
 interface McpToolResponse {
   content: McpTextContent[]
+  isError?: boolean
+  structuredContent?: unknown
 }
 
 /**
@@ -76,7 +77,6 @@ export class RunAgentTool {
   public readonly name = 'run_agent'
   public readonly description = 'Execute a Claude Code sub-agent with specified parameters'
   private logger: Logger
-  private readonly mcpTimeout: McpRequestTimeout
   private executionStats: Map<string, { count: number; totalTime: number; lastUsed: Date }> =
     new Map()
 
@@ -111,19 +111,6 @@ export class RunAgentTool {
     // Use LOG_LEVEL environment variable if available
     const logLevel = (process.env['LOG_LEVEL'] as LogLevel) || 'info'
     this.logger = new Logger(logLevel)
-
-    // Initialize MCP-level timeout management (AI -> MCP)
-    // This is separate from AgentExecutor timeout (MCP -> AI)
-    this.mcpTimeout = new McpRequestTimeout(
-      {
-        defaultTimeoutMs: 180000, // 3 minutes for MCP request
-        maxTimeoutMs: 360000, // 6 minutes absolute maximum
-        progressResetEnabled: true,
-        warningThresholdMs: 60000, // 1 minute warning
-        enableDebugLogging: logLevel === 'debug',
-      },
-      this.logger
-    )
   }
 
   /**
@@ -141,26 +128,6 @@ export class RunAgentTool {
       requestId,
       timestamp: new Date().toISOString(),
     })
-
-    // Start MCP-level timeout tracking (AI -> MCP)
-    this.mcpTimeout.startTimeout(
-      requestId,
-      (context) => {
-        // Handle timeout at MCP level
-        this.logger.error('MCP request timeout', undefined, {
-          requestId: context.requestId,
-          elapsedMs: Date.now() - context.startTime,
-          progressCount: context.progressCount,
-        })
-      },
-      (notification: ProgressNotification) => {
-        // Send progress notification
-        this.logger.info('Progress notification', {
-          requestId: notification.requestId,
-          message: notification.message,
-        })
-      }
-    )
 
     try {
       // Validate parameters with enhanced validation
@@ -199,7 +166,6 @@ export class RunAgentTool {
       // Execute agent if executor is available
       if (this.agentExecutor) {
         // Report progress: Starting agent execution
-        this.mcpTimeout.reportProgress(requestId, 'Preparing agent execution', 10)
 
         // Get agent definition content if available
         let agentContext = validatedParams.agent
@@ -221,13 +187,11 @@ export class RunAgentTool {
         }
 
         // Report progress: Executing agent
-        this.mcpTimeout.reportProgress(requestId, 'Executing agent via CLI', 30)
 
         // Execute agent (this has its own timeout: MCP -> AI)
         const result = await this.agentExecutor.executeAgent(executionParams)
 
         // Report progress: Execution completed
-        this.mcpTimeout.reportProgress(requestId, 'Processing agent response', 90)
 
         // Update execution statistics
         this.updateExecutionStats(validatedParams.agent, result.executionTime)
@@ -241,14 +205,12 @@ export class RunAgentTool {
         })
 
         // Mark MCP request as completed
-        this.mcpTimeout.complete(requestId)
 
         return this.formatExecutionResponse(result, validatedParams.agent, requestId)
       }
 
       // Fallback response if executor is not available
       this.logger.warn('Agent executor not available', { requestId })
-      this.mcpTimeout.complete(requestId)
       return {
         content: [
           {
@@ -260,28 +222,11 @@ export class RunAgentTool {
     } catch (error) {
       const totalTime = Date.now() - startTime
 
-      // Check if this was a timeout error
-      const isTimeout = this.mcpTimeout.hasTimedOut(requestId)
-
-      if (isTimeout) {
-        // Cancel the request at MCP level
-        this.mcpTimeout.cancel(requestId, 'MCP request timeout exceeded')
-
-        // Return a user-friendly timeout response
-        return this.createErrorResponse(
-          'Request processing took too long and was cancelled. This may happen with complex prompts. Please try simplifying your request or breaking it into smaller parts.',
-          null
-        )
-      }
-
       this.logger.error('Agent execution failed', error instanceof Error ? error : undefined, {
         requestId,
         totalTime,
         errorType: error instanceof Error ? error.constructor.name : 'Unknown',
       })
-
-      // Clear timeout on error
-      this.mcpTimeout.clearTimeout(requestId)
 
       return this.createErrorResponse(
         `Agent execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -386,7 +331,7 @@ export class RunAgentTool {
   }
 
   /**
-   * Format successful agent execution response with enhanced formatting
+   * Format agent execution response
    *
    * @private
    * @param result - Agent execution result
@@ -399,46 +344,54 @@ export class RunAgentTool {
     agentName: string,
     requestId?: string
   ): McpToolResponse {
-    let responseText = '# Agent Execution Result\n\n'
-    responseText += `**Agent:** ${agentName}\n`
-    responseText += `**Exit Code:** ${result.exitCode}\n`
-    responseText += `**Execution Time:** ${result.executionTime}ms\n`
-    responseText += `**Method:** ${result.executionMethod}\n`
+    // Determine execution status
+    const isSuccess =
+      result.exitCode === 0 || // Normal completion
+      (result.exitCode === 143 && result.hasResult === true) // SIGTERM with result
 
-    if (requestId) {
-      responseText += `**Request ID:** ${requestId}\n`
+    const isPartialSuccess = result.exitCode === 124 && result.hasResult === true // Timeout with partial result
+    const isError = !isSuccess && !isPartialSuccess
+
+    // Content is just the agent's actual output
+    const contentText = result.stdout || result.stderr || 'No output'
+
+    // All metadata goes to structuredContent
+    const structuredContent: Record<string, unknown> = {
+      agent: agentName,
+      exitCode: result.exitCode,
+      executionTime: result.executionTime,
+      hasResult: result.hasResult || false,
+      status: isSuccess ? 'success' : isPartialSuccess ? 'partial' : 'error',
     }
 
-    // Add execution statistics
+    if (result.resultJson) {
+      structuredContent['result'] = result.resultJson
+    }
+    if (result.stderr && result.stdout) {
+      // Only include stderr in structured content if we also have stdout
+      // Otherwise stderr is already in content
+      structuredContent['stderr'] = result.stderr
+    }
+    if (requestId) {
+      structuredContent['requestId'] = requestId
+    }
+
+    // Update statistics
     const stats = this.executionStats.get(agentName)
     if (stats) {
-      responseText += `**Usage Count:** ${stats.count}\n`
-      responseText += `**Average Time:** ${Math.round(stats.totalTime / stats.count)}ms\n`
-    }
-
-    responseText += '\n---\n\n'
-
-    if (result.stdout) {
-      responseText += `## Output\n\n\`\`\`\n${result.stdout}\n\`\`\`\n\n`
-    }
-
-    if (result.stderr) {
-      responseText += `## Errors/Warnings\n\n\`\`\`\n${result.stderr}\n\`\`\`\n\n`
-    }
-
-    if (result.exitCode !== 0) {
-      responseText += `⚠️ **Agent execution failed with exit code: ${result.exitCode}**\n`
-    } else {
-      responseText += '✅ **Agent execution completed successfully**\n'
+      structuredContent['usageCount'] = stats.count
+      structuredContent['averageTime'] = Math.round(stats.totalTime / stats.count)
     }
 
     return {
       content: [
         {
           type: 'text',
-          text: responseText,
+          text: contentText,
         },
       ],
+      isError: isError,
+      structuredContent,
     }
   }
 
@@ -460,6 +413,15 @@ export class RunAgentTool {
       responseText += `\n\nAvailable agents:\n${availableAgents.map((name) => `- ${name}`).join('\n')}`
     }
 
+    const errorStructuredContent: Record<string, unknown> = {
+      status: 'error',
+      error: errorMessage,
+    }
+
+    if (availableAgents) {
+      errorStructuredContent['availableAgents'] = availableAgents
+    }
+
     return {
       content: [
         {
@@ -467,6 +429,8 @@ export class RunAgentTool {
           text: responseText,
         },
       ],
+      isError: true,
+      structuredContent: errorStructuredContent,
     }
   }
 
@@ -481,7 +445,7 @@ export class RunAgentTool {
   }
 
   /**
-   * Update execution statistics for performance monitoring
+   * Update execution statistics
    *
    * @private
    * @param agentName - Name of the executed agent
@@ -500,18 +464,6 @@ export class RunAgentTool {
         totalTime: executionTime,
         lastUsed: new Date(),
       })
-    }
-
-    // Clean up old statistics (keep only last 100 agents)
-    if (this.executionStats.size > 100) {
-      const sortedEntries = Array.from(this.executionStats.entries()).sort(
-        ([, a], [, b]) => b.lastUsed.getTime() - a.lastUsed.getTime()
-      )
-
-      this.executionStats.clear()
-      for (const [name, stats] of sortedEntries.slice(0, 100)) {
-        this.executionStats.set(name, stats)
-      }
     }
   }
 

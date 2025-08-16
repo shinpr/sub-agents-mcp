@@ -5,7 +5,6 @@ import {
   FileSystemError,
   MCPProtocolError,
   ResourceLimitError,
-  TimeoutError,
   ValidationError,
 } from 'src/utils/ErrorHandler'
 import { describe, expect, it, vi } from 'vitest'
@@ -64,27 +63,6 @@ describe('ValidationError', () => {
     expect(error.context.operation).toBe('user_registration')
     expect(error.context.metadata?.field).toBe('email')
     expect(error.context.component).toBe('Validation')
-  })
-})
-
-describe('TimeoutError', () => {
-  it('should create timeout error with timeout duration', () => {
-    const error = new TimeoutError('Execution exceeded time limit', 'EXECUTION_TIMEOUT', 30000)
-
-    expect(error.message).toBe('Execution exceeded time limit')
-    expect(error.code).toBe('EXECUTION_TIMEOUT')
-    expect(error.statusCode).toBe(408)
-    expect(error.timeoutMs).toBe(30000)
-    expect(error.name).toBe('TimeoutError')
-    expect(error).toBeInstanceOf(AppError)
-  })
-
-  it('should handle different timeout durations', () => {
-    const shortTimeout = new TimeoutError('Quick timeout', 'QUICK_TIMEOUT', 5000)
-    const longTimeout = new TimeoutError('Long timeout', 'LONG_TIMEOUT', 60000)
-
-    expect(shortTimeout.timeoutMs).toBe(5000)
-    expect(longTimeout.timeoutMs).toBe(60000)
   })
 })
 
@@ -223,16 +201,6 @@ describe('Enhanced Error Features', () => {
 })
 
 describe('Error Classification and Propagation', () => {
-  it('should properly classify timeout errors in execution context', () => {
-    // This test expects TimeoutError to be thrown when execution exceeds limit
-    const createTimeoutError = () => {
-      throw new TimeoutError('Agent execution exceeded 30 seconds', 'EXECUTION_TIMEOUT', 30000)
-    }
-
-    expect(createTimeoutError).toThrow(TimeoutError)
-    expect(createTimeoutError).toThrow('Agent execution exceeded 30 seconds')
-  })
-
   it('should properly classify resource limit errors', () => {
     // This test expects ResourceLimitError to be thrown when limits exceeded
     const createResourceError = () => {
@@ -261,17 +229,6 @@ describe('Error Classification and Propagation', () => {
     expect(originalError.statusCode).toBe(500)
     expect(originalError.context.component).toBe('FileSystem')
   })
-
-  it('should support enhanced error context in all error types', () => {
-    const timeoutError = new TimeoutError('Timeout', 'TIMEOUT', 30000, {
-      requestId: 'req_123',
-      operation: 'agent_execution',
-    })
-
-    expect(timeoutError.context.requestId).toBe('req_123')
-    expect(timeoutError.context.component).toBe('TimeoutManager')
-    expect(timeoutError.context.metadata?.timeoutMs).toBe(30000)
-  })
 })
 
 describe('ErrorBoundary', () => {
@@ -293,7 +250,9 @@ describe('ErrorBoundary', () => {
   it('should retry on recoverable errors', async () => {
     const operation = vi
       .fn()
-      .mockRejectedValueOnce(new TimeoutError('Timeout', 'TIMEOUT', 5000))
+      .mockRejectedValueOnce(
+        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
+      )
       .mockResolvedValue('success')
 
     const result = await errorBoundary.execute(operation, 'test_operation')
@@ -314,16 +273,26 @@ describe('ErrorBoundary', () => {
   })
 
   it('should respect maximum retry limits', async () => {
-    const operation = vi.fn().mockRejectedValue(new TimeoutError('Timeout', 'TIMEOUT', 5000))
+    const operation = vi
+      .fn()
+      .mockRejectedValue(
+        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
+      )
 
-    await expect(errorBoundary.execute(operation, 'test_operation')).rejects.toThrow(TimeoutError)
+    await expect(errorBoundary.execute(operation, 'test_operation')).rejects.toThrow(
+      ResourceLimitError
+    )
 
-    // Should have tried 1 original + 2 retries = 3 times (timeout strategy maxRetries: 2)
-    expect(operation).toHaveBeenCalledTimes(3)
+    // Should have tried 1 original + 3 retries = 4 times (resource_limit strategy maxRetries: 3)
+    expect(operation).toHaveBeenCalledTimes(4)
   })
 
   it('should track error statistics', async () => {
-    const operation = vi.fn().mockRejectedValue(new TimeoutError('Timeout', 'TIMEOUT', 5000))
+    const operation = vi
+      .fn()
+      .mockRejectedValue(
+        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
+      )
 
     try {
       await errorBoundary.execute(operation, 'test_operation')
@@ -332,11 +301,15 @@ describe('ErrorBoundary', () => {
     }
 
     const stats = errorBoundary.getErrorStats()
-    expect(Object.keys(stats)).toContain('TestComponent:test_operation:timeout')
+    expect(Object.keys(stats)).toContain('TestComponent:test_operation:resource_limit')
   })
 
   it('should reset error counts', async () => {
-    const operation = vi.fn().mockRejectedValue(new TimeoutError('Timeout', 'TIMEOUT', 5000))
+    const operation = vi
+      .fn()
+      .mockRejectedValue(
+        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
+      )
 
     try {
       await errorBoundary.execute(operation, 'test_operation')
@@ -352,8 +325,8 @@ describe('ErrorBoundary', () => {
   it('should handle cleanup functions', async () => {
     const cleanup = vi.fn().mockResolvedValue(undefined)
     const customStrategies = {
-      timeout: {
-        ...DEFAULT_RECOVERY_STRATEGIES.timeout,
+      resource_limit: {
+        ...DEFAULT_RECOVERY_STRATEGIES.resource_limit,
         cleanup,
       },
     }
@@ -361,7 +334,9 @@ describe('ErrorBoundary', () => {
     const customBoundary = new ErrorBoundary('TestComponent', customStrategies)
     const operation = vi
       .fn()
-      .mockRejectedValueOnce(new TimeoutError('Timeout', 'TIMEOUT', 5000))
+      .mockRejectedValueOnce(
+        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
+      )
       .mockResolvedValue('success')
 
     const result = await customBoundary.execute(operation, 'test_operation')
@@ -377,18 +352,9 @@ describe('ErrorBoundary', () => {
 
 describe('Recovery Strategies', () => {
   it('should have proper default recovery strategies', () => {
-    expect(DEFAULT_RECOVERY_STRATEGIES.timeout.maxRetries).toBe(2)
     expect(DEFAULT_RECOVERY_STRATEGIES.resource_limit.maxRetries).toBe(3)
     expect(DEFAULT_RECOVERY_STRATEGIES.file_system.maxRetries).toBe(2)
     expect(DEFAULT_RECOVERY_STRATEGIES.network.maxRetries).toBe(5)
-  })
-
-  it('should identify recoverable timeout errors', () => {
-    const timeoutError = new TimeoutError('Timeout', 'TIMEOUT', 5000)
-    const validationError = new ValidationError('Invalid', 'INVALID')
-
-    expect(DEFAULT_RECOVERY_STRATEGIES.timeout.isRecoverable(timeoutError)).toBe(true)
-    expect(DEFAULT_RECOVERY_STRATEGIES.timeout.isRecoverable(validationError)).toBe(false)
   })
 
   it('should identify recoverable resource limit errors', () => {

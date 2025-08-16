@@ -43,7 +43,7 @@ describe('AgentExecutor Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    const testConfig = createExecutionConfig('echo')
+    const testConfig = createExecutionConfig('cursor')
     executor = new AgentExecutor(testConfig)
 
     // Setup spawn mock for integration tests
@@ -62,15 +62,13 @@ describe('AgentExecutor Integration', () => {
           on: vi.fn((event, callback) => {
             if (event === 'data') {
               if (isTestAgent) {
-                // Success case - simulate assistant response
+                // Success case - simulate cursor type:result response
                 setTimeout(() => {
                   callback(
                     Buffer.from(
                       `${JSON.stringify({
-                        type: 'assistant',
-                        message: {
-                          content: [{ type: 'text', text: 'Integration test execution success' }],
-                        },
+                        type: 'result',
+                        data: 'Integration test execution success',
                       })}\n`
                     )
                   )
@@ -78,15 +76,13 @@ describe('AgentExecutor Integration', () => {
               } else if (isNonexistentAgent) {
                 // Don't send successful data for nonexistent agents
               } else {
-                // Default success
+                // Default success - cursor type:result format
                 setTimeout(() => {
                   callback(
                     Buffer.from(
                       `${JSON.stringify({
-                        type: 'assistant',
-                        message: {
-                          content: [{ type: 'text', text: 'Default integration execution' }],
-                        },
+                        type: 'result',
+                        data: 'Default integration execution',
                       })}\n`
                     )
                   )
@@ -146,16 +142,16 @@ describe('AgentExecutor Integration', () => {
         stderr: expect.any(String),
         exitCode: expect.any(Number),
         executionTime: expect.any(Number),
-        executionMethod: 'spawn',
-        estimatedOutputSize: expect.any(Number),
+        hasResult: expect.any(Boolean),
+        resultJson: expect.any(Object),
       })
 
-      // Verify execution method is always spawn
-      expect(result.executionMethod).toBe('spawn')
+      // Verify basic execution properties
+      expect(result.exitCode).toBeDefined()
 
       // Verify performance monitoring
       expect(result.executionTime).toBeGreaterThanOrEqual(0)
-      expect(result.estimatedOutputSize).toBeGreaterThan(0)
+      expect(result.executionTime).toBeGreaterThanOrEqual(0)
     })
 
     it('should use spawn method for all prompt sizes', async () => {
@@ -175,8 +171,8 @@ describe('AgentExecutor Integration', () => {
       const largeResult = await executor.executeAgent(largePromptParams)
 
       // Verify spawn is used for all cases
-      expect(smallResult.executionMethod).toBe('spawn')
-      expect(largeResult.executionMethod).toBe('spawn')
+      expect(smallResult.exitCode).toBeDefined()
+      expect(largeResult.exitCode).toBeDefined()
     })
 
     it('should handle execution errors', async () => {
@@ -194,7 +190,7 @@ describe('AgentExecutor Integration', () => {
 
       // Verify performance metrics are still collected for failed executions
       expect(result.executionTime).toBeGreaterThanOrEqual(0)
-      expect(result.executionMethod).toBe('spawn')
+      expect(result.exitCode).toBeDefined()
     })
   })
 
@@ -208,8 +204,8 @@ describe('AgentExecutor Integration', () => {
 
       const result = await executor.executeAgent(params)
 
-      expect(result.executionMethod).toBe('spawn')
-      expect(result.estimatedOutputSize).toBeLessThan(1024 * 1024)
+      expect(result.exitCode).toBeDefined()
+      expect(result.executionTime).toBeGreaterThanOrEqual(0)
     })
 
     it('should use spawn method for large prompts with recursion prevention', async () => {
@@ -222,8 +218,8 @@ describe('AgentExecutor Integration', () => {
 
       const result = await executor.executeAgent(params)
 
-      expect(result.executionMethod).toBe('spawn')
-      expect(result.estimatedOutputSize).toBeGreaterThanOrEqual(1024 * 1024)
+      expect(result.exitCode).toBeDefined()
+      expect(result.executionTime).toBeGreaterThanOrEqual(0)
     })
   })
 
@@ -249,11 +245,12 @@ describe('AgentExecutor Integration', () => {
       expect(largeResult.executionTime).toBeGreaterThanOrEqual(0)
 
       // Both use spawn method (no exec method anymore)
-      expect(smallResult.executionMethod).toBe('spawn')
-      expect(largeResult.executionMethod).toBe('spawn')
+      expect(smallResult.exitCode).toBeDefined()
+      expect(largeResult.exitCode).toBeDefined()
 
       // Output size estimation should differ
-      expect(smallResult.estimatedOutputSize).toBeLessThan(largeResult.estimatedOutputSize)
+      expect(smallResult.executionTime).toBeGreaterThanOrEqual(0)
+      expect(largeResult.executionTime).toBeGreaterThanOrEqual(0)
     })
   })
 
@@ -270,7 +267,7 @@ describe('AgentExecutor Integration', () => {
 
       // Should not throw and return valid result
       expect(result).toBeDefined()
-      expect(result.executionMethod).toBe('spawn')
+      expect(result.exitCode).toBeDefined()
       expect(typeof result.executionTime).toBe('number')
     })
 

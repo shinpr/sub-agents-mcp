@@ -20,9 +20,9 @@ describe('McpServer Integration', () => {
       serverName: 'test-mcp-server',
       serverVersion: '1.0.0',
       agentsDir: './test-agents',
-      maxOutputSize: 1024 * 1024,
-      enableCache: true,
       logLevel: 'info',
+      agentType: 'cursor',
+      executionTimeoutMs: 300000,
     }
   })
 

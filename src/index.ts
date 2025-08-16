@@ -18,7 +18,7 @@ import { McpServer } from 'src/server/McpServer'
 async function main(): Promise<void> {
   try {
     // Load configuration from environment
-    const config = await ServerConfig.fromEnvironment()
+    const config = new ServerConfig()
 
     // Create and start MCP server
     const server = new McpServer(config)

@@ -23,22 +23,10 @@ export interface ServerConfigInterface {
   agentsDir: string
 
   /**
-   * CLI command used to execute agents.
-   * Typically 'claude-code' but can be customized for different environments.
+   * Type of agent to use for execution.
+   * 'cursor' or 'claude'
    */
-  cliCommand: string
-
-  /**
-   * Maximum output size in bytes for agent execution.
-   * When exceeded, execution switches to spawn mode.
-   */
-  maxOutputSize: number
-
-  /**
-   * Whether to enable agent definition caching.
-   * Improves performance by caching parsed agent definitions.
-   */
-  enableCache: boolean
+  agentType: 'cursor' | 'claude'
 
   /**
    * Log level for server operations.
