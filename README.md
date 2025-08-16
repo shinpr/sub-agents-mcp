@@ -82,11 +82,16 @@ npx -y https://github.com/shinpr/sub-agents-mcp
 
 ## Configuration
 
+**⚠️ Important:** 
+- `AGENTS_DIR` must be specified as an **absolute path**
+- Relative paths are not supported by MCP configuration
+- Create your agents directory before configuring MCP
+
 ### Environment Variables
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `AGENTS_DIR` | Directory containing agent definition files | | `./agents` |
+| `AGENTS_DIR` | Absolute path to directory containing agent definition files | | `/Users/username/projects/my-app/agents` |
 | `AGENT_TYPE` | Type of agent to use (`cursor` or `claude`) | | `cursor` |
 | `CLI_API_KEY` | API key for cursor-agent (Anthropic or OpenAI API key) | ✓ (for cursor) | - |
 | `EXECUTION_TIMEOUT_MS` | Maximum execution time for agent operations in milliseconds (MCP->AI) | | 300000 (5 minutes) |
@@ -195,7 +200,7 @@ This MCP server acts as a bridge between IDEs and CLI tools:
 
 ### Cursor IDE
 
-Add to your project's `.cursor/mcp_config.json` (or appropriate MCP config file):
+Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project-specific):
 ```json
 {
   "mcpServers": {
@@ -203,7 +208,7 @@ Add to your project's `.cursor/mcp_config.json` (or appropriate MCP config file)
       "command": "npx",
       "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
       "env": {
-        "AGENTS_DIR": "./agents",
+        "AGENTS_DIR": "/Users/username/projects/my-app/agents",
         "AGENT_TYPE": "cursor",
         "CLI_API_KEY": "your-api-key"
       }
@@ -222,7 +227,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "command": "npx",
       "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
       "env": {
-        "AGENTS_DIR": "/path/to/agents",
+        "AGENTS_DIR": "/Users/username/projects/my-app/agents",
         "AGENT_TYPE": "claude"
       }
     }
@@ -243,7 +248,7 @@ You can use different agent directories by updating the `AGENTS_DIR` in your IDE
       "command": "npx",
       "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
       "env": {
-        "AGENTS_DIR": "./dev-agents",
+        "AGENTS_DIR": "/Users/username/projects/my-app/dev-agents",
         "AGENT_TYPE": "cursor",
         "CLI_API_KEY": "your-api-key"
       }
@@ -252,7 +257,7 @@ You can use different agent directories by updating the `AGENTS_DIR` in your IDE
       "command": "npx",
       "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
       "env": {
-        "AGENTS_DIR": "./prod-agents",
+        "AGENTS_DIR": "/Users/username/projects/my-app/prod-agents",
         "AGENT_TYPE": "cursor",
         "CLI_API_KEY": "your-api-key"
       }
