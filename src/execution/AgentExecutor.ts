@@ -236,7 +236,7 @@ export class AgentExecutor {
       // Spawn process
       const childProcess: ChildProcess = spawn(command, args, {
         cwd: params.cwd || process.cwd(),
-        stdio: ['pipe', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'], // stdin set to 'ignore' as cursor-agent receives prompt via args
         shell: false,
         env: process.env,
       })
@@ -247,7 +247,7 @@ export class AgentExecutor {
       let stderr = ''
       let stdoutBuffer = ''
 
-      childProcess.stdin?.end()
+      // No need to handle stdin as it's set to 'ignore'
       const executionTimeout = setTimeout(() => {
         this.logger.warn('Execution timeout reached', {
           timeout: this.config.executionTimeout,
