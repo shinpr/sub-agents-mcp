@@ -39,31 +39,45 @@ describe('ServerConfig', () => {
     expect(config.agentType).toBe('claude')
   })
 
-  it('should use default values when environment variables are not set', () => {
-    // Ensure environment variables are not set
-    vi.stubEnv('SERVER_NAME', undefined)
+  it('should throw error when AGENTS_DIR is not set', () => {
+    // Ensure AGENTS_DIR is not set
     vi.stubEnv('AGENTS_DIR', undefined)
+
+    expect(() => new ServerConfig()).toThrow('AGENTS_DIR environment variable is required')
+    expect(() => new ServerConfig()).toThrow('Please set it to an absolute path')
+  })
+
+  it('should use default values for other configs when only AGENTS_DIR is set', () => {
+    // Set only required AGENTS_DIR
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('SERVER_NAME', undefined)
     vi.stubEnv('AGENT_TYPE', undefined)
 
     const config = new ServerConfig()
 
     expect(config.serverName).toBe('sub-agents-mcp')
-    expect(config.agentsDir).toBe('./agents')
+    expect(config.agentsDir).toBe(testAgentsDir)
     expect(config.agentType).toBe('cursor')
     expect(config.executionTimeoutMs).toBe(300000)
   })
 
-  it('should handle empty environment variables gracefully', () => {
-    // Mock empty environment variables
-    vi.stubEnv('SERVER_NAME', '')
+  it('should throw error when AGENTS_DIR is empty string', () => {
+    // Mock empty AGENTS_DIR
     vi.stubEnv('AGENTS_DIR', '')
+
+    expect(() => new ServerConfig()).toThrow('AGENTS_DIR environment variable is required')
+  })
+
+  it('should handle empty optional environment variables gracefully', () => {
+    // Set required AGENTS_DIR, but empty optional configs
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('SERVER_NAME', '')
     vi.stubEnv('AGENT_TYPE', '')
 
     const config = new ServerConfig()
 
     // Should fall back to defaults when empty
     expect(config.serverName).toBe('sub-agents-mcp')
-    expect(config.agentsDir).toBe('./agents')
     expect(config.agentType).toBe('cursor')
   })
 

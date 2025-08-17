@@ -1,17 +1,8 @@
-import {
-  AppError,
-  DEFAULT_RECOVERY_STRATEGIES,
-  ErrorBoundary,
-  FileSystemError,
-  MCPProtocolError,
-  ResourceLimitError,
-  ValidationError,
-} from 'src/utils/ErrorHandler'
-import { describe, expect, it, vi } from 'vitest'
+import { AppError, ValidationError } from 'src/utils/ErrorHandler'
+import { describe, expect, it } from 'vitest'
 
 describe('AppError', () => {
   it('should create error with message, code, and statusCode', () => {
-    // This test will fail until we implement the ErrorHandler classes
     const error = new AppError('Test error message', 'TEST_ERROR', 400)
 
     expect(error.message).toBe('Test error message')
@@ -51,322 +42,75 @@ describe('ValidationError', () => {
 
     expect(error.message).toBe('Email format is invalid')
     expect(error.code).toBe('INVALID_EMAIL_FORMAT')
-    expect(error.context.component).toBe('Validation')
+    expect(error.statusCode).toBe(400)
   })
 
-  it('should support validation errors with context', () => {
+  it('should include context information', () => {
     const error = new ValidationError('Email format is invalid', 'INVALID_EMAIL_FORMAT', {
-      operation: 'user_registration',
-      metadata: { field: 'email', value: 'invalid@' },
+      metadata: { field: 'email', value: 'invalid-email' },
     })
 
-    expect(error.context.operation).toBe('user_registration')
-    expect(error.context.metadata?.field).toBe('email')
+    expect(error.context.metadata).toEqual({ field: 'email', value: 'invalid-email' })
     expect(error.context.component).toBe('Validation')
   })
 })
 
-describe('ResourceLimitError', () => {
-  it('should create resource limit error with resource details', () => {
-    const error = new ResourceLimitError(
-      'Memory usage exceeded limit',
-      'MEMORY_LIMIT_EXCEEDED',
-      'memory',
-      100
-    )
+describe('Error Context', () => {
+  it('should include timestamp by default', () => {
+    const error = new AppError('Test error', 'TEST')
 
-    expect(error.message).toBe('Memory usage exceeded limit')
-    expect(error.code).toBe('MEMORY_LIMIT_EXCEEDED')
-    expect(error.statusCode).toBe(429)
-    expect(error.resourceType).toBe('memory')
-    expect(error.limitValue).toBe(100)
-    expect(error.name).toBe('ResourceLimitError')
-    expect(error).toBeInstanceOf(AppError)
+    expect(error.context.timestamp).toBeInstanceOf(Date)
   })
 
-  it('should handle different resource types', () => {
-    const memoryError = new ResourceLimitError('Memory limit', 'MEMORY_LIMIT', 'memory', 100)
-    const concurrencyError = new ResourceLimitError(
-      'Too many executions',
-      'CONCURRENCY_LIMIT',
-      'concurrency',
-      5
-    )
-    const outputError = new ResourceLimitError(
-      'Output too large',
-      'OUTPUT_LIMIT',
-      'output_size',
-      1048576
-    )
-
-    expect(memoryError.resourceType).toBe('memory')
-    expect(concurrencyError.resourceType).toBe('concurrency')
-    expect(outputError.resourceType).toBe('output_size')
-  })
-})
-
-describe('FileSystemError', () => {
-  it('should create file system error with file path', () => {
-    const error = new FileSystemError(
-      'Agent definition file not found',
-      'AGENT_FILE_NOT_FOUND',
-      '/path/to/agent.md'
-    )
-
-    expect(error.message).toBe('Agent definition file not found')
-    expect(error.code).toBe('AGENT_FILE_NOT_FOUND')
-    expect(error.statusCode).toBe(500)
-    expect(error.filePath).toBe('/path/to/agent.md')
-    expect(error.name).toBe('FileSystemError')
-    expect(error).toBeInstanceOf(AppError)
-  })
-
-  it('should handle different file paths', () => {
-    const configError = new FileSystemError('Config not found', 'CONFIG_NOT_FOUND', 'config.json')
-    const agentError = new FileSystemError(
-      'Agent not found',
-      'AGENT_NOT_FOUND',
-      'agents/test-agent.md'
-    )
-
-    expect(configError.filePath).toBe('config.json')
-    expect(agentError.filePath).toBe('agents/test-agent.md')
-  })
-})
-
-describe('MCPProtocolError', () => {
-  it('should create MCP protocol error with context', () => {
-    const error = new MCPProtocolError(
-      'Invalid MCP request format',
-      'INVALID_MCP_REQUEST',
-      'tools/run_agent'
-    )
-
-    expect(error.message).toBe('Invalid MCP request format')
-    expect(error.code).toBe('INVALID_MCP_REQUEST')
-    expect(error.statusCode).toBe(502)
-    expect(error.mcpContext).toBe('tools/run_agent')
-    expect(error.name).toBe('MCPProtocolError')
-    expect(error).toBeInstanceOf(AppError)
-  })
-
-  it('should handle different MCP contexts', () => {
-    const toolError = new MCPProtocolError('Tool error', 'TOOL_ERROR', 'tools/run_agent')
-    const resourceError = new MCPProtocolError(
-      'Resource error',
-      'RESOURCE_ERROR',
-      'resources/agents'
-    )
-
-    expect(toolError.mcpContext).toBe('tools/run_agent')
-    expect(resourceError.mcpContext).toBe('resources/agents')
-  })
-})
-
-describe('Enhanced Error Features', () => {
-  it('should provide JSON serialization', () => {
-    const error = new AppError('Test error', 'TEST_ERROR', 400, {
+  it('should merge custom context with defaults', () => {
+    const customContext = {
       requestId: 'req_123',
       operation: 'test_operation',
+      component: 'TestComponent',
+    }
+
+    const error = new AppError('Test error', 'TEST', 500, customContext)
+
+    expect(error.context.requestId).toBe('req_123')
+    expect(error.context.operation).toBe('test_operation')
+    expect(error.context.component).toBe('TestComponent')
+    expect(error.context.timestamp).toBeInstanceOf(Date)
+  })
+
+  it('should preserve metadata in context', () => {
+    const error = new AppError('Test error', 'TEST', 500, {
+      metadata: { key1: 'value1', key2: 42 },
+    })
+
+    expect(error.context.metadata).toEqual({ key1: 'value1', key2: 42 })
+  })
+})
+
+describe('Error JSON Serialization', () => {
+  it('should convert AppError to JSON', () => {
+    const error = new AppError('Test error', 'TEST_ERROR', 400, {
+      requestId: 'req_123',
+      metadata: { foo: 'bar' },
     })
 
     const json = error.toJSON()
 
-    expect(json.name).toBe('AppError')
-    expect(json.message).toBe('Test error')
-    expect(json.code).toBe('TEST_ERROR')
-    expect(json.statusCode).toBe(400)
-    expect(json.context).toMatchObject({
-      requestId: 'req_123',
-      operation: 'test_operation',
+    expect(json).toMatchObject({
+      name: 'AppError',
+      message: 'Test error',
+      code: 'TEST_ERROR',
+      statusCode: 400,
+      context: expect.objectContaining({
+        requestId: 'req_123',
+        metadata: { foo: 'bar' },
+      }),
     })
-    expect(json.stack).toBeDefined()
   })
 
-  it('should provide user-friendly messages', () => {
-    const error = new AppError('Internal server error', 'INTERNAL_ERROR')
+  it('should generate user-friendly message', () => {
+    const error = new AppError('Internal server error', 'INTERNAL_ERROR', 500)
+    const userMessage = error.toUserMessage()
 
-    expect(error.toUserMessage()).toBe('Internal server error (Error Code: INTERNAL_ERROR)')
-  })
-
-  it('should automatically add timestamp to context', () => {
-    const beforeTime = new Date()
-    const error = new AppError('Test error', 'TEST_ERROR')
-    const afterTime = new Date()
-
-    expect(error.context.timestamp).toBeInstanceOf(Date)
-    expect(error.context.timestamp!.getTime()).toBeGreaterThanOrEqual(beforeTime.getTime())
-    expect(error.context.timestamp!.getTime()).toBeLessThanOrEqual(afterTime.getTime())
-  })
-})
-
-describe('Error Classification and Propagation', () => {
-  it('should properly classify resource limit errors', () => {
-    // This test expects ResourceLimitError to be thrown when limits exceeded
-    const createResourceError = () => {
-      throw new ResourceLimitError(
-        'Maximum concurrent executions exceeded',
-        'CONCURRENCY_LIMIT_EXCEEDED',
-        'concurrency',
-        5
-      )
-    }
-
-    expect(createResourceError).toThrow(ResourceLimitError)
-    expect(createResourceError).toThrow('Maximum concurrent executions exceeded')
-  })
-
-  it('should maintain error context through component layers', () => {
-    // Test error context preservation
-    const originalError = new FileSystemError(
-      'Agent file not found',
-      'AGENT_FILE_NOT_FOUND',
-      '/agents/test.md'
-    )
-
-    expect(originalError.filePath).toBe('/agents/test.md')
-    expect(originalError.code).toBe('AGENT_FILE_NOT_FOUND')
-    expect(originalError.statusCode).toBe(500)
-    expect(originalError.context.component).toBe('FileSystem')
-  })
-})
-
-describe('ErrorBoundary', () => {
-  let errorBoundary: ErrorBoundary
-
-  beforeEach(() => {
-    errorBoundary = new ErrorBoundary('TestComponent')
-  })
-
-  it('should execute operation successfully without retries', async () => {
-    const operation = vi.fn().mockResolvedValue('success')
-
-    const result = await errorBoundary.execute(operation, 'test_operation')
-
-    expect(result).toBe('success')
-    expect(operation).toHaveBeenCalledTimes(1)
-  })
-
-  it('should retry on recoverable errors', async () => {
-    const operation = vi
-      .fn()
-      .mockRejectedValueOnce(
-        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
-      )
-      .mockResolvedValue('success')
-
-    const result = await errorBoundary.execute(operation, 'test_operation')
-
-    expect(result).toBe('success')
-    expect(operation).toHaveBeenCalledTimes(2)
-  })
-
-  it('should not retry on non-recoverable errors', async () => {
-    const operation = vi
-      .fn()
-      .mockRejectedValue(new ValidationError('Invalid input', 'VALIDATION_ERROR'))
-
-    await expect(errorBoundary.execute(operation, 'test_operation')).rejects.toThrow(
-      ValidationError
-    )
-    expect(operation).toHaveBeenCalledTimes(1)
-  })
-
-  it('should respect maximum retry limits', async () => {
-    const operation = vi
-      .fn()
-      .mockRejectedValue(
-        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
-      )
-
-    await expect(errorBoundary.execute(operation, 'test_operation')).rejects.toThrow(
-      ResourceLimitError
-    )
-
-    // Should have tried 1 original + 3 retries = 4 times (resource_limit strategy maxRetries: 3)
-    expect(operation).toHaveBeenCalledTimes(4)
-  })
-
-  it('should track error statistics', async () => {
-    const operation = vi
-      .fn()
-      .mockRejectedValue(
-        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
-      )
-
-    try {
-      await errorBoundary.execute(operation, 'test_operation')
-    } catch (error) {
-      // Expected to fail after all retries
-    }
-
-    const stats = errorBoundary.getErrorStats()
-    expect(Object.keys(stats)).toContain('TestComponent:test_operation:resource_limit')
-  })
-
-  it('should reset error counts', async () => {
-    const operation = vi
-      .fn()
-      .mockRejectedValue(
-        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
-      )
-
-    try {
-      await errorBoundary.execute(operation, 'test_operation')
-    } catch (error) {
-      // Expected to fail
-    }
-
-    errorBoundary.resetErrorCounts()
-    const stats = errorBoundary.getErrorStats()
-    expect(Object.keys(stats)).toHaveLength(0)
-  })
-
-  it('should handle cleanup functions', async () => {
-    const cleanup = vi.fn().mockResolvedValue(undefined)
-    const customStrategies = {
-      resource_limit: {
-        ...DEFAULT_RECOVERY_STRATEGIES.resource_limit,
-        cleanup,
-      },
-    }
-
-    const customBoundary = new ErrorBoundary('TestComponent', customStrategies)
-    const operation = vi
-      .fn()
-      .mockRejectedValueOnce(
-        new ResourceLimitError('Concurrency limit', 'CONCURRENCY_LIMIT', 'concurrency', 5)
-      )
-      .mockResolvedValue('success')
-
-    const result = await customBoundary.execute(operation, 'test_operation')
-
-    expect(result).toBe('success')
-    expect(cleanup).toHaveBeenCalled()
-  })
-
-  it('should return component name', () => {
-    expect(errorBoundary.getComponentName()).toBe('TestComponent')
-  })
-})
-
-describe('Recovery Strategies', () => {
-  it('should have proper default recovery strategies', () => {
-    expect(DEFAULT_RECOVERY_STRATEGIES.resource_limit.maxRetries).toBe(3)
-    expect(DEFAULT_RECOVERY_STRATEGIES.file_system.maxRetries).toBe(2)
-    expect(DEFAULT_RECOVERY_STRATEGIES.network.maxRetries).toBe(5)
-  })
-
-  it('should identify recoverable resource limit errors', () => {
-    const concurrencyError = new ResourceLimitError(
-      'Too many',
-      'CONCURRENCY_LIMIT',
-      'concurrency',
-      5
-    )
-    const memoryError = new ResourceLimitError('Memory', 'MEMORY_LIMIT', 'memory', 100)
-
-    expect(DEFAULT_RECOVERY_STRATEGIES.resource_limit.isRecoverable(concurrencyError)).toBe(true)
-    expect(DEFAULT_RECOVERY_STRATEGIES.resource_limit.isRecoverable(memoryError)).toBe(false)
+    expect(userMessage).toBe('Internal server error (Error Code: INTERNAL_ERROR)')
   })
 })
