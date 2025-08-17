@@ -34,36 +34,3 @@ export interface AgentDefinition {
    */
   lastModified: Date
 }
-
-/**
- * Type guard to check if an unknown value is a valid AgentDefinition.
- *
- * @param value - Unknown value to check
- * @returns True if value is a valid AgentDefinition
- *
- * @example
- * ```typescript
- * if (isAgentDefinition(data)) {
- *   // data is now typed as AgentDefinition
- *   console.log(data.name)
- * }
- * ```
- */
-export function isAgentDefinition(value: unknown): value is AgentDefinition {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-
-  const obj = value as Record<string, unknown>
-
-  return (
-    typeof obj['name'] === 'string' &&
-    obj['name'].length > 0 &&
-    typeof obj['description'] === 'string' &&
-    obj['description'].length > 0 &&
-    typeof obj['content'] === 'string' &&
-    typeof obj['filePath'] === 'string' &&
-    obj['filePath'].length > 0 &&
-    obj['lastModified'] instanceof Date
-  )
-}

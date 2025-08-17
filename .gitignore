@@ -47,7 +47,7 @@ tmp/
 # Project specific excludes
 .claude/
 docs/
-scripts/
+scripts/*
 !scripts/quality-check.js
 !scripts/cleanup-test-processes.sh
 !scripts/show-coverage.js

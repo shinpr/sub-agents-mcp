@@ -47,7 +47,7 @@ This is required periodically as Cursor CLI sessions expire and need to be renew
 
 #### Install Claude Code
 
-**Option 1: NPM Install (requires Node.js 18+)**
+**Option 1: NPM Install (requires Node.js 20+)**
 ```bash
 npm install -g @anthropic-ai/claude-code
 ```
@@ -83,15 +83,16 @@ npx -y https://github.com/shinpr/sub-agents-mcp
 ## Configuration
 
 **⚠️ Important:** 
-- `AGENTS_DIR` must be specified as an **absolute path**
+- `AGENTS_DIR` is **REQUIRED** and must be an **absolute path**
 - Relative paths are not supported by MCP configuration
+- The server will not start without a valid `AGENTS_DIR` configuration
 - Create your agents directory before configuring MCP
 
 ### Environment Variables
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `AGENTS_DIR` | Absolute path to directory containing agent definition files | | `/Users/username/projects/my-app/agents` |
+| `AGENTS_DIR` | Absolute path to directory containing agent definition files | ✓ | - |
 | `AGENT_TYPE` | Type of agent to use (`cursor` or `claude`) | | `cursor` |
 | `CLI_API_KEY` | API key for cursor-agent (Anthropic or OpenAI API key) | ✓ (for cursor) | - |
 | `EXECUTION_TIMEOUT_MS` | Maximum execution time for agent operations in milliseconds (MCP->AI) | | 300000 (5 minutes) |
@@ -270,9 +271,9 @@ You can use different agent directories by updating the `AGENTS_DIR` in your IDE
 
 #### Stream Processing
 The server uses a unified `StreamProcessor` class to handle output from both Cursor and Claude agents:
-- **Cursor**: Streams multiple JSON objects, ends with `{"type": "result", ...}`
-- **Claude**: Returns a single JSON response when using `--output-format json`
-- Both formats are processed to extract the final result JSON
+- Both agents use `--output-format json` and return a single JSON response
+- The StreamProcessor captures the first valid JSON from the output stream
+- Simplified processing ensures consistent handling across both agent types
 
 #### Agent Management
 - Agents are loaded dynamically from the configured `AGENTS_DIR`
@@ -280,8 +281,8 @@ The server uses a unified `StreamProcessor` class to handle output from both Cur
 - Agent content is passed as system context to the CLI tool
 
 #### Error Handling
-- Comprehensive error recovery with retry logic for transient failures
 - Graceful timeout handling with proper process cleanup
+- Structured error types for different failure scenarios
 - Detailed logging at multiple levels (debug, info, warn, error)
 
 ## Building from Source
