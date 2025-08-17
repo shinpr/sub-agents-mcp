@@ -4,39 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock child_process module for integration testing
 vi.mock('node:child_process', () => ({
-  exec: vi.fn(),
   spawn: vi.fn(),
 }))
 
 // Import the mocked module to get references
-import { exec as mockExec, spawn as mockSpawn } from 'node:child_process'
-
-// Mock promisify
-vi.mock('node:util', () => ({
-  promisify: vi.fn((fn) => {
-    return (command: string, options: any) => {
-      // Simulate different behaviors based on command content
-      if (command.includes('integration-test-agent:') || command.includes('test-agent:')) {
-        return Promise.resolve({
-          stdout: `Integration test executed: ${command}`,
-          stderr: '',
-        })
-      }
-      if (command.includes('nonexistent-agent:')) {
-        return Promise.reject({
-          message: 'Command failed',
-          stdout: '',
-          stderr: 'Agent not found',
-          code: 1,
-        })
-      }
-      return Promise.resolve({
-        stdout: 'Default integration output',
-        stderr: '',
-      })
-    }
-  }),
-}))
+import { spawn as mockSpawn } from 'node:child_process'
 
 describe('AgentExecutor Integration', () => {
   let executor: AgentExecutor

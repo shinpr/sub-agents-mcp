@@ -8,49 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock child_process module
 vi.mock('node:child_process', () => ({
-  exec: vi.fn(),
   spawn: vi.fn(),
 }))
 
 // Import the mocked module to get references
-import { exec as mockExec, spawn as mockSpawn } from 'node:child_process'
-
-// Mock promisify
-vi.mock('node:util', () => ({
-  promisify: vi.fn((fn) => {
-    // Return a promisified version of exec
-    return (command: string, options: any) => {
-      // Simulate different behaviors based on command content
-      if (command.includes('test-agent:')) {
-        return Promise.resolve({
-          stdout: `Executed: ${command}`,
-          stderr: '',
-        })
-      }
-      if (command.includes('nonexistent-agent:') || command.includes('bad-agent:')) {
-        return Promise.reject({
-          message: 'Command failed',
-          stdout: '',
-          stderr: 'Agent not found',
-          code: 1,
-        })
-      }
-      if (command.includes('slow-agent:')) {
-        const error = new Error('Execution timeout exceeded')
-        Object.assign(error, {
-          code: 'ETIMEOUT',
-          stdout: '',
-          stderr: 'Execution timeout exceeded',
-        })
-        return Promise.reject(error)
-      }
-      return Promise.resolve({
-        stdout: 'Default output',
-        stderr: '',
-      })
-    }
-  }),
-}))
+import { spawn as mockSpawn } from 'node:child_process'
 
 describe('AgentExecutor', () => {
   let executor: AgentExecutor

@@ -94,7 +94,7 @@ npx -y https://github.com/shinpr/sub-agents-mcp
 |----------|-------------|----------|---------|
 | `AGENTS_DIR` | Absolute path to directory containing agent definition files | ✓ | - |
 | `AGENT_TYPE` | Type of agent to use (`cursor` or `claude`) | | `cursor` |
-| `CLI_API_KEY` | API key for cursor-agent (Anthropic or OpenAI API key) | ✓ (for cursor) | - |
+| `CLI_API_KEY` | Cursor API key for cursor-agent authentication. Optional if cursor-agent is logged in via `cursor-agent login`. May affect session behavior when provided. | | - |
 | `EXECUTION_TIMEOUT_MS` | Maximum execution time for agent operations in milliseconds (MCP->AI) | | 300000 (5 minutes) |
 
 **Note:** For complex agents that require longer processing times (e.g., document reviewers, code analyzers), you can increase the timeout by setting `EXECUTION_TIMEOUT_MS` to a higher value, up to 600000 (10 minutes).
@@ -181,7 +181,7 @@ Executes another agent with specified parameters.
    - For `cursor`: Ensure `cursor-agent` CLI is installed
    - For `claude`: Ensure Claude Code CLI is installed
 3. Check environment variables are properly set
-4. For cursor agent type, ensure `CLI_API_KEY` is set with valid API key
+4. For cursor agent type, ensure either cursor-agent is logged in (`cursor-agent login`) or `CLI_API_KEY` is set with valid API key
 
 ## How It Works
 
@@ -211,7 +211,7 @@ Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project-specific):
       "env": {
         "AGENTS_DIR": "/Users/username/projects/my-app/agents",
         "AGENT_TYPE": "cursor",
-        "CLI_API_KEY": "your-api-key"
+        "CLI_API_KEY": "your-api-key"  // Optional: remove if using cursor-agent login
       }
     }
   }
@@ -251,7 +251,7 @@ You can use different agent directories by updating the `AGENTS_DIR` in your IDE
       "env": {
         "AGENTS_DIR": "/Users/username/projects/my-app/dev-agents",
         "AGENT_TYPE": "cursor",
-        "CLI_API_KEY": "your-api-key"
+        "CLI_API_KEY": "your-api-key"  // Optional: remove if using cursor-agent login
       }
     },
     "sub-agents-prod": {
@@ -260,7 +260,7 @@ You can use different agent directories by updating the `AGENTS_DIR` in your IDE
       "env": {
         "AGENTS_DIR": "/Users/username/projects/my-app/prod-agents",
         "AGENT_TYPE": "cursor",
-        "CLI_API_KEY": "your-api-key"
+        "CLI_API_KEY": "your-api-key"  // Optional: remove if using cursor-agent login
       }
     }
   }

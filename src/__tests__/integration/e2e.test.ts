@@ -10,7 +10,15 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { ServerConfig } from 'src/config/ServerConfig'
 import { McpServer } from 'src/server/McpServer'
-import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+
+// Mock child_process module for E2E testing
+vi.mock('node:child_process', () => ({
+  spawn: vi.fn(),
+}))
+
+// Import the mocked module to get references
+import { spawn as mockSpawn } from 'node:child_process'
 
 describe('E2E Integration Tests', () => {
   let server: McpServer
@@ -18,6 +26,45 @@ describe('E2E Integration Tests', () => {
   let testAgentsDir: string
 
   beforeAll(async () => {
+    // Setup child_process mock before creating server
+    vi.clearAllMocks()
+
+    // Setup spawn mock for E2E testing
+    mockSpawn.mockImplementation((cmd: string, args: string[], options: any) => {
+      const prompt = args.includes('-p') ? args[args.indexOf('-p') + 1] : ''
+      const isTestAgent = prompt.includes('test-agent') || args.includes('test-agent')
+      const isPerformanceAgent =
+        prompt.includes('performance-agent') || args.includes('performance-agent')
+
+      return {
+        stdin: { end: vi.fn() },
+        stdout: {
+          on: vi.fn((event, callback) => {
+            if (event === 'data') {
+              setTimeout(() => {
+                if (isTestAgent) {
+                  callback(Buffer.from('{"type": "result", "data": "E2E test successful"}\n'))
+                } else if (isPerformanceAgent) {
+                  callback(Buffer.from('{"type": "result", "data": "Performance test complete"}\n'))
+                } else {
+                  callback(
+                    Buffer.from('{"type": "result", "data": "Agent executed successfully"}\n')
+                  )
+                }
+              }, 10)
+            }
+          }),
+        },
+        stderr: { on: vi.fn() },
+        on: vi.fn((event, callback) => {
+          if (event === 'close') {
+            setTimeout(() => callback(0), 50)
+          }
+        }),
+        kill: vi.fn(),
+      } as any
+    })
+
     // Setup temporary agents directory for testing
     testAgentsDir = path.join(tmpdir(), 'mcp-e2e-test-agents')
     await fs.mkdir(testAgentsDir, { recursive: true })

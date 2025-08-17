@@ -16,7 +16,6 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 
 // Mock child_process for performance tests
 vi.mock('node:child_process', () => ({
-  exec: vi.fn(),
   spawn: vi.fn(() => {
     // Mock spawn to return a mock ChildProcess
     const mockChildProcess = {
@@ -111,35 +110,6 @@ describe('Execution Performance Tests', () => {
   beforeAll(async () => {
     // Clear previous mocks first
     vi.clearAllMocks()
-
-    // Setup mock for child_process exec
-    const { exec } = await import('node:child_process')
-    const mockedExec = vi.mocked(exec)
-
-    // Mock successful execution with different outputs based on agent
-    mockedExec.mockImplementation((command, options, callback) => {
-      const cb = typeof options === 'function' ? options : callback
-      if (cb) {
-        setTimeout(() => {
-          // Generate different outputs based on the command content
-          let output = 'Quick execution\n'
-
-          if (command.includes('large-output-agent')) {
-            // Generate large output for large output tests
-            output = `${Array.from(
-              { length: 100 },
-              (_, i) =>
-                `Line ${i + 1}: This is a test line with substantial content to generate large output`
-            ).join('\n')}\n`
-          } else if (command.includes('medium-agent')) {
-            output = 'Medium execution\n'
-          }
-
-          cb(null, output, '')
-        }, 10) // Simulate fast execution
-      }
-      return {} as any
-    })
 
     // Setup mock for child_process spawn (used by AgentExecutor)
     const { spawn } = await import('node:child_process')
@@ -308,7 +278,7 @@ describe('Execution Performance Tests', () => {
     expect(totalExecutionTime).toBeLessThan(5000)
   })
 
-  test('large output handling performance (exec vs spawn switching)', async () => {
+  test('large output handling performance', async () => {
     const startTime = Date.now()
 
     // Execute agent that produces large output
