@@ -1,0 +1,64 @@
+# Source files
+src/
+__tests__/
+
+# Development files
+.vitest-cache/
+coverage/
+*.log
+*.tgz
+
+# Configuration files
+tsconfig.json
+tsconfig.build.json
+biome.json
+vitest.config.ts
+.husky/
+
+# Documentation
+docs/
+*.md
+!README.md
+!LICENSE
+
+# Scripts
+scripts/
+
+# Git
+.git/
+.gitignore
+
+# CI/CD
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Test files
+test/
+tests/
+*.test.*
+*.spec.*
+**/__tests__/
+
+# Build artifacts (except dist)
+graph.svg
+
+# Development dependencies config
+lint-staged.config.js
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# CLAUDE development files
+CLAUDE.md

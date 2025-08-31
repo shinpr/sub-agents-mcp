@@ -4,7 +4,11 @@
   "description": "MCP server for invoking specific CLI LLM agents",
   "main": "dist/index.js",
   "files": [
-    "dist/**/*",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.map",
+    "!dist/**/__tests__",
+    "!dist/**/*.test.*",
     "README.md",
     "LICENSE"
   ],

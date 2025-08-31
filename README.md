@@ -8,6 +8,14 @@ Let your AI assistant (Cursor, Claude) use specialized sub-agents for specific t
 - Cursor CLI or Claude Code installed
 - Basic terminal/command line knowledge
 
+## Installation
+
+```bash
+npx -y sub-agents-mcp
+```
+
+This command will install and run the MCP server. No manual building or cloning required!
+
 ## Quick Start (3 minutes)
 
 ### Step 1: Create Your First Agent
@@ -55,7 +63,7 @@ curl -fsSL claude.ai/install.sh | bash
   "mcpServers": {
     "sub-agents": {
       "command": "npx",
-      "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
+      "args": ["-y", "sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/path/to/your/agents-folder",  // ← Must be absolute path!
         "AGENT_TYPE": "cursor"  // or "claude"
@@ -220,7 +228,7 @@ Your AI assistant can invoke specialized agents through MCP:
   "mcpServers": {
     "sub-agents": {
       "command": "npx",
-      "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
+      "args": ["-y", "sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/absolute/path/to/agents",
         "AGENT_TYPE": "cursor",
@@ -237,7 +245,7 @@ Your AI assistant can invoke specialized agents through MCP:
   "mcpServers": {
     "sub-agents": {
       "command": "npx",
-      "args": ["-y", "https://github.com/shinpr/sub-agents-mcp"],
+      "args": ["-y", "sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/absolute/path/to/agents",
         "AGENT_TYPE": "claude",
