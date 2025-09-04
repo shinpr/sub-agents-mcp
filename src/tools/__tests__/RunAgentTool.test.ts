@@ -55,8 +55,10 @@ describe('RunAgentTool', () => {
     })
 
     it('should provide descriptive tool description', () => {
-      expect(runAgentTool.description).toContain('Execute a Claude Code sub-agent')
-      expect(runAgentTool.description).toContain('specified parameters')
+      expect(runAgentTool.description).toContain(
+        'Delegate complex, multi-step, or specialized tasks'
+      )
+      expect(runAgentTool.description).toContain('autonomous agent')
     })
 
     it('should provide correct input schema', () => {
