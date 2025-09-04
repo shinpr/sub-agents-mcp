@@ -75,7 +75,8 @@ interface RunAgentParams {
  */
 export class RunAgentTool {
   public readonly name = 'run_agent'
-  public readonly description = 'Execute a Claude Code sub-agent with specified parameters'
+  public readonly description =
+    'Delegate complex, multi-step, or specialized tasks to an autonomous agent for independent execution with dedicated context (e.g., refactoring across multiple files, fixing all test failures, systematic codebase analysis, batch operations)'
   private logger: Logger
   private executionStats: Map<string, { count: number; totalTime: number; lastUsed: Date }> =
     new Map()
@@ -85,20 +86,20 @@ export class RunAgentTool {
     properties: {
       agent: {
         type: 'string',
-        description: 'Name of the agent to execute',
+        description: 'Identifier of the specialized agent to delegate the task to',
       },
       prompt: {
         type: 'string',
-        description: 'Prompt to send to the agent',
+        description: 'Task description or instructions for the agent to execute',
       },
       cwd: {
         type: 'string',
-        description: 'Working directory for agent execution',
+        description: 'Working directory path for agent execution context (optional)',
       },
       extra_args: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Additional command line arguments',
+        description: 'Additional configuration parameters for agent execution (optional)',
       },
     },
     required: ['agent', 'prompt'],
