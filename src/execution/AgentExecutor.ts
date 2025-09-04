@@ -280,6 +280,11 @@ export class AgentExecutor {
           const isComplete = streamProcessor.processLine(line)
 
           if (isComplete) {
+            // Ensure stdout contains the complete JSON result
+            const completeResult = streamProcessor.getResult()
+            if (completeResult) {
+              stdout = JSON.stringify(completeResult)
+            }
             // Processing complete, kill the process
             childProcess.kill('SIGTERM')
             break

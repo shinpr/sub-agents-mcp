@@ -2,6 +2,14 @@
 
 Let your AI assistant (Cursor, Claude) use specialized sub-agents for specific tasks. For example, create a "test-writer" agent that writes tests, or a "code-reviewer" agent that reviews your code.
 
+## Why sub-agents-mcp?
+
+While Claude Code has excellent built-in sub-agent functionality, it's exclusive to Claude Code. This MCP server brings that same powerful sub-agent pattern to **ANY LLM tool that supports MCP** - including Cursor, Windsurf, and others.
+
+**TL;DR**: Experience Claude Code's sub-agent workflow everywhere.
+
+→ [Read the full story](https://dev.to/shinpr/bringing-claude-codes-sub-agents-to-any-mcp-compatible-tool-1hb9)
+
 ## Prerequisites
 
 - Node.js 20 or higher

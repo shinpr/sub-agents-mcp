@@ -46,7 +46,9 @@ describe('McpServer Integration', () => {
 
       const runAgentTool = tools.find((tool) => tool.name === 'run_agent')
       expect(runAgentTool).toBeDefined()
-      expect(runAgentTool?.description).toContain('Execute a Claude Code sub-agent')
+      expect(runAgentTool?.description).toContain(
+        'Delegate complex, multi-step, or specialized tasks'
+      )
     })
 
     it('should have correct run_agent tool schema', async () => {
