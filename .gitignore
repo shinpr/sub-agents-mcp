@@ -52,3 +52,6 @@ scripts/*
 !scripts/cleanup-test-processes.sh
 !scripts/show-coverage.js
 CLAUDE.md
+
+# MCP Registry publisher files
+.mcpregistry_*

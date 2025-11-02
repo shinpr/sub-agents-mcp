@@ -1,0 +1,74 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.shinpr/sub-agents-mcp",
+  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor and other tools",
+  "vendor": "Shinsuke Kagawa",
+  "license": "MIT",
+  "repository": {
+    "url": "https://github.com/shinpr/sub-agents-mcp",
+    "source": "github"
+  },
+  "version": "0.1.4",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "sub-agents-mcp",
+      "version": "0.1.4",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "AGENTS_DIR",
+          "description": "Absolute path to the directory containing agent definition files (.md or .txt)",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "AGENT_TYPE",
+          "description": "Type of AI CLI to use: 'cursor' or 'claude'",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "EXECUTION_TIMEOUT_MS",
+          "description": "Maximum execution time for agents in milliseconds (default: 300000, max: 600000)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ],
+      "features": {
+        "tools": {
+          "supported": true,
+          "list": [
+            "run_agent"
+          ]
+        },
+        "prompts": {
+          "supported": false
+        },
+        "resources": {
+          "supported": true
+        }
+      }
+    }
+  ],
+  "tags": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "sub-agents",
+    "ai-agents",
+    "claude-code",
+    "cursor",
+    "llm",
+    "cli",
+    "agent-orchestration"
+  ],
+  "homepage": "https://github.com/shinpr/sub-agents-mcp",
+  "documentation": "https://github.com/shinpr/sub-agents-mcp#readme"
+}
