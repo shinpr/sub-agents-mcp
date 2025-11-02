@@ -62,3 +62,7 @@ lint-staged.config.js
 
 # CLAUDE development files
 CLAUDE.md
+
+# MCP Registry tokens
+.mcpregistry_*
+server.json
