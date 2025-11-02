@@ -60,12 +60,14 @@
   "tags": [
     "mcp",
     "mcp-server",
+    "model-context-protocol",
+    "sub-agents",
+    "ai-agents",
+    "claude-code",
+    "cursor",
     "llm",
     "cli",
-    "agents",
-    "cursor",
-    "claude",
-    "sub-agents"
+    "agent-orchestration"
   ],
   "homepage": "https://github.com/shinpr/sub-agents-mcp",
   "documentation": "https://github.com/shinpr/sub-agents-mcp#readme"
