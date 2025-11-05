@@ -1,34 +1,46 @@
 # Sub-Agents MCP Server
 
-Let your AI assistant (Cursor, Claude) use specialized sub-agents for specific tasks. For example, create a "test-writer" agent that writes tests, or a "code-reviewer" agent that reviews your code.
+[![npm version](https://img.shields.io/npm/v/sub-agents-mcp.svg)](https://www.npmjs.com/package/sub-agents-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Why sub-agents-mcp?
+Bring Claude Code–style sub-agents to any MCP-compatible tool.
 
-While Claude Code has excellent built-in sub-agent functionality, it's exclusive to Claude Code. This MCP server brings that same powerful sub-agent pattern to **ANY LLM tool that supports MCP** - including Cursor, Windsurf, and others.
+This MCP server lets you define task-specific AI agents (like "test-writer" or "code-reviewer") in markdown files, and execute them via Cursor CLI or Claude Code CLI backends.
 
-**TL;DR**: Experience Claude Code's sub-agent workflow everywhere.
+## Why?
+
+Claude Code offers powerful sub-agent workflows—but they're limited to its own environment. This MCP server makes that workflow portable, so any MCP-compatible tool (Cursor, Claude Desktop, Windsurf, etc.) can use the same agents.
+
+**Concrete benefits:**
+- Define reusable agents once, use them across multiple tools
+- Share agent definitions within teams regardless of IDE choice
+- Leverage Cursor CLI or Claude Code CLI capabilities from any MCP client
 
 → [Read the full story](https://dev.to/shinpr/bringing-claude-codes-sub-agents-to-any-mcp-compatible-tool-1hb9)
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Usage Examples](#usage-examples)
+- [Agent Examples](#agent-examples)
+- [Configuration Reference](#configuration-reference)
+- [Troubleshooting](#troubleshooting)
+- [How It Works](#how-it-works)
 
 ## Prerequisites
 
 - Node.js 20 or higher
-- Cursor CLI or Claude Code installed
-- Basic terminal/command line knowledge
+- One of these execution engines (they actually run the sub-agents):
+  - `cursor-agent` CLI (from Cursor)
+  - `claude` CLI (from Claude Code)
+- An MCP-compatible tool (Cursor IDE, Claude Desktop, Windsurf, etc.)
 
-## Installation
+## Quick Start
 
-```bash
-npx -y sub-agents-mcp
-```
+### 1. Create Your First Agent
 
-This command will install and run the MCP server. No manual building or cloning required!
-
-## Quick Start (3 minutes)
-
-### Step 1: Create Your First Agent
-
-Create a folder for your agents and add a file `code-reviewer.md`:
+Create a folder for your agents and add `code-reviewer.md`:
 
 ```markdown
 # Code Reviewer
@@ -40,19 +52,20 @@ Focus on:
 - Checking code quality
 ```
 
-### Step 2: Setup Your AI Tool
+### 2. Install Your Execution Engine
 
-**For Cursor Users:**
+Pick one based on which tool you use:
+
+**For Cursor users:**
 ```bash
-# Install Cursor CLI
+# Install Cursor CLI (includes cursor-agent)
 curl https://cursor.com/install -fsS | bash
 
-# Login (Required!)
+# Authenticate (required before first use)
 cursor-agent login
 ```
 
-**For Claude Code Users:**
-
+**For Claude Code users:**
 ```bash
 # Option 1: NPM (requires Node.js 20+)
 npm install -g @anthropic-ai/claude-code
@@ -61,10 +74,14 @@ npm install -g @anthropic-ai/claude-code
 curl -fsSL claude.ai/install.sh | bash
 ```
 
-### Step 3: Configure MCP
+Note: Claude Code installs the `claude` CLI command.
 
-**For Cursor:** Edit `~/.cursor/mcp.json`
-**For Claude:** Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
+### 3. Configure MCP
+
+Add this to your MCP configuration file:
+
+**Cursor:** `~/.cursor/mcp.json`
+**Claude Desktop:** `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
 ```json
 {
@@ -73,7 +90,7 @@ curl -fsSL claude.ai/install.sh | bash
       "command": "npx",
       "args": ["-y", "sub-agents-mcp"],
       "env": {
-        "AGENTS_DIR": "/path/to/your/agents-folder",  // ← Must be absolute path!
+        "AGENTS_DIR": "/absolute/path/to/your/agents-folder",
         "AGENT_TYPE": "cursor"  // or "claude"
       }
     }
@@ -81,59 +98,60 @@ curl -fsSL claude.ai/install.sh | bash
 }
 ```
 
-**Path examples:**
-- ✅ Good: `/Users/john/Documents/my-agents` (Mac/Linux)
-- ✅ Good: `C:\\Users\\john\\Documents\\my-agents` (Windows)
-- ❌ Bad: `./agents` or `~/agents` (relative paths don't work)
+**Important:** Use absolute paths only.
+- ✅ `/Users/john/Documents/my-agents` (Mac/Linux)
+- ✅ `C:\\Users\\john\\Documents\\my-agents` (Windows)
+- ❌ `./agents` or `~/agents` won't work
 
-**That's it!** Restart your IDE and start using agents.
+Restart your IDE and you're ready to go.
 
-## How to Use
+## Usage Examples
 
-Once configured, just tell your AI assistant to use your agents:
+Just tell your AI to use an agent:
 
-### Examples
-
-**Using a code reviewer:**
 ```
 "Use the code-reviewer agent to check my UserService class"
 ```
 
-**Using a test writer:**
 ```
 "Use the test-writer agent to create unit tests for the auth module"
 ```
 
-**Using a documentation writer:**
 ```
 "Use the doc-writer agent to add JSDoc comments to all public methods"
 ```
 
-Your AI will automatically invoke the specialized agent and return the results!
+Your AI automatically invokes the specialized agent and returns results.
 
-## Common Agent Examples
+## Agent Examples
 
-Here are some agents you might want to create:
+Each `.md` or `.txt` file in your agents folder becomes an agent. The filename becomes the agent name (e.g., `test-writer.md` → "test-writer").
 
-**`test-writer.md`** - Writes comprehensive unit tests
+### Test Writer
+
+**`test-writer.md`**
 ```markdown
 # Test Writer
-You are specialized in writing unit tests.
-- Write tests that cover edge cases
-- Follow the project's testing patterns
+You specialize in writing comprehensive unit tests.
+- Cover edge cases
+- Follow project testing patterns
 - Ensure good coverage
 ```
 
-**`sql-expert.md`** - Helps with database queries
+### SQL Expert
+
+**`sql-expert.md`**
 ```markdown
 # SQL Expert
-You are a database specialist.
-- Optimize queries for performance
+You're a database specialist who helps with queries.
+- Optimize for performance
 - Suggest proper indexes
 - Help with complex JOINs
 ```
 
-**`security-checker.md`** - Reviews code for security issues
+### Security Checker
+
+**`security-checker.md`**
 ```markdown
 # Security Checker
 You focus on finding security vulnerabilities.
@@ -142,95 +160,24 @@ You focus on finding security vulnerabilities.
 - Find potential data leaks
 ```
 
-## Configuration
+## Configuration Reference
 
-### Required Settings
+### Required Environment Variables
 
-**`AGENTS_DIR`** - Path to your agents folder
-- ⚠️ Must be an **absolute path**
-  - Mac/Linux: `/Users/john/my-agents`
-  - Windows: `C:\\Users\\john\\my-agents`
-- Create this folder before configuring MCP
+**`AGENTS_DIR`**
+Path to your agents folder. Must be absolute.
 
-**`AGENT_TYPE`** - Which AI tool you're using
-- Set to `"cursor"` for Cursor
-- Set to `"claude"` for Claude Code
+**`AGENT_TYPE`**
+Which execution engine to use:
+- `"cursor"` - uses `cursor-agent` CLI
+- `"claude"` - uses `claude` CLI
 
 ### Optional Settings
 
-**`EXECUTION_TIMEOUT_MS`** - How long agents can run (default: 5 minutes)
-- Increase for complex tasks like document review
-- Maximum: 10 minutes (600000ms)
+**`EXECUTION_TIMEOUT_MS`**
+How long agents can run before timing out (default: 5 minutes, max: 10 minutes)
 
-### Creating Agents
-
-Each `.md` or `.txt` file in your agents folder becomes an available agent.
-
-**File naming tips:**
-- Filename = agent name (e.g., `test-writer.md` → use as "test-writer")
-- Use hyphens or underscores, no spaces
-
-**Agent file structure:**
-```markdown
-# Agent Name
-Describe what this agent specializes in.
-List its key capabilities.
-```
-
-### Security Note
-
-Agents have access to your project directory. Only use agent definitions from trusted sources.
-
-## Troubleshooting
-
-### Cursor CLI Not Working
-
-**Symptoms:** Timeout errors, authentication failures, or "session expired" messages
-
-**Solutions:**
-
-1. **Authenticate with cursor-agent login**
-   ```bash
-   cursor-agent login
-   ```
-   This is the standard authentication method. Run this command before using the MCP server.
-
-2. **Check if cursor-agent is installed**
-   ```bash
-   which cursor-agent
-   ```
-   If not found, reinstall Cursor CLI.
-
-3. **Verify session status**
-   If you're still having issues, your session may have expired. Simply run `cursor-agent login` again.
-
-### Agent Not Found
-
-1. Verify `AGENTS_DIR` points to the correct directory
-2. Check file has `.md` or `.txt` extension
-3. Ensure filename contains only allowed characters
-
-### Other Execution Errors
-
-1. Verify `AGENT_TYPE` is set correctly (`cursor` or `claude`)
-2. Ensure the CLI tool is installed and accessible:
-   - For `cursor`: Ensure `cursor-agent` CLI is installed and authenticated
-   - For `claude`: Ensure Claude Code CLI is installed
-3. Check environment variables are properly set
-
-
-## How It Works
-
-Your AI assistant can invoke specialized agents through MCP:
-1. You ask your AI to use an agent (e.g., "Use the test-writer agent")
-2. The MCP server runs the specialized agent with your request
-3. Results come back to your main AI assistant
-
-## Additional Configuration Examples
-
-### Full Configuration Reference
-
-**For Cursor:** `~/.cursor/mcp.json`
+Example with timeout:
 ```json
 {
   "mcpServers": {
@@ -240,29 +187,59 @@ Your AI assistant can invoke specialized agents through MCP:
       "env": {
         "AGENTS_DIR": "/absolute/path/to/agents",
         "AGENT_TYPE": "cursor",
-        "EXECUTION_TIMEOUT_MS": "300000"  // Optional: 5 minutes default
+        "EXECUTION_TIMEOUT_MS": "600000"
       }
     }
   }
 }
 ```
 
-**For Claude:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-```json
-{
-  "mcpServers": {
-    "sub-agents": {
-      "command": "npx",
-      "args": ["-y", "sub-agents-mcp"],
-      "env": {
-        "AGENTS_DIR": "/absolute/path/to/agents",
-        "AGENT_TYPE": "claude",
-        "EXECUTION_TIMEOUT_MS": "300000"  // Optional
-      }
-    }
-  }
-}
+### Security Note
+
+Agents have access to your project directory. Only use agent definitions from trusted sources.
+
+## Troubleshooting
+
+### Timeout errors or authentication failures
+
+**If using Cursor CLI:**
+Run `cursor-agent login` to authenticate. Sessions can expire, so just run this command again if you see auth errors.
+
+Verify installation:
+```bash
+which cursor-agent
 ```
+
+**If using Claude Code:**
+Make sure the CLI is properly installed and accessible.
+
+### Agent not found
+
+Check that:
+- `AGENTS_DIR` points to the correct directory (use absolute path)
+- Your agent file has `.md` or `.txt` extension
+- The filename uses hyphens or underscores (no spaces)
+
+### Other execution errors
+
+1. Verify `AGENT_TYPE` is set correctly (`cursor` or `claude`)
+2. Ensure your chosen CLI tool is installed and accessible
+3. Double-check that all environment variables are set in the MCP config
+
+## How It Works
+
+This MCP server acts as a bridge between your AI tool and a supported execution engine (Cursor CLI or Claude Code CLI).
+
+**The flow:**
+
+1. You configure the MCP server in your client (Cursor, Claude Desktop, etc.)
+2. The client automatically launches `sub-agents-mcp` as a background process when it starts
+3. When your main AI assistant needs a sub-agent, it makes an MCP tool call
+4. The MCP server reads the agent definition (markdown file) and invokes the selected CLI (`cursor-agent` or `claude`)
+5. The execution engine runs the agent and streams results back through the MCP server
+6. Your main assistant receives the results and continues working
+
+This architecture lets any MCP-compatible tool benefit from specialized sub-agents, even if it doesn't have native support.
 
 ## License
 
@@ -270,4 +247,4 @@ MIT
 
 ---
 
-*Enable AI-to-AI collaboration through Model Context Protocol*
+*AI-to-AI collaboration through Model Context Protocol*
