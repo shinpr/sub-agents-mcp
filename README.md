@@ -67,11 +67,11 @@ cursor-agent login
 
 **For Claude Code users:**
 ```bash
-# Option 1: NPM (requires Node.js 20+)
-npm install -g @anthropic-ai/claude-code
+# Option 1: Native install (recommended)
+curl -fsSL https://claude.ai/install.sh | bash
 
-# Option 2: Native install
-curl -fsSL claude.ai/install.sh | bash
+# Option 2: NPM (requires Node.js 18+)
+npm install -g @anthropic-ai/claude-code
 ```
 
 Note: Claude Code installs the `claude` CLI command.
