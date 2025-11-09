@@ -105,6 +105,45 @@ Add this to your MCP configuration file:
 
 Restart your IDE and you're ready to go.
 
+### 4. Fix "Permission Denied" Errors When Running Shell Commands
+
+Sub-agents may fail to execute shell commands with permission errors. This happens because sub-agents can't respond to interactive permission prompts.
+
+**Recommended approach:**
+
+1. Run your CLI tool directly with the task you want sub-agents to handle:
+   ```bash
+   # For Cursor users
+   cursor-agent
+
+   # For Claude Code users
+   claude
+   ```
+
+2. When prompted to allow commands (e.g., "Add Shell(cd), Shell(make) to allowlist?"), approve them
+
+3. This automatically updates your configuration file, and those commands will now work when invoked via MCP sub-agents
+
+**Manual configuration (alternative):**
+
+If you prefer to configure permissions manually, edit:
+- **Cursor**: `<project>/.cursor/cli.json` or `~/.cursor/cli-config.json`
+- **Claude Code**: `.claude/settings.json` or `.claude/settings.local.json`
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Shell(cd)",
+      "Shell(make)",
+      "Shell(git)"
+    ]
+  }
+}
+```
+
+Note: Agents often run commands as one-liners like `cd /path && make build`, so you need to allow all parts of the command.
+
 ## Usage Examples
 
 Just tell your AI to use an agent:
