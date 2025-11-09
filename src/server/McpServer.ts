@@ -147,7 +147,7 @@ export class McpServer {
         service: 'mcp-server',
         ...metadata,
       }
-      console.log(JSON.stringify(logEntry))
+      console.error(JSON.stringify(logEntry))
     }
   }
 
