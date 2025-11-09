@@ -6,7 +6,7 @@ describe('Logger', () => {
   let consoleSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
-    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     logger = new Logger('info')
   })
 
@@ -19,7 +19,7 @@ describe('Logger', () => {
     it('should filter logs based on constructor level', () => {
       // Arrange
       const warnLogger = new Logger('warn')
-      const warnSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       // Act
       warnLogger.debug('Debug message')
@@ -38,7 +38,7 @@ describe('Logger', () => {
     it('should log all levels when created with debug level', () => {
       // Arrange
       const debugLogger = new Logger('debug')
-      const debugSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const debugSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       // Act
       debugLogger.debug('Debug message')
@@ -59,7 +59,7 @@ describe('Logger', () => {
     it('should only log errors when created with error level', () => {
       // Arrange
       const errorLogger = new Logger('error')
-      const errorSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       // Act
       errorLogger.debug('Debug message')
@@ -178,7 +178,7 @@ describe('Logger', () => {
     it('should provide debug logging method', () => {
       // Arrange
       const debugLogger = new Logger('debug')
-      const debugSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const debugSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       // Act
       debugLogger.debug('Debug information', { component: 'test' })
@@ -217,7 +217,7 @@ describe('Logger', () => {
     it('should use default info level when no level provided', () => {
       // Arrange
       const defaultLogger = new Logger()
-      const infoSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const infoSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       // Act - info should log, debug should not
       defaultLogger.debug('Debug msg')
@@ -234,7 +234,7 @@ describe('Logger', () => {
       // Arrange
       const debugLogger = new Logger('debug')
       const errorLogger = new Logger('error')
-      const debugSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const debugSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       // Act
       debugLogger.debug('Debug from debug logger')

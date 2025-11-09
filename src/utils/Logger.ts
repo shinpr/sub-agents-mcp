@@ -139,9 +139,9 @@ export class Logger {
     const formattedMessage = `[${timestamp}] ${level.toUpperCase()}: ${message}`
 
     if (context && Object.keys(context).length > 0) {
-      console.log(formattedMessage, context)
+      console.error(formattedMessage, context)
     } else {
-      console.log(formattedMessage)
+      console.error(formattedMessage)
     }
 
     // Optional file output in JSON format

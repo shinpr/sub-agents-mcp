@@ -59,7 +59,8 @@ describe('Startup Performance Tests', () => {
           reject(new Error('Startup timeout exceeded 5 seconds'))
         }, 5000)
 
-        serverProcess.stdout?.on('data', (data) => {
+        // MCP server logs to stderr (MCP protocol compliance)
+        serverProcess.stderr?.on('data', (data) => {
           const output = data.toString()
           if (
             output.includes('MCP server started') ||
@@ -72,12 +73,12 @@ describe('Startup Performance Tests', () => {
           }
         })
 
-        serverProcess.stderr?.on('data', (data) => {
-          // Capture stderr for debugging failed tests
-          const stderrOutput = data.toString()
-          if (stderrOutput.includes('error') || stderrOutput.includes('Error')) {
-            clearTimeout(timeout)
-            reject(new Error(`Server startup error: ${stderrOutput}`))
+        serverProcess.stdout?.on('data', (data) => {
+          // stdout should only contain JSON-RPC messages in MCP protocol
+          // Log for debugging if anything unexpected appears
+          const stdoutData = data.toString()
+          if (stdoutData.trim()) {
+            console.warn('Unexpected stdout output:', stdoutData)
           }
         })
 
@@ -148,7 +149,8 @@ describe('Startup Performance Tests', () => {
             reject(new Error('Stress test startup timeout exceeded 5 seconds'))
           }, 5000)
 
-          serverProcess.stdout?.on('data', (data) => {
+          // MCP server logs to stderr (MCP protocol compliance)
+          serverProcess.stderr?.on('data', (data) => {
             const output = data.toString()
             if (
               output.includes('MCP server started') ||
@@ -161,12 +163,12 @@ describe('Startup Performance Tests', () => {
             }
           })
 
-          serverProcess.stderr?.on('data', (data) => {
-            // Capture stderr for debugging
-            const stderrOutput = data.toString()
-            if (stderrOutput.includes('error') || stderrOutput.includes('Error')) {
-              clearTimeout(timeout)
-              reject(new Error(`Stress test error: ${stderrOutput}`))
+          serverProcess.stdout?.on('data', (data) => {
+            // stdout should only contain JSON-RPC messages in MCP protocol
+            // Log for debugging if anything unexpected appears
+            const stdoutData = data.toString()
+            if (stdoutData.trim()) {
+              console.warn('Unexpected stdout output:', stdoutData)
             }
           })
 
