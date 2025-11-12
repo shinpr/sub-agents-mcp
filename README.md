@@ -26,6 +26,7 @@ Claude Code offers powerful sub-agent workflows—but they're limited to its own
 - [Agent Examples](#agent-examples)
 - [Configuration Reference](#configuration-reference)
 - [Troubleshooting](#troubleshooting)
+- [Design Philosophy](#design-philosophy)
 - [How It Works](#how-it-works)
 
 ## Prerequisites
@@ -264,6 +265,29 @@ Check that:
 1. Verify `AGENT_TYPE` is set correctly (`cursor` or `claude`)
 2. Ensure your chosen CLI tool is installed and accessible
 3. Double-check that all environment variables are set in the MCP config
+
+## Design Philosophy
+
+### Why Independent Contexts Matter
+
+Every sub-agent starts with a fresh context. This adds some startup overhead for each call, but it ensures that every task runs independently and without leftover state from previous runs.
+
+**Context Isolation**
+- Each agent only receives the information relevant to its task
+- No context leakage between runs
+- The main agent stays focused and lightweight
+
+**Accuracy and Reliability**
+- Sub-agents can specialize in a single goal without interference
+- Less risk of confusion from unrelated context
+- More consistent results in complex, multi-step workflows
+
+**Scalability**
+- Large tasks can be safely split into smaller sub-tasks
+- Each sub-agent operates within its own token limit
+- The main agent coordinates without hitting global context limits
+
+The startup overhead is an intentional trade-off: the system favors clarity and accuracy over raw execution speed.
 
 ## How It Works
 
