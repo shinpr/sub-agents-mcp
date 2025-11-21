@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
+import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
-import type { SessionConfig } from '../types/SessionData'
+import type { SessionConfig, SessionData, SessionEntry } from '../types/SessionData'
 
 /**
  * Session manager for handling session data persistence.
@@ -109,5 +110,166 @@ export class SessionManager {
     }
 
     return filePath
+  }
+
+  /**
+   * Saves session data to a JSON file.
+   *
+   * If a session file already exists, the new request-response pair is appended
+   * to the existing history. Otherwise, a new session file is created.
+   *
+   * Error handling follows the error isolation principle:
+   * - Errors are logged but not thrown
+   * - The main execution flow continues even if session save fails
+   *
+   * Security features:
+   * - Session ID validation prevents directory traversal
+   * - File permissions are set to 0o600 (owner read/write only)
+   * - All file paths are verified to stay within session directory
+   *
+   * @param sessionId - The session identifier (alphanumeric, hyphens, underscores only)
+   * @param request - The request object containing agent, prompt, and optional parameters
+   * @param response - The response object containing stdout, stderr, exitCode, and executionTime
+   *
+   * @example
+   * await sessionManager.saveSession(
+   *   'session-001',
+   *   { agent: 'rule-advisor', prompt: 'Analyze code' },
+   *   { stdout: 'Analysis complete', stderr: '', exitCode: 0, executionTime: 100 }
+   * )
+   */
+  public async saveSession(
+    sessionId: string,
+    request: SessionEntry['request'],
+    response: SessionEntry['response']
+  ): Promise<void> {
+    try {
+      // Validate session ID to prevent directory traversal
+      this.validateSessionId(sessionId)
+
+      // Create session entry with current timestamp
+      const sessionEntry: SessionEntry = {
+        timestamp: new Date(),
+        request,
+        response,
+      }
+
+      // Build or update session data
+      const sessionData = await this.buildSessionData(sessionId, request.agent, sessionEntry)
+
+      // Build file path with current timestamp
+      const timestamp = Date.now()
+      const filePath = this.buildFilePath(sessionId, request.agent, timestamp)
+
+      // Serialize to JSON with pretty printing
+      const jsonContent = JSON.stringify(sessionData, null, 2)
+
+      // Write to file with restrictive permissions
+      await fs.writeFile(filePath, jsonContent, { mode: 0o600 })
+    } catch (error) {
+      // Log error but do not throw - error isolation principle
+      this.logSaveError(sessionId, request.agent, error)
+    }
+  }
+
+  /**
+   * Builds session data by either creating a new session or appending to an existing one.
+   *
+   * @param sessionId - The session identifier
+   * @param agentType - The agent type
+   * @param sessionEntry - The new session entry to add
+   * @returns Complete session data ready to be saved
+   */
+  private async buildSessionData(
+    sessionId: string,
+    agentType: string,
+    sessionEntry: SessionEntry
+  ): Promise<SessionData> {
+    const existingSession = await this.loadExistingSession(sessionId, agentType)
+
+    if (existingSession) {
+      // Append to existing session history
+      return {
+        ...existingSession,
+        history: [...existingSession.history, sessionEntry],
+        lastUpdatedAt: new Date(),
+      }
+    }
+
+    // Create new session with initial entry
+    return {
+      sessionId,
+      agentType,
+      history: [sessionEntry],
+      createdAt: new Date(),
+      lastUpdatedAt: new Date(),
+    }
+  }
+
+  /**
+   * Logs structured error information when session save fails.
+   *
+   * @param sessionId - The session identifier
+   * @param agentType - The agent type
+   * @param error - The error that occurred
+   */
+  private logSaveError(sessionId: string, agentType: string, error: unknown): void {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error('Failed to save session:', {
+      sessionId,
+      agentType,
+      error: errorMessage,
+    })
+  }
+
+  /**
+   * Loads an existing session file if it exists.
+   *
+   * Searches for the most recent session file matching the session ID and agent type.
+   *
+   * @param sessionId - The session identifier
+   * @param agentType - The agent type
+   * @returns The session data if found, null otherwise
+   */
+  private async loadExistingSession(
+    sessionId: string,
+    agentType: string
+  ): Promise<SessionData | null> {
+    try {
+      // List files in session directory
+      const files = await fs.readdir(this.config.sessionDir)
+
+      // Filter files matching the session ID and agent type
+      const sessionFiles = files
+        .filter((file) => file.startsWith(`${sessionId}_${agentType}_`))
+        .sort()
+        .reverse() // Most recent first
+
+      if (sessionFiles.length === 0) {
+        return null
+      }
+
+      // Read the most recent file
+      const latestFile = sessionFiles[0]
+      if (!latestFile) {
+        return null
+      }
+      const filePath = path.join(this.config.sessionDir, latestFile)
+      const fileContent = await fs.readFile(filePath, 'utf-8')
+      const sessionData = JSON.parse(fileContent) as SessionData
+
+      // Convert date strings back to Date objects
+      return {
+        ...sessionData,
+        createdAt: new Date(sessionData.createdAt),
+        lastUpdatedAt: new Date(sessionData.lastUpdatedAt),
+        history: sessionData.history.map((entry) => ({
+          ...entry,
+          timestamp: new Date(entry.timestamp),
+        })),
+      }
+    } catch {
+      return null
+    }
   }
 }
