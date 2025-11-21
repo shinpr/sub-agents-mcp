@@ -734,4 +734,178 @@ describe('RunAgentTool', () => {
       })
     })
   })
+
+  describe('session ID auto-generation', () => {
+    it('should auto-generate session_id when not provided and SessionManager is available', async () => {
+      const mockSessionManager = {
+        loadSession: vi.fn().mockResolvedValue(null),
+        saveSession: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const toolWithSession = new RunAgentTool(
+        mockAgentExecutor,
+        mockAgentManager,
+        mockSessionManager as any
+      )
+
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        // No session_id provided
+      }
+
+      const mockResult = {
+        stdout: 'Success',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+      }
+
+      // Mock agent existence
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'test content',
+      } as any)
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await toolWithSession.execute(params)
+
+      // Should have _meta.session_id in response
+      expect(result).toHaveProperty('_meta')
+      expect(result._meta).toHaveProperty('session_id')
+      expect(typeof result._meta?.session_id).toBe('string')
+      expect(result._meta?.session_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      )
+
+      // Should have saved session with auto-generated ID
+      expect(mockSessionManager.saveSession).toHaveBeenCalledWith(
+        expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+        expect.anything(),
+        expect.anything()
+      )
+    })
+
+    it('should use provided session_id instead of auto-generating', async () => {
+      const mockSessionManager = {
+        loadSession: vi.fn().mockResolvedValue(null),
+        saveSession: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const toolWithSession = new RunAgentTool(
+        mockAgentExecutor,
+        mockAgentManager,
+        mockSessionManager as any
+      )
+
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: 'my-custom-session',
+      }
+
+      const mockResult = {
+        stdout: 'Success',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+      }
+
+      // Mock agent existence
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'test content',
+      } as any)
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await toolWithSession.execute(params)
+
+      // Should return the provided session_id
+      expect(result._meta?.session_id).toBe('my-custom-session')
+
+      // Should have saved with provided session_id
+      expect(mockSessionManager.saveSession).toHaveBeenCalledWith(
+        'my-custom-session',
+        expect.anything(),
+        expect.anything()
+      )
+    })
+
+    it('should not auto-generate session_id when SessionManager is not available', async () => {
+      const toolWithoutSession = new RunAgentTool(mockAgentExecutor, mockAgentManager, undefined)
+
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        // No session_id provided
+      }
+
+      const mockResult = {
+        stdout: 'Success',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+      }
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await toolWithoutSession.execute(params)
+
+      // Should not have _meta.session_id when SessionManager is not available
+      expect(result._meta).toBeUndefined()
+    })
+
+    it('should include session_id in both _meta and structuredContent', async () => {
+      const mockSessionManager = {
+        loadSession: vi.fn().mockResolvedValue(null),
+        saveSession: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const toolWithSession = new RunAgentTool(
+        mockAgentExecutor,
+        mockAgentManager,
+        mockSessionManager as any
+      )
+
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: 'test-session-123',
+      }
+
+      const mockResult = {
+        stdout: 'Success',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+      }
+
+      // Mock agent existence
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'test content',
+      } as any)
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await toolWithSession.execute(params)
+
+      // Both locations should have session_id
+      expect(result._meta?.session_id).toBe('test-session-123')
+      expect(result.structuredContent).toHaveProperty('sessionId', 'test-session-123')
+    })
+  })
 })

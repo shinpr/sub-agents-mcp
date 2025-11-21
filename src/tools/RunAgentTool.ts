@@ -6,6 +6,7 @@
  * for complete agent execution workflow.
  */
 
+import { randomUUID } from 'node:crypto'
 import type { AgentManager } from 'src/agents/AgentManager'
 import type { AgentExecutionResult, AgentExecutor } from 'src/execution/AgentExecutor'
 import type { SessionManager } from 'src/session/SessionManager'
@@ -17,6 +18,7 @@ import { type LogLevel, Logger } from 'src/utils/Logger'
  * MCP tool content type for text responses
  */
 interface McpTextContent {
+  [x: string]: unknown
   type: 'text'
   text: string
 }
@@ -25,9 +27,13 @@ interface McpTextContent {
  * MCP tool response format
  */
 interface McpToolResponse {
+  [x: string]: unknown
   content: McpTextContent[]
   isError?: boolean
   structuredContent?: unknown
+  _meta?: {
+    session_id: string
+  }
 }
 
 /**
@@ -89,7 +95,7 @@ interface RunAgentParams {
 export class RunAgentTool {
   public readonly name = 'run_agent'
   public readonly description =
-    'Delegate complex, multi-step, or specialized tasks to an autonomous agent for independent execution with dedicated context (e.g., refactoring across multiple files, fixing all test failures, systematic codebase analysis, batch operations)'
+    'Delegate complex, multi-step, or specialized tasks to an autonomous agent for independent execution with dedicated context (e.g., refactoring across multiple files, fixing all test failures, systematic codebase analysis, batch operations). Returns session_id in response metadata - reuse it in subsequent calls to maintain conversation context continuity across multiple agent executions.'
   private logger: Logger
   private executionStats: Map<string, { count: number; totalTime: number; lastUsed: Date }> =
     new Map()
@@ -118,7 +124,7 @@ export class RunAgentTool {
       session_id: {
         type: 'string',
         description:
-          'Session ID for continuing previous conversation context (optional). Enables agents to access previous request/response history.',
+          'Session ID for continuing previous conversation context (optional). If omitted, a new session will be auto-generated and returned in response metadata. Reuse the returned session_id in subsequent calls to maintain context continuity.',
       },
     },
     required: ['agent', 'prompt'],
@@ -154,13 +160,18 @@ export class RunAgentTool {
       // Validate parameters with enhanced validation
       const validatedParams = this.validateParams(params)
 
+      // Auto-generate session_id if not provided and SessionManager is available
+      const sessionId =
+        validatedParams.session_id || (this.sessionManager ? randomUUID() : undefined)
+
       this.logger.debug('Parameters validated successfully', {
         requestId,
         agent: validatedParams.agent,
         promptLength: validatedParams.prompt.length,
         cwd: validatedParams.cwd,
         extraArgsCount: validatedParams.extra_args?.length || 0,
-        sessionId: validatedParams.session_id,
+        sessionId: sessionId,
+        sessionIdGenerated: !validatedParams.session_id && !!sessionId,
       })
 
       // Check if agent exists
@@ -201,9 +212,9 @@ export class RunAgentTool {
 
         // Load session history if session_id is provided and SessionManager is available
         let promptWithHistory = validatedParams.prompt
-        if (validatedParams.session_id && this.sessionManager) {
+        if (sessionId && this.sessionManager) {
           try {
-            const sessionData = await this.sessionManager.loadSession(validatedParams.session_id)
+            const sessionData = await this.sessionManager.loadSession(sessionId)
             if (sessionData && sessionData.history.length > 0) {
               // Convert session history to TOON format for token efficiency
               const toonHistory = ToonConverter.convertToToon(sessionData)
@@ -211,20 +222,20 @@ export class RunAgentTool {
 
               this.logger.info('Session history loaded and merged', {
                 requestId,
-                sessionId: validatedParams.session_id,
+                sessionId: sessionId,
                 historyEntries: sessionData.history.length,
               })
             } else {
               this.logger.debug('No session history found', {
                 requestId,
-                sessionId: validatedParams.session_id,
+                sessionId: sessionId,
               })
             }
           } catch (error) {
             // Log error but continue - session loading failure should not break main flow
             this.logger.warn('Failed to load session history', {
               requestId,
-              sessionId: validatedParams.session_id,
+              sessionId: sessionId,
               error: error instanceof Error ? error.message : String(error),
             })
           }
@@ -257,8 +268,8 @@ export class RunAgentTool {
           totalTime: Date.now() - startTime,
         })
 
-        // Save session if session_id is provided and SessionManager is available
-        if (validatedParams.session_id && this.sessionManager) {
+        // Save session if session_id is available and SessionManager is available
+        if (sessionId && this.sessionManager) {
           try {
             // Build request object with only defined properties
             const sessionRequest: {
@@ -278,7 +289,7 @@ export class RunAgentTool {
               sessionRequest.extra_args = validatedParams.extra_args
             }
 
-            await this.sessionManager.saveSession(validatedParams.session_id, sessionRequest, {
+            await this.sessionManager.saveSession(sessionId, sessionRequest, {
               stdout: result.stdout,
               stderr: result.stderr,
               exitCode: result.exitCode,
@@ -287,13 +298,13 @@ export class RunAgentTool {
 
             this.logger.info('Session saved successfully', {
               requestId,
-              sessionId: validatedParams.session_id,
+              sessionId: sessionId,
             })
           } catch (error) {
             // Log error but continue - session save failure should not break main flow
             this.logger.warn('Failed to save session', {
               requestId,
-              sessionId: validatedParams.session_id,
+              sessionId: sessionId,
               error: error instanceof Error ? error.message : String(error),
             })
           }
@@ -301,12 +312,7 @@ export class RunAgentTool {
 
         // Mark MCP request as completed
 
-        return this.formatExecutionResponse(
-          result,
-          validatedParams.agent,
-          requestId,
-          validatedParams.session_id
-        )
+        return this.formatExecutionResponse(result, validatedParams.agent, requestId, sessionId)
       }
 
       // Fallback response if executor is not available
@@ -512,7 +518,7 @@ export class RunAgentTool {
       structuredContent['averageTime'] = Math.round(stats.totalTime / stats.count)
     }
 
-    return {
+    const response: McpToolResponse = {
       content: [
         {
           type: 'text',
@@ -522,6 +528,15 @@ export class RunAgentTool {
       isError: isError,
       structuredContent,
     }
+
+    // Add session_id to response metadata if available
+    if (sessionId) {
+      response._meta = {
+        session_id: sessionId,
+      }
+    }
+
+    return response
   }
 
   /**
