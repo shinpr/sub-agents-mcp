@@ -383,4 +383,118 @@ describe('SessionManager', () => {
       expect(loadedSession?.history.length).toBeGreaterThanOrEqual(2)
     })
   })
+
+  describe('cleanupOldSessions', () => {
+    it('should delete files older than retention days', async () => {
+      const manager = new SessionManager(sessionConfig)
+
+      // Create test files with different ages
+      const oldFileName = `old-session_rule-advisor_${Date.now()}.json`
+      const oldFilePath = path.join(testSessionDir, oldFileName)
+      await fs.writeFile(oldFilePath, JSON.stringify({ test: 'data' }), 'utf-8')
+
+      // Set file modification time to 8 days ago (older than retention period)
+      const eightDaysAgo = new Date()
+      eightDaysAgo.setDate(eightDaysAgo.getDate() - 8)
+      await fs.utimes(oldFilePath, eightDaysAgo, eightDaysAgo)
+
+      // Create a recent file (within retention period)
+      const recentFileName = `recent-session_rule-advisor_${Date.now()}.json`
+      const recentFilePath = path.join(testSessionDir, recentFileName)
+      await fs.writeFile(recentFilePath, JSON.stringify({ test: 'data' }), 'utf-8')
+
+      // Execute cleanup
+      await manager.cleanupOldSessions()
+
+      // Verify old file was deleted
+      const files = await fs.readdir(testSessionDir)
+      expect(files).not.toContain(oldFileName)
+      expect(files).toContain(recentFileName)
+    })
+
+    it('should not delete files within retention period', async () => {
+      const manager = new SessionManager(sessionConfig)
+
+      // Create a file that's 3 days old (within 7-day retention)
+      const fileName = `test-session_rule-advisor_${Date.now()}.json`
+      const filePath = path.join(testSessionDir, fileName)
+      await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
+
+      // Set file modification time to 3 days ago
+      const threeDaysAgo = new Date()
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+      await fs.utimes(filePath, threeDaysAgo, threeDaysAgo)
+
+      // Execute cleanup
+      await manager.cleanupOldSessions()
+
+      // Verify file still exists
+      const files = await fs.readdir(testSessionDir)
+      expect(files).toContain(fileName)
+    })
+
+    it('should not throw error when cleanup fails', async () => {
+      const manager = new SessionManager(sessionConfig)
+
+      // Create a file
+      const fileName = `test-session_rule-advisor_${Date.now()}.json`
+      const filePath = path.join(testSessionDir, fileName)
+      await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
+
+      // Set to old date
+      const eightDaysAgo = new Date()
+      eightDaysAgo.setDate(eightDaysAgo.getDate() - 8)
+      await fs.utimes(filePath, eightDaysAgo, eightDaysAgo)
+
+      // Make file read-only to simulate delete failure
+      await fs.chmod(filePath, 0o444)
+
+      // Spy on console.error to verify error logging
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      // Should not throw error even if deletion fails
+      await expect(manager.cleanupOldSessions()).resolves.toBeUndefined()
+
+      consoleErrorSpy.mockRestore()
+
+      // Try to restore permissions for cleanup (may fail if file was deleted)
+      try {
+        await fs.chmod(filePath, 0o644)
+      } catch {
+        // Ignore if file was already deleted
+      }
+    })
+
+    it('should log deleted file count', async () => {
+      const manager = new SessionManager(sessionConfig)
+
+      // Create two old files
+      const oldFile1 = `old-session-1_rule-advisor_${Date.now()}.json`
+      const oldFile2 = `old-session-2_rule-advisor_${Date.now() + 1}.json`
+      const oldFilePath1 = path.join(testSessionDir, oldFile1)
+      const oldFilePath2 = path.join(testSessionDir, oldFile2)
+      await fs.writeFile(oldFilePath1, JSON.stringify({ test: 'data' }), 'utf-8')
+      await fs.writeFile(oldFilePath2, JSON.stringify({ test: 'data' }), 'utf-8')
+
+      // Set both files to 8 days ago
+      const eightDaysAgo = new Date()
+      eightDaysAgo.setDate(eightDaysAgo.getDate() - 8)
+      await fs.utimes(oldFilePath1, eightDaysAgo, eightDaysAgo)
+      await fs.utimes(oldFilePath2, eightDaysAgo, eightDaysAgo)
+
+      // Spy on console.log
+      const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      // Execute cleanup
+      await manager.cleanupOldSessions()
+
+      // Verify log was called with deletion count
+      expect(consoleLogSpy).toHaveBeenCalled()
+      const logCalls = consoleLogSpy.mock.calls
+      const hasCleanupLog = logCalls.some((call) => JSON.stringify(call).includes('Cleaned up'))
+      expect(hasCleanupLog).toBe(true)
+
+      consoleLogSpy.mockRestore()
+    })
+  })
 })

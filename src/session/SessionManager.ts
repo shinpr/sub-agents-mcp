@@ -352,4 +352,87 @@ export class SessionManager {
       error: errorMessage,
     })
   }
+
+  /**
+   * Cleans up old session files based on retention period.
+   *
+   * Deletes session files older than the configured retention period (default 7 days).
+   * This is a best-effort operation - errors during deletion are logged but not thrown.
+   *
+   * Error handling follows the error isolation principle:
+   * - Individual file deletion failures do not stop the cleanup process
+   * - All errors are logged for debugging purposes
+   * - The method completes successfully even if some files cannot be deleted
+   *
+   * @example
+   * // Cleanup old sessions (runs silently, logs errors only)
+   * await sessionManager.cleanupOldSessions()
+   */
+  public async cleanupOldSessions(): Promise<void> {
+    try {
+      // List all files in the session directory
+      const files = await fs.readdir(this.config.sessionDir)
+
+      // Calculate cutoff time based on retention period
+      const retentionMs = this.config.retentionDays * 24 * 60 * 60 * 1000
+      const cutoffTime = Date.now() - retentionMs
+
+      let deletedCount = 0
+      const deletedFiles: string[] = []
+
+      // Process each file
+      for (const file of files) {
+        // Skip non-JSON files
+        if (!file.endsWith('.json')) {
+          continue
+        }
+
+        const filePath = path.join(this.config.sessionDir, file)
+
+        try {
+          // Get file stats to check modification time
+          const stats = await fs.stat(filePath)
+
+          // Check if file is older than retention period
+          if (stats.mtimeMs < cutoffTime) {
+            try {
+              // Delete the old file
+              await fs.unlink(filePath)
+              deletedCount++
+              deletedFiles.push(file)
+            } catch (deleteError) {
+              // Log individual file deletion error but continue
+              const errorMessage =
+                deleteError instanceof Error ? deleteError.message : String(deleteError)
+              console.error(`Failed to delete old session file: ${file}`, {
+                file,
+                error: errorMessage,
+              })
+            }
+          }
+        } catch (statError) {
+          // Log stat error but continue with next file
+          const errorMessage = statError instanceof Error ? statError.message : String(statError)
+          console.error(`Failed to stat session file: ${file}`, {
+            file,
+            error: errorMessage,
+          })
+        }
+      }
+
+      // Log cleanup summary
+      if (deletedCount > 0) {
+        console.log('Cleaned up old session files:', {
+          deletedCount,
+          deletedFiles,
+        })
+      }
+    } catch (error) {
+      // Log error but do not throw - error isolation principle
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('Failed to cleanup old sessions:', {
+        error: errorMessage,
+      })
+    }
+  }
 }
