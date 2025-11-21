@@ -8,6 +8,8 @@
 
 import type { AgentManager } from 'src/agents/AgentManager'
 import type { AgentExecutionResult, AgentExecutor } from 'src/execution/AgentExecutor'
+import type { SessionManager } from 'src/session/SessionManager'
+import { ToonConverter } from 'src/session/ToonConverter'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
 import { type LogLevel, Logger } from 'src/utils/Logger'
 
@@ -124,7 +126,8 @@ export class RunAgentTool {
 
   constructor(
     private agentExecutor?: AgentExecutor,
-    private agentManager?: AgentManager
+    private agentManager?: AgentManager,
+    private sessionManager?: SessionManager
   ) {
     // Use LOG_LEVEL environment variable if available
     const logLevel = (process.env['LOG_LEVEL'] as LogLevel) || 'info'
@@ -196,9 +199,40 @@ export class RunAgentTool {
           }
         }
 
+        // Load session history if session_id is provided and SessionManager is available
+        let promptWithHistory = validatedParams.prompt
+        if (validatedParams.session_id && this.sessionManager) {
+          try {
+            const sessionData = await this.sessionManager.loadSession(validatedParams.session_id)
+            if (sessionData && sessionData.history.length > 0) {
+              // Convert session history to TOON format for token efficiency
+              const toonHistory = ToonConverter.convertToToon(sessionData)
+              promptWithHistory = `Previous conversation history:\n\n${toonHistory}\n\n---\n\nCurrent request:\n${validatedParams.prompt}`
+
+              this.logger.info('Session history loaded and merged', {
+                requestId,
+                sessionId: validatedParams.session_id,
+                historyEntries: sessionData.history.length,
+              })
+            } else {
+              this.logger.debug('No session history found', {
+                requestId,
+                sessionId: validatedParams.session_id,
+              })
+            }
+          } catch (error) {
+            // Log error but continue - session loading failure should not break main flow
+            this.logger.warn('Failed to load session history', {
+              requestId,
+              sessionId: validatedParams.session_id,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }
+
         const executionParams: ExecutionParams = {
           agent: agentContext,
-          prompt: validatedParams.prompt,
+          prompt: promptWithHistory,
           ...(validatedParams.cwd !== undefined && { cwd: validatedParams.cwd }),
           ...(validatedParams.extra_args !== undefined && {
             extra_args: validatedParams.extra_args,
@@ -223,9 +257,56 @@ export class RunAgentTool {
           totalTime: Date.now() - startTime,
         })
 
+        // Save session if session_id is provided and SessionManager is available
+        if (validatedParams.session_id && this.sessionManager) {
+          try {
+            // Build request object with only defined properties
+            const sessionRequest: {
+              agent: string
+              prompt: string
+              cwd?: string
+              extra_args?: string[]
+            } = {
+              agent: validatedParams.agent,
+              prompt: validatedParams.prompt,
+            }
+
+            if (validatedParams.cwd !== undefined) {
+              sessionRequest.cwd = validatedParams.cwd
+            }
+            if (validatedParams.extra_args !== undefined) {
+              sessionRequest.extra_args = validatedParams.extra_args
+            }
+
+            await this.sessionManager.saveSession(validatedParams.session_id, sessionRequest, {
+              stdout: result.stdout,
+              stderr: result.stderr,
+              exitCode: result.exitCode,
+              executionTime: result.executionTime,
+            })
+
+            this.logger.info('Session saved successfully', {
+              requestId,
+              sessionId: validatedParams.session_id,
+            })
+          } catch (error) {
+            // Log error but continue - session save failure should not break main flow
+            this.logger.warn('Failed to save session', {
+              requestId,
+              sessionId: validatedParams.session_id,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }
+
         // Mark MCP request as completed
 
-        return this.formatExecutionResponse(result, validatedParams.agent, requestId)
+        return this.formatExecutionResponse(
+          result,
+          validatedParams.agent,
+          requestId,
+          validatedParams.session_id
+        )
       }
 
       // Fallback response if executor is not available
@@ -380,12 +461,14 @@ export class RunAgentTool {
    * @param result - Agent execution result
    * @param agentName - Name of the executed agent
    * @param requestId - Request tracking ID
+   * @param sessionId - Session ID if session management is used
    * @returns Formatted MCP response
    */
   private formatExecutionResponse(
     result: AgentExecutionResult,
     agentName: string,
-    requestId?: string
+    requestId?: string,
+    sessionId?: string
   ): McpToolResponse {
     // Determine execution status
     const isSuccess =
@@ -417,6 +500,9 @@ export class RunAgentTool {
     }
     if (requestId) {
       structuredContent['requestId'] = requestId
+    }
+    if (sessionId) {
+      structuredContent['sessionId'] = sessionId
     }
 
     // Update statistics

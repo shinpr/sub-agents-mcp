@@ -101,8 +101,14 @@ describe('SessionManager', () => {
 
       const filePath = manager.buildFilePath(sessionId, agentType, timestamp)
 
-      // Expected format: [session_id]_[agent_type]_[timestamp].json
-      const expectedFileName = `${sessionId}_${agentType}_${timestamp}.json`
+      // Expected format: [session_id]_[agent_type]_[ISO8601_timestamp].json
+      // ISO 8601 compact format: YYYYMMDDTHHmmssZ
+      const date = new Date(timestamp)
+      const isoTimestamp = date
+        .toISOString()
+        .replace(/[-:]/g, '')
+        .replace(/\.\d{3}/, '')
+      const expectedFileName = `${sessionId}_${agentType}_${isoTimestamp}.json`
       expect(filePath).toBe(path.join(testSessionDir, expectedFileName))
     })
 
@@ -153,7 +159,9 @@ describe('SessionManager', () => {
       // Verify that file was created
       const files = await fs.readdir(testSessionDir)
       expect(files.length).toBe(1)
-      expect(files[0]).toMatch(/^test-session-001_rule-advisor_\d+\.json$/)
+      // File name should match: [session_id]_[agent_type]_[ISO8601_timestamp].json
+      // ISO 8601 compact format: YYYYMMDDTHHmmssZ (e.g., 20250121T120000Z)
+      expect(files[0]).toMatch(/^test-session-001_rule-advisor_\d{8}T\d{6}Z\.json$/)
 
       // Verify file content
       const filePath = path.join(testSessionDir, files[0])

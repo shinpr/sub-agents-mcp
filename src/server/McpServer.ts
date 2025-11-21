@@ -29,6 +29,7 @@ import { AgentManager } from 'src/agents/AgentManager'
 import type { ServerConfig } from 'src/config/ServerConfig'
 import { AgentExecutor, createExecutionConfig } from 'src/execution/AgentExecutor'
 import { AgentResources } from 'src/resources/AgentResources'
+import { SessionManager } from 'src/session/SessionManager'
 import { RunAgentTool } from 'src/tools/RunAgentTool'
 import { AppError, ValidationError } from 'src/utils/ErrorHandler'
 import { Logger } from 'src/utils/Logger'
@@ -57,6 +58,7 @@ export class McpServer {
   private agentExecutor: AgentExecutor
   private runAgentTool: RunAgentTool
   private agentResources: AgentResources
+  private sessionManager?: SessionManager
 
   /**
    * Create a new MCP server instance
@@ -84,7 +86,23 @@ export class McpServer {
     const executorLogger = new Logger(config.logLevel)
 
     this.agentExecutor = new AgentExecutor(executionConfig, executorLogger)
-    this.runAgentTool = new RunAgentTool(this.agentExecutor, this.agentManager)
+
+    // Initialize SessionManager if session management is enabled
+    if (config.sessionEnabled) {
+      this.sessionManager = new SessionManager({
+        enabled: config.sessionEnabled,
+        sessionDir: config.sessionDir,
+        retentionDays: config.sessionRetentionDays,
+      })
+      this.log('info', 'Session management enabled', {
+        sessionDir: config.sessionDir,
+        retentionDays: config.sessionRetentionDays,
+      })
+    } else {
+      this.log('info', 'Session management disabled')
+    }
+
+    this.runAgentTool = new RunAgentTool(this.agentExecutor, this.agentManager, this.sessionManager)
     this.agentResources = new AgentResources(this.agentManager)
 
     // Initialize MCP server with capabilities

@@ -75,6 +75,9 @@ export class SessionManager {
    * Builds a file path for a session file following the naming convention:
    * [session_id]_[agent_type]_[timestamp].json
    *
+   * Timestamp format: ISO 8601 compact format (YYYYMMDDTHHmmssZ)
+   * Example: 20250121T120000Z
+   *
    * Security measures:
    * - Validates session ID before processing
    * - Uses path.basename to strip directory components
@@ -90,8 +93,15 @@ export class SessionManager {
     // Validate session ID to prevent directory traversal
     this.validateSessionId(sessionId)
 
+    // Format timestamp in ISO 8601 compact format (YYYYMMDDTHHmmssZ)
+    const date = new Date(timestamp)
+    const isoTimestamp = date
+      .toISOString()
+      .replace(/[-:]/g, '')
+      .replace(/\.\d{3}/, '')
+
     // Build filename following the naming convention
-    const fileName = `${sessionId}_${agentType}_${timestamp}.json`
+    const fileName = `${sessionId}_${agentType}_${isoTimestamp}.json`
 
     // Strip any directory components for additional security
     const safeFileName = path.basename(fileName)
