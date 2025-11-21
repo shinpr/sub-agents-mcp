@@ -69,6 +69,7 @@ describe('RunAgentTool', () => {
       expect(schema.properties).toHaveProperty('prompt')
       expect(schema.properties).toHaveProperty('cwd')
       expect(schema.properties).toHaveProperty('extra_args')
+      expect(schema.properties).toHaveProperty('session_id')
 
       expect(schema.required).toEqual(['agent', 'prompt'])
 
@@ -78,6 +79,7 @@ describe('RunAgentTool', () => {
       expect(schema.properties.cwd.type).toBe('string')
       expect(schema.properties.extra_args.type).toBe('array')
       expect(schema.properties.extra_args.items.type).toBe('string')
+      expect(schema.properties.session_id.type).toBe('string')
     })
   })
 
@@ -151,6 +153,109 @@ describe('RunAgentTool', () => {
 
       const result = await runAgentTool.execute(params)
       expect(result).toBeDefined()
+    })
+
+    it('should accept valid session_id parameter', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt with session',
+        session_id: 'test-session-123',
+      }
+
+      // Mock agent existence check
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'Test agent content',
+        filePath: '/test/agents/test-agent.md',
+        lastModified: new Date(),
+      })
+
+      // Mock the execution to avoid actual agent execution
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: 'Test output with session',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+        estimatedOutputSize: 1024,
+      })
+
+      const result = await runAgentTool.execute(params)
+      expect(result).toBeDefined()
+      expect(result.isError).not.toBe(true)
+    })
+
+    it('should reject empty session_id parameter', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: '',
+      }
+
+      const result = (await runAgentTool.execute(params)) as any
+      expect(result.content).toBeDefined()
+      const textContent = result.content.find((c: any) => c.type === 'text')
+      expect(textContent?.text).toMatch(/session.*id.*empty|invalid.*session/i)
+    })
+
+    it('should reject session_id with invalid characters', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: 'session/with/../invalid',
+      }
+
+      const result = (await runAgentTool.execute(params)) as any
+      expect(result.content).toBeDefined()
+      const textContent = result.content.find((c: any) => c.type === 'text')
+      expect(textContent?.text).toMatch(/session.*id.*invalid.*characters/i)
+    })
+
+    it('should reject session_id that is too long', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: 'a'.repeat(101), // 101 characters, exceeds max of 100
+      }
+
+      const result = (await runAgentTool.execute(params)) as any
+      expect(result.content).toBeDefined()
+      const textContent = result.content.find((c: any) => c.type === 'text')
+      expect(textContent?.text).toMatch(/session.*id.*too long/i)
+    })
+
+    it('should work without session_id for backward compatibility', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt without session',
+        // No session_id provided
+      }
+
+      // Mock agent existence check
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'Test agent content',
+        filePath: '/test/agents/test-agent.md',
+        lastModified: new Date(),
+      })
+
+      // Mock the execution to avoid actual agent execution
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: 'Test output without session',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+        estimatedOutputSize: 1024,
+      })
+
+      const result = await runAgentTool.execute(params)
+      expect(result).toBeDefined()
+      expect(result.isError).not.toBe(true)
     })
   })
 

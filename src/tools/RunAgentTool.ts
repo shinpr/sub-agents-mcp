@@ -53,6 +53,10 @@ interface RunAgentInputSchema {
       items: { type: 'string' }
       description: string
     }
+    session_id: {
+      type: 'string'
+      description: string
+    }
   }
   required: string[]
 }
@@ -65,6 +69,13 @@ interface RunAgentParams {
   prompt: string
   cwd?: string | undefined
   extra_args?: string[] | undefined
+  /**
+   * Session ID for continuing previous conversation context (optional)
+   *
+   * When provided, the agent will have access to previous request/response history.
+   * Must be alphanumeric with hyphens and underscores only (max 100 characters).
+   */
+  session_id?: string | undefined
 }
 
 /**
@@ -101,6 +112,11 @@ export class RunAgentTool {
         type: 'array',
         items: { type: 'string' },
         description: 'Additional configuration parameters for agent execution (optional)',
+      },
+      session_id: {
+        type: 'string',
+        description:
+          'Session ID for continuing previous conversation context (optional). Enables agents to access previous request/response history.',
       },
     },
     required: ['agent', 'prompt'],
@@ -141,6 +157,7 @@ export class RunAgentTool {
         promptLength: validatedParams.prompt.length,
         cwd: validatedParams.cwd,
         extraArgsCount: validatedParams.extra_args?.length || 0,
+        sessionId: validatedParams.session_id,
       })
 
       // Check if agent exists
@@ -324,11 +341,35 @@ export class RunAgentTool {
       }
     }
 
+    // Validate optional session_id parameter
+    if (p['session_id'] !== undefined) {
+      if (typeof p['session_id'] !== 'string') {
+        throw new Error('Session ID parameter must be a string if provided')
+      }
+
+      const sessionId = p['session_id'].trim()
+      if (sessionId === '') {
+        throw new Error('Invalid session ID parameter: cannot be empty')
+      }
+
+      if (sessionId.length > 100) {
+        throw new Error('Session ID too long (max 100 characters)')
+      }
+
+      // Validate session ID format (alphanumeric, hyphens, underscores only)
+      if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
+        throw new Error(
+          'Session ID contains invalid characters (only alphanumeric, underscore, and dash allowed)'
+        )
+      }
+    }
+
     return {
       agent: agentName,
       prompt: prompt,
       cwd: p['cwd'] as string | undefined,
       extra_args: p['extra_args'] as string[] | undefined,
+      session_id: p['session_id'] as string | undefined,
     }
   }
 
