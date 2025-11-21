@@ -287,4 +287,100 @@ describe('SessionManager', () => {
       consoleErrorSpy.mockRestore()
     })
   })
+
+  describe('loadSession', () => {
+    it('should load an existing session successfully', async () => {
+      const manager = new SessionManager(sessionConfig)
+      const sessionId = 'test-session-load-001'
+      const request = {
+        agent: 'rule-advisor',
+        prompt: 'Test prompt',
+      }
+      const response = {
+        stdout: 'Test output',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+      }
+
+      // First, save a session
+      await manager.saveSession(sessionId, request, response)
+
+      // Then, load it
+      const loadedSession = await manager.loadSession(sessionId)
+
+      // Verify the loaded session
+      expect(loadedSession).not.toBeNull()
+      expect(loadedSession?.sessionId).toBe(sessionId)
+      expect(loadedSession?.agentType).toBe('rule-advisor')
+      expect(loadedSession?.history).toHaveLength(1)
+      expect(loadedSession?.history[0].request).toEqual(request)
+      expect(loadedSession?.history[0].response).toEqual(response)
+      expect(loadedSession?.createdAt).toBeInstanceOf(Date)
+      expect(loadedSession?.lastUpdatedAt).toBeInstanceOf(Date)
+    })
+
+    it('should return null when session file does not exist', async () => {
+      const manager = new SessionManager(sessionConfig)
+      const nonExistentSessionId = 'non-existent-session'
+
+      const loadedSession = await manager.loadSession(nonExistentSessionId)
+
+      expect(loadedSession).toBeNull()
+    })
+
+    it('should return null when JSON parse fails', async () => {
+      const manager = new SessionManager(sessionConfig)
+      const sessionId = 'test-session-invalid-json'
+
+      // Create a file with invalid JSON
+      const fileName = `${sessionId}_rule-advisor_${Date.now()}.json`
+      const filePath = path.join(testSessionDir, fileName)
+      await fs.writeFile(filePath, 'invalid json content', 'utf-8')
+
+      const loadedSession = await manager.loadSession(sessionId)
+
+      expect(loadedSession).toBeNull()
+    })
+
+    it('should load the most recent session file when multiple files exist', async () => {
+      const manager = new SessionManager(sessionConfig)
+      const sessionId = 'test-session-multiple'
+      const request1 = {
+        agent: 'rule-advisor',
+        prompt: 'First prompt',
+      }
+      const response1 = {
+        stdout: 'First output',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+      }
+      const request2 = {
+        agent: 'rule-advisor',
+        prompt: 'Second prompt',
+      }
+      const response2 = {
+        stdout: 'Second output',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 200,
+      }
+
+      // Save first session
+      await manager.saveSession(sessionId, request1, response1)
+
+      // Wait a bit to ensure different timestamp
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      // Save second session (creates a new file with appended history)
+      await manager.saveSession(sessionId, request2, response2)
+
+      // Load session - should get the most recent one
+      const loadedSession = await manager.loadSession(sessionId)
+
+      expect(loadedSession).not.toBeNull()
+      expect(loadedSession?.history.length).toBeGreaterThanOrEqual(2)
+    })
+  })
 })
