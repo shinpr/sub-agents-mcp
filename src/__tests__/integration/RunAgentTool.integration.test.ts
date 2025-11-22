@@ -321,8 +321,9 @@ describe('RunAgentTool', () => {
 
       const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent?.text).toContain('Warning output')
-      // stderr is included in structured content, not in text content when stdout exists
-      expect(result.structuredContent).toHaveProperty('stderr', 'Non-critical warning message')
+      // stderr is agent implementation detail and should NOT be in structuredContent
+      expect(result.structuredContent).not.toHaveProperty('stderr')
+      expect(result.structuredContent).not.toHaveProperty('result')
     })
 
     it('should handle agent execution failure', async () => {
@@ -491,11 +492,13 @@ describe('RunAgentTool', () => {
 
       const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent?.text).toContain('Detailed output')
-      // All metadata is in structured content, not text content
+      // Only MCP-managed metadata is in structured content, not agent implementation details
       expect(result.structuredContent).toHaveProperty('agent', 'test-agent')
       expect(result.structuredContent).toHaveProperty('exitCode', 0)
       expect(result.structuredContent).toHaveProperty('executionTime', 250)
-      expect(result.structuredContent).toHaveProperty('stderr', 'Warning message')
+      // Agent implementation details should NOT be in structuredContent
+      expect(result.structuredContent).not.toHaveProperty('stderr')
+      expect(result.structuredContent).not.toHaveProperty('result')
     })
   })
 
@@ -722,7 +725,7 @@ describe('RunAgentTool', () => {
 
       const result = await runAgentTool.execute(params)
 
-      // Verify structuredContent
+      // Verify structuredContent contains only MCP-managed metadata
       expect(result).toHaveProperty('structuredContent')
       expect(result.structuredContent).toMatchObject({
         agent: 'json-agent',
@@ -730,8 +733,9 @@ describe('RunAgentTool', () => {
         executionTime: 100,
         hasResult: true,
         status: 'success',
-        result: { type: 'result', data: 'test' },
       })
+      // Agent implementation details (resultJson) should NOT be in structuredContent
+      expect(result.structuredContent).not.toHaveProperty('result')
     })
   })
 
@@ -906,6 +910,242 @@ describe('RunAgentTool', () => {
       // Both locations should have session_id
       expect(result._meta?.session_id).toBe('test-session-123')
       expect(result.structuredContent).toHaveProperty('sessionId', 'test-session-123')
+    })
+  })
+
+  describe('extractAgentContent', () => {
+    // Helper functions for testing (will be implemented in RunAgentTool.ts)
+    const isRecord = (value: unknown): value is Record<string, unknown> => {
+      return typeof value === 'object' && value !== null && !Array.isArray(value)
+    }
+
+    const isStringField = (value: unknown): value is string => {
+      return typeof value === 'string'
+    }
+
+    const extractAgentContent = (
+      resultJson: unknown,
+      isError: boolean,
+      stdout: string,
+      stderr: string
+    ): string => {
+      if (!isRecord(resultJson)) {
+        return stdout || stderr || 'No output'
+      }
+
+      const primaryField = isError ? 'error' : 'result'
+
+      if (isStringField(resultJson[primaryField])) {
+        return resultJson[primaryField]
+      }
+
+      if (isStringField(resultJson.content)) {
+        return resultJson.content
+      }
+
+      return stdout || stderr || 'No output'
+    }
+
+    describe('cursor-agent success case', () => {
+      it('should extract result field from cursor-agent success response', () => {
+        const resultJson = {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          result: 'Hello from cursor-agent',
+          session_id: '34c9e294-f79d-415a-9ff5-a0ce813f90c2',
+          request_id: '48b09f81-94c1-45e8-aa9f-e7d809015edb',
+        }
+
+        const content = extractAgentContent(resultJson, false, '', '')
+
+        expect(content).toBe('Hello from cursor-agent')
+      })
+    })
+
+    describe('cursor-agent error case', () => {
+      it('should extract error field from cursor-agent error response', () => {
+        const resultJson = {
+          type: 'result',
+          subtype: 'error',
+          is_error: true,
+          error: 'File not found',
+          error_type: 'execution_error',
+          session_id: '34c9e294-f79d-415a-9ff5-a0ce813f90c2',
+          request_id: '48b09f81-94c1-45e8-aa9f-e7d809015edb',
+        }
+
+        const content = extractAgentContent(resultJson, true, '', '')
+
+        expect(content).toBe('File not found')
+      })
+    })
+
+    describe('claude code success case', () => {
+      it('should extract result field from claude code success response', () => {
+        const resultJson = {
+          type: 'result',
+          is_error: false,
+          result: 'Hello from Claude Code',
+          session_id: 'db3bd3f1-cf5a-47cd-9d17-ad03b13ec652',
+          usage: {},
+          uuid: 'cc980059-f6fe-4d7d-9a62-25aa82ba913f',
+        }
+
+        const content = extractAgentContent(resultJson, false, '', '')
+
+        expect(content).toBe('Hello from Claude Code')
+      })
+    })
+
+    describe('claude code error case (content field)', () => {
+      it('should extract content field from claude code error response', () => {
+        const resultJson = {
+          is_error: true,
+          content: '<error>File does not exist</error>',
+        }
+
+        const content = extractAgentContent(resultJson, true, '', '')
+
+        expect(content).toBe('<error>File does not exist</error>')
+      })
+    })
+
+    describe('fallback to stdout/stderr', () => {
+      it('should fallback to stdout when resultJson is not a record', () => {
+        const content = extractAgentContent(null, false, 'stdout content', 'stderr content')
+
+        expect(content).toBe('stdout content')
+      })
+
+      it('should fallback to stderr when stdout is empty', () => {
+        const content = extractAgentContent(null, false, '', 'stderr content')
+
+        expect(content).toBe('stderr content')
+      })
+
+      it('should return "No output" when all sources are empty', () => {
+        const content = extractAgentContent(null, false, '', '')
+
+        expect(content).toBe('No output')
+      })
+
+      it('should fallback to stdout when result field is missing', () => {
+        const resultJson = {
+          type: 'result',
+          is_error: false,
+        }
+
+        const content = extractAgentContent(resultJson, false, 'fallback stdout', '')
+
+        expect(content).toBe('fallback stdout')
+      })
+    })
+
+    describe('content field fallback', () => {
+      it('should use content field when result field is missing (success case)', () => {
+        const resultJson = {
+          type: 'result',
+          is_error: false,
+          content: 'Content field value',
+        }
+
+        const content = extractAgentContent(resultJson, false, '', '')
+
+        expect(content).toBe('Content field value')
+      })
+
+      it('should prioritize error field over content field (error case)', () => {
+        const resultJson = {
+          is_error: true,
+          error: 'Error message',
+          content: 'Content field value',
+        }
+
+        const content = extractAgentContent(resultJson, true, '', '')
+
+        expect(content).toBe('Error message')
+      })
+    })
+  })
+
+  describe('isAgentError', () => {
+    const isAgentError = (resultJson: unknown, exitCode: number): boolean => {
+      const isRecord = (value: unknown): value is Record<string, unknown> => {
+        return typeof value === 'object' && value !== null && !Array.isArray(value)
+      }
+
+      if (isRecord(resultJson) && resultJson.is_error === true) {
+        return true
+      }
+
+      return exitCode !== 0 && exitCode !== 143 && exitCode !== 124
+    }
+
+    describe('is_error flag priority', () => {
+      it('should return true when is_error is true (exitCode=0)', () => {
+        const resultJson = { is_error: true }
+
+        const isError = isAgentError(resultJson, 0)
+
+        expect(isError).toBe(true)
+      })
+
+      it('should return false when is_error is false (exitCode=0)', () => {
+        const resultJson = { is_error: false }
+
+        const isError = isAgentError(resultJson, 0)
+
+        expect(isError).toBe(false)
+      })
+    })
+
+    describe('exitCode fallback', () => {
+      it('should return true when exitCode is 1 (no is_error field)', () => {
+        const resultJson = {}
+
+        const isError = isAgentError(resultJson, 1)
+
+        expect(isError).toBe(true)
+      })
+
+      it('should return false when exitCode is 0 (no is_error field)', () => {
+        const resultJson = {}
+
+        const isError = isAgentError(resultJson, 0)
+
+        expect(isError).toBe(false)
+      })
+
+      it('should return false for exitCode 143 (SIGTERM, normal termination)', () => {
+        const resultJson = {}
+
+        const isError = isAgentError(resultJson, 143)
+
+        expect(isError).toBe(false)
+      })
+
+      it('should return false for exitCode 124 (timeout with partial result)', () => {
+        const resultJson = {}
+
+        const isError = isAgentError(resultJson, 124)
+
+        expect(isError).toBe(false)
+      })
+    })
+
+    describe('non-record resultJson', () => {
+      it('should fallback to exitCode when resultJson is null', () => {
+        const isError = isAgentError(null, 1)
+
+        expect(isError).toBe(true)
+      })
+
+      it('should fallback to exitCode when resultJson is undefined', () => {
+        const isError = isAgentError(undefined, 0)
+
+        expect(isError).toBe(false)
+      })
     })
   })
 })

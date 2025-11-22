@@ -2,8 +2,8 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { SessionManager } from '../../session/SessionManager'
 import type { SessionConfig } from '../../types/SessionData'
-import { SessionManager } from '../SessionManager'
 
 /**
  * Performance tests for session management feature.
