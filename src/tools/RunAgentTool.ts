@@ -465,6 +465,91 @@ export class RunAgentTool {
   }
 
   /**
+   * Type guard to check if a value is a Record (plain object)
+   *
+   * @private
+   * @param value - Value to check
+   * @returns True if value is a Record
+   */
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+  }
+
+  /**
+   * Type guard to check if a value is a string
+   *
+   * @private
+   * @param value - Value to check
+   * @returns True if value is a string
+   */
+  private isStringField(value: unknown): value is string {
+    return typeof value === 'string'
+  }
+
+  /**
+   * Extract content from agent response JSON
+   *
+   * Implements information extraction layer to hide agent implementation details.
+   * Supports both cursor-agent and claude code response formats.
+   *
+   * @private
+   * @param resultJson - Parsed agent response JSON (unknown type for safety)
+   * @param isError - Whether this is an error response
+   * @param stdout - Raw stdout as fallback
+   * @param stderr - Raw stderr as fallback
+   * @returns Extracted content string
+   */
+  private extractAgentContent(
+    resultJson: unknown,
+    isError: boolean,
+    stdout: string,
+    stderr: string
+  ): string {
+    // Type guard: Check if resultJson is a valid record
+    if (!this.isRecord(resultJson)) {
+      return stdout || stderr || 'No output'
+    }
+
+    // Priority field differs between success and error cases
+    const primaryField = isError ? 'error' : 'result'
+
+    // Extract primary field (result or error)
+    if (this.isStringField(resultJson[primaryField])) {
+      return resultJson[primaryField]
+    }
+
+    // Fallback to content field (claude code may use this)
+    if (this.isStringField(resultJson['content'])) {
+      return resultJson['content']
+    }
+
+    // Final fallback to raw stdout/stderr
+    return stdout || stderr || 'No output'
+  }
+
+  /**
+   * Determine if agent response indicates an error
+   *
+   * Checks is_error flag first (agent-level error), then exitCode (process-level error).
+   *
+   * @private
+   * @param resultJson - Parsed agent response JSON
+   * @param exitCode - Process exit code
+   * @returns True if response indicates an error
+   */
+  private isAgentError(resultJson: unknown, exitCode: number): boolean {
+    // Priority 1: Check agent's is_error flag
+    if (this.isRecord(resultJson) && resultJson['is_error'] === true) {
+      return true
+    }
+
+    // Priority 2: Check process exit code (excluding special cases)
+    // 143: SIGTERM (normal termination)
+    // 124: Timeout (may have partial result)
+    return exitCode !== 0 && exitCode !== 143 && exitCode !== 124
+  }
+
+  /**
    * Format agent execution response
    *
    * @private
@@ -480,18 +565,25 @@ export class RunAgentTool {
     requestId?: string,
     sessionId?: string
   ): McpToolResponse {
-    // Determine execution status
+    // Determine if response indicates an error (agent-level or process-level)
+    const isError = this.isAgentError(result.resultJson, result.exitCode)
+
+    // Extract actual content from agent response (hiding implementation details)
+    const contentText = this.extractAgentContent(
+      result.resultJson,
+      isError,
+      result.stdout,
+      result.stderr
+    )
+
+    // Determine detailed status for structuredContent
     const isSuccess =
       result.exitCode === 0 || // Normal completion
       (result.exitCode === 143 && result.hasResult === true) // SIGTERM with result
 
     const isPartialSuccess = result.exitCode === 124 && result.hasResult === true // Timeout with partial result
-    const isError = !isSuccess && !isPartialSuccess
 
-    // Content is just the agent's actual output
-    const contentText = result.stdout || result.stderr || 'No output'
-
-    // All metadata goes to structuredContent
+    // MCP response metadata (no agent implementation details)
     const structuredContent: Record<string, unknown> = {
       agent: agentName,
       exitCode: result.exitCode,
@@ -500,14 +592,6 @@ export class RunAgentTool {
       status: isSuccess ? 'success' : isPartialSuccess ? 'partial' : 'error',
     }
 
-    if (result.resultJson) {
-      structuredContent['result'] = result.resultJson
-    }
-    if (result.stderr && result.stdout) {
-      // Only include stderr in structured content if we also have stdout
-      // Otherwise stderr is already in content
-      structuredContent['stderr'] = result.stderr
-    }
     if (requestId) {
       structuredContent['requestId'] = requestId
     }

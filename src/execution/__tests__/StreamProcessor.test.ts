@@ -49,6 +49,23 @@ describe('StreamProcessor', () => {
       })
     })
 
+    it('should handle cursor-agent error JSON format', () => {
+      const cursorErrorJson =
+        '{"type":"result","subtype":"error","is_error":true,"duration_ms":1234,"error":"エラーが発生しました","error_type":"execution_error","session_id":"bf18d32c-fd61-4890-b7ba-bd64effd86bd","request_id":"9f5d1b48-9338-4bc0-ab87-8f9d2a22965a"}'
+
+      expect(processor.processLine(cursorErrorJson)).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        duration_ms: 1234,
+        error: 'エラーが発生しました',
+        error_type: 'execution_error',
+        session_id: 'bf18d32c-fd61-4890-b7ba-bd64effd86bd',
+        request_id: '9f5d1b48-9338-4bc0-ab87-8f9d2a22965a',
+      })
+    })
+
     it('should handle claude JSON format', () => {
       const claudeJson = '{"response": "Claude output", "status": "complete"}'
 

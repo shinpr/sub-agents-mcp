@@ -2,9 +2,9 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { formatSessionHistory } from '../../session/SessionHistoryFormatter'
+import { SessionManager } from '../../session/SessionManager'
 import type { SessionConfig } from '../../types/SessionData'
-import { formatSessionHistory } from '../SessionHistoryFormatter'
-import { SessionManager } from '../SessionManager'
 
 /**
  * Acceptance tests for session management feature.
