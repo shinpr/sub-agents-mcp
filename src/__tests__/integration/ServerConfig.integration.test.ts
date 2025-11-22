@@ -81,6 +81,90 @@ describe('ServerConfig', () => {
     expect(config.agentType).toBe('cursor')
   })
 
+  describe('session management configuration', () => {
+    it('should load SESSION_ENABLED as true when set to "true"', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('SESSION_ENABLED', 'true')
+
+      const config = new ServerConfig()
+
+      expect(config.sessionEnabled).toBe(true)
+    })
+
+    it('should default SESSION_ENABLED to false when not set', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('SESSION_ENABLED', undefined)
+
+      const config = new ServerConfig()
+
+      expect(config.sessionEnabled).toBe(false)
+    })
+
+    it('should treat SESSION_ENABLED as false for non-"true" values', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+
+      const falseValues = ['false', '1', 'yes', 'TRUE', '']
+
+      for (const value of falseValues) {
+        vi.stubEnv('SESSION_ENABLED', value)
+
+        const config = new ServerConfig()
+
+        expect(config.sessionEnabled).toBe(false)
+      }
+    })
+
+    it('should load SESSION_DIR when set', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('SESSION_DIR', '/custom/session/path')
+
+      const config = new ServerConfig()
+
+      expect(config.sessionDir).toBe('/custom/session/path')
+    })
+
+    it('should default SESSION_DIR to ".mcp-sessions" when not set', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('SESSION_DIR', undefined)
+
+      const config = new ServerConfig()
+
+      expect(config.sessionDir).toBe('.mcp-sessions')
+    })
+
+    it('should load SESSION_RETENTION_DAYS when set', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('SESSION_RETENTION_DAYS', '14')
+
+      const config = new ServerConfig()
+
+      expect(config.sessionRetentionDays).toBe(14)
+    })
+
+    it('should default SESSION_RETENTION_DAYS to 1 when not set', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('SESSION_RETENTION_DAYS', undefined)
+
+      const config = new ServerConfig()
+
+      expect(config.sessionRetentionDays).toBe(1)
+    })
+
+    it('should use default SESSION_RETENTION_DAYS for invalid values', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+
+      const invalidValues = ['invalid', 'not-a-number', '', '-5', '0']
+
+      for (const invalidValue of invalidValues) {
+        vi.stubEnv('SESSION_RETENTION_DAYS', invalidValue)
+
+        const config = new ServerConfig()
+
+        expect(config.sessionRetentionDays).toBe(1)
+      }
+    })
+  })
+
   describe('execution timeout validation', () => {
     it('should use default timeout when EXECUTION_TIMEOUT_MS is not set', () => {
       vi.stubEnv('EXECUTION_TIMEOUT_MS', undefined)

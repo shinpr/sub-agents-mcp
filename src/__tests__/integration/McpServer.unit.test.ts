@@ -5,21 +5,19 @@
  * configuration integration, and transport setup.
  */
 
+import { ServerConfig } from 'src/config/ServerConfig'
 import { McpServer } from 'src/server/McpServer'
-import type { ServerConfigInterface } from 'src/types'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('McpServer', () => {
   let server: McpServer
-  let mockConfig: ServerConfigInterface
+  let mockConfig: ServerConfig
 
   beforeEach(() => {
-    mockConfig = {
-      serverName: 'test-mcp-server',
-      serverVersion: '1.0.0',
-      agentsDir: './test-agents',
-      logLevel: 'info',
-    }
+    // Set required environment variables for ServerConfig
+    process.env['AGENTS_DIR'] = './test-agents'
+    process.env['SESSION_ENABLED'] = 'false'
+    mockConfig = new ServerConfig()
   })
 
   afterEach(() => {
@@ -37,7 +35,13 @@ describe('McpServer', () => {
     })
 
     it('should throw error with invalid configuration', () => {
-      const invalidConfig = { ...mockConfig, serverName: '' }
+      // Create a config with empty server name by mocking
+      const invalidConfig = {
+        ...mockConfig,
+        serverName: '',
+        serverVersion: '1.0.0',
+      } as ServerConfig
+
       expect(() => {
         new McpServer(invalidConfig)
       }).toThrow('Server name cannot be empty')
@@ -81,6 +85,29 @@ describe('McpServer', () => {
 
     it('should handle graceful shutdown', async () => {
       await expect(server.close()).resolves.not.toThrow()
+    })
+  })
+
+  describe('session management', () => {
+    it('should initialize SessionManager when SESSION_ENABLED=true', () => {
+      process.env['SESSION_ENABLED'] = 'true'
+      process.env['SESSION_DIR'] = '/tmp/test-sessions'
+      const configWithSession = new ServerConfig()
+
+      expect(() => {
+        server = new McpServer(configWithSession)
+      }).not.toThrow()
+      expect(server).toBeDefined()
+    })
+
+    it('should not initialize SessionManager when SESSION_ENABLED=false', () => {
+      process.env['SESSION_ENABLED'] = 'false'
+      const configWithoutSession = new ServerConfig()
+
+      expect(() => {
+        server = new McpServer(configWithoutSession)
+      }).not.toThrow()
+      expect(server).toBeDefined()
     })
   })
 })

@@ -6,8 +6,11 @@
  * for complete agent execution workflow.
  */
 
+import { randomUUID } from 'node:crypto'
 import type { AgentManager } from 'src/agents/AgentManager'
 import type { AgentExecutionResult, AgentExecutor } from 'src/execution/AgentExecutor'
+import { formatSessionHistory } from 'src/session/SessionHistoryFormatter'
+import type { SessionManager } from 'src/session/SessionManager'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
 import { type LogLevel, Logger } from 'src/utils/Logger'
 
@@ -15,6 +18,7 @@ import { type LogLevel, Logger } from 'src/utils/Logger'
  * MCP tool content type for text responses
  */
 interface McpTextContent {
+  [x: string]: unknown
   type: 'text'
   text: string
 }
@@ -23,9 +27,27 @@ interface McpTextContent {
  * MCP tool response format
  */
 interface McpToolResponse {
+  [x: string]: unknown
   content: McpTextContent[]
   isError?: boolean
   structuredContent?: unknown
+  _meta?: {
+    session_id: string
+  }
+}
+
+/**
+ * MCP response data structure (ADR-0003)
+ * This structure is used in both content[0].text (as JSON string) and structuredContent
+ */
+interface McpResponseData {
+  result: string
+  session_id?: string
+  agent: string
+  exit_code: number
+  execution_time: number
+  status: 'success' | 'partial' | 'error'
+  request_id?: string
 }
 
 /**
@@ -53,6 +75,10 @@ interface RunAgentInputSchema {
       items: { type: 'string' }
       description: string
     }
+    session_id: {
+      type: 'string'
+      description: string
+    }
   }
   required: string[]
 }
@@ -65,6 +91,13 @@ interface RunAgentParams {
   prompt: string
   cwd?: string | undefined
   extra_args?: string[] | undefined
+  /**
+   * Session ID for continuing previous conversation context (optional)
+   *
+   * When provided, the agent will have access to previous request/response history.
+   * Must be alphanumeric with hyphens and underscores only (max 100 characters).
+   */
+  session_id?: string | undefined
 }
 
 /**
@@ -76,7 +109,7 @@ interface RunAgentParams {
 export class RunAgentTool {
   public readonly name = 'run_agent'
   public readonly description =
-    'Delegate complex, multi-step, or specialized tasks to an autonomous agent for independent execution with dedicated context (e.g., refactoring across multiple files, fixing all test failures, systematic codebase analysis, batch operations)'
+    'Delegate complex, multi-step, or specialized tasks to an autonomous agent for independent execution with dedicated context (e.g., refactoring across multiple files, fixing all test failures, systematic codebase analysis, batch operations). Returns session_id in response metadata - reuse it in subsequent calls to maintain conversation context continuity across multiple agent executions.'
   private logger: Logger
   private executionStats: Map<string, { count: number; totalTime: number; lastUsed: Date }> =
     new Map()
@@ -102,13 +135,19 @@ export class RunAgentTool {
         items: { type: 'string' },
         description: 'Additional configuration parameters for agent execution (optional)',
       },
+      session_id: {
+        type: 'string',
+        description:
+          'Session ID for continuing previous conversation context (optional). If omitted, a new session will be auto-generated and returned in response metadata. Reuse the returned session_id in subsequent calls to maintain context continuity.',
+      },
     },
     required: ['agent', 'prompt'],
   }
 
   constructor(
     private agentExecutor?: AgentExecutor,
-    private agentManager?: AgentManager
+    private agentManager?: AgentManager,
+    private sessionManager?: SessionManager
   ) {
     // Use LOG_LEVEL environment variable if available
     const logLevel = (process.env['LOG_LEVEL'] as LogLevel) || 'info'
@@ -131,9 +170,26 @@ export class RunAgentTool {
       timestamp: new Date().toISOString(),
     })
 
+    // Best-effort cleanup: old session files (ADR-0002)
+    // Non-blocking execution - does not affect main processing flow
+    if (this.sessionManager) {
+      Promise.resolve()
+        .then(() => this.sessionManager!.cleanupOldSessions())
+        .catch((error) => {
+          this.logger.warn('Session cleanup failed (best-effort)', {
+            requestId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
+    }
+
     try {
       // Validate parameters with enhanced validation
       const validatedParams = this.validateParams(params)
+
+      // Auto-generate session_id if not provided and SessionManager is available
+      const sessionId =
+        validatedParams.session_id || (this.sessionManager ? randomUUID() : undefined)
 
       this.logger.debug('Parameters validated successfully', {
         requestId,
@@ -141,6 +197,8 @@ export class RunAgentTool {
         promptLength: validatedParams.prompt.length,
         cwd: validatedParams.cwd,
         extraArgsCount: validatedParams.extra_args?.length || 0,
+        sessionId: sessionId,
+        sessionIdGenerated: !validatedParams.session_id && !!sessionId,
       })
 
       // Check if agent exists
@@ -179,9 +237,44 @@ export class RunAgentTool {
           }
         }
 
+        // Load session history if session_id is provided and SessionManager is available
+        let promptWithHistory = validatedParams.prompt
+        if (sessionId && this.sessionManager) {
+          try {
+            // CRITICAL: Pass agent_type to enforce sub-agent isolation
+            const sessionData = await this.sessionManager.loadSession(
+              sessionId,
+              validatedParams.agent
+            )
+            if (sessionData && sessionData.history.length > 0) {
+              // Convert session history to Markdown format for token efficiency and LLM comprehension
+              const historyMarkdown = formatSessionHistory(sessionData)
+              promptWithHistory = `Previous conversation history:\n\n${historyMarkdown}\n\n---\n\nCurrent request:\n${validatedParams.prompt}`
+
+              this.logger.info('Session history loaded and merged', {
+                requestId,
+                sessionId: sessionId,
+                historyEntries: sessionData.history.length,
+              })
+            } else {
+              this.logger.debug('No session history found', {
+                requestId,
+                sessionId: sessionId,
+              })
+            }
+          } catch (error) {
+            // Log error but continue - session loading failure should not break main flow
+            this.logger.warn('Failed to load session history', {
+              requestId,
+              sessionId: sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }
+
         const executionParams: ExecutionParams = {
           agent: agentContext,
-          prompt: validatedParams.prompt,
+          prompt: promptWithHistory,
           ...(validatedParams.cwd !== undefined && { cwd: validatedParams.cwd }),
           ...(validatedParams.extra_args !== undefined && {
             extra_args: validatedParams.extra_args,
@@ -206,9 +299,51 @@ export class RunAgentTool {
           totalTime: Date.now() - startTime,
         })
 
+        // Save session if session_id is available and SessionManager is available
+        if (sessionId && this.sessionManager) {
+          try {
+            // Build request object with only defined properties
+            const sessionRequest: {
+              agent: string
+              prompt: string
+              cwd?: string
+              extra_args?: string[]
+            } = {
+              agent: validatedParams.agent,
+              prompt: validatedParams.prompt,
+            }
+
+            if (validatedParams.cwd !== undefined) {
+              sessionRequest.cwd = validatedParams.cwd
+            }
+            if (validatedParams.extra_args !== undefined) {
+              sessionRequest.extra_args = validatedParams.extra_args
+            }
+
+            await this.sessionManager.saveSession(sessionId, sessionRequest, {
+              stdout: result.stdout,
+              stderr: result.stderr,
+              exitCode: result.exitCode,
+              executionTime: result.executionTime,
+            })
+
+            this.logger.info('Session saved successfully', {
+              requestId,
+              sessionId: sessionId,
+            })
+          } catch (error) {
+            // Log error but continue - session save failure should not break main flow
+            this.logger.warn('Failed to save session', {
+              requestId,
+              sessionId: sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }
+
         // Mark MCP request as completed
 
-        return this.formatExecutionResponse(result, validatedParams.agent, requestId)
+        return this.formatExecutionResponse(result, validatedParams.agent, requestId, sessionId)
       }
 
       // Fallback response if executor is not available
@@ -324,81 +459,199 @@ export class RunAgentTool {
       }
     }
 
+    // Validate optional session_id parameter
+    if (p['session_id'] !== undefined) {
+      if (typeof p['session_id'] !== 'string') {
+        throw new Error('Session ID parameter must be a string if provided')
+      }
+
+      const sessionId = p['session_id'].trim()
+      if (sessionId === '') {
+        throw new Error('Invalid session ID parameter: cannot be empty')
+      }
+
+      if (sessionId.length > 100) {
+        throw new Error('Session ID too long (max 100 characters)')
+      }
+
+      // Validate session ID format (alphanumeric, hyphens, underscores only)
+      if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
+        throw new Error(
+          'Session ID contains invalid characters (only alphanumeric, underscore, and dash allowed)'
+        )
+      }
+    }
+
     return {
       agent: agentName,
       prompt: prompt,
       cwd: p['cwd'] as string | undefined,
       extra_args: p['extra_args'] as string[] | undefined,
+      session_id: p['session_id'] as string | undefined,
     }
   }
 
   /**
-   * Format agent execution response
+   * Type guard to check if a value is a Record (plain object)
+   *
+   * @private
+   * @param value - Value to check
+   * @returns True if value is a Record
+   */
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+  }
+
+  /**
+   * Type guard to check if a value is a string
+   *
+   * @private
+   * @param value - Value to check
+   * @returns True if value is a string
+   */
+  private isStringField(value: unknown): value is string {
+    return typeof value === 'string'
+  }
+
+  /**
+   * Extract content from agent response JSON
+   *
+   * Implements information extraction layer to hide agent implementation details.
+   * Supports both cursor-agent and claude code response formats.
+   *
+   * @private
+   * @param resultJson - Parsed agent response JSON (unknown type for safety)
+   * @param isError - Whether this is an error response
+   * @param stdout - Raw stdout as fallback
+   * @param stderr - Raw stderr as fallback
+   * @returns Extracted content string
+   */
+  private extractAgentContent(
+    resultJson: unknown,
+    isError: boolean,
+    stdout: string,
+    stderr: string
+  ): string {
+    // Type guard: Check if resultJson is a valid record
+    if (!this.isRecord(resultJson)) {
+      return stdout || stderr || 'No output'
+    }
+
+    // Priority field differs between success and error cases
+    const primaryField = isError ? 'error' : 'result'
+
+    // Extract primary field (result or error)
+    if (this.isStringField(resultJson[primaryField])) {
+      return resultJson[primaryField]
+    }
+
+    // Fallback to content field (claude code may use this)
+    if (this.isStringField(resultJson['content'])) {
+      return resultJson['content']
+    }
+
+    // Final fallback to raw stdout/stderr
+    return stdout || stderr || 'No output'
+  }
+
+  /**
+   * Determine if agent response indicates an error
+   *
+   * Checks is_error flag first (agent-level error), then exitCode (process-level error).
+   *
+   * @private
+   * @param resultJson - Parsed agent response JSON
+   * @param exitCode - Process exit code
+   * @returns True if response indicates an error
+   */
+  private isAgentError(resultJson: unknown, exitCode: number): boolean {
+    // Priority 1: Check agent's is_error flag
+    if (this.isRecord(resultJson) && resultJson['is_error'] === true) {
+      return true
+    }
+
+    // Priority 2: Check process exit code (excluding special cases)
+    // 143: SIGTERM (normal termination)
+    // 124: Timeout (may have partial result)
+    return exitCode !== 0 && exitCode !== 143 && exitCode !== 124
+  }
+
+  /**
+   * Format agent execution response (ADR-0003)
+   *
+   * Returns MCP 2025-06-18 compliant response with:
+   * - content[0].text: JSON string (readable by current clients)
+   * - structuredContent: structured data (MCP 2025-06-18 standard)
+   * - _meta.session_id: session tracking (ADR-0002)
    *
    * @private
    * @param result - Agent execution result
    * @param agentName - Name of the executed agent
    * @param requestId - Request tracking ID
+   * @param sessionId - Session ID if session management is used
    * @returns Formatted MCP response
    */
   private formatExecutionResponse(
     result: AgentExecutionResult,
     agentName: string,
-    requestId?: string
+    requestId?: string,
+    sessionId?: string
   ): McpToolResponse {
-    // Determine execution status
+    // Determine if response indicates an error (agent-level or process-level)
+    const isError = this.isAgentError(result.resultJson, result.exitCode)
+
+    // Extract actual content from agent response
+    const contentText = this.extractAgentContent(
+      result.resultJson,
+      isError,
+      result.stdout,
+      result.stderr
+    )
+
+    // Determine detailed status
     const isSuccess =
       result.exitCode === 0 || // Normal completion
       (result.exitCode === 143 && result.hasResult === true) // SIGTERM with result
 
     const isPartialSuccess = result.exitCode === 124 && result.hasResult === true // Timeout with partial result
-    const isError = !isSuccess && !isPartialSuccess
 
-    // Content is just the agent's actual output
-    const contentText = result.stdout || result.stderr || 'No output'
-
-    // All metadata goes to structuredContent
-    const structuredContent: Record<string, unknown> = {
+    // Build response data structure (ADR-0003)
+    // This object is used in both content[0].text and structuredContent
+    const responseData: McpResponseData = {
+      result: contentText,
       agent: agentName,
-      exitCode: result.exitCode,
-      executionTime: result.executionTime,
-      hasResult: result.hasResult || false,
+      exit_code: result.exitCode,
+      execution_time: result.executionTime,
       status: isSuccess ? 'success' : isPartialSuccess ? 'partial' : 'error',
+      ...(sessionId && { session_id: sessionId }),
+      ...(requestId && { request_id: requestId }),
     }
 
-    if (result.resultJson) {
-      structuredContent['result'] = result.resultJson
-    }
-    if (result.stderr && result.stdout) {
-      // Only include stderr in structured content if we also have stdout
-      // Otherwise stderr is already in content
-      structuredContent['stderr'] = result.stderr
-    }
-    if (requestId) {
-      structuredContent['requestId'] = requestId
-    }
-
-    // Update statistics
-    const stats = this.executionStats.get(agentName)
-    if (stats) {
-      structuredContent['usageCount'] = stats.count
-      structuredContent['averageTime'] = Math.round(stats.totalTime / stats.count)
-    }
-
-    return {
+    const response: McpToolResponse = {
       content: [
         {
           type: 'text',
-          text: contentText,
+          // JSON string format for current MCP clients (Cursor, Claude Code, etc.)
+          text: JSON.stringify(responseData, null, 2),
         },
       ],
       isError: isError,
-      structuredContent,
+      // Structured data format (MCP 2025-06-18 standard)
+      structuredContent: responseData,
     }
+
+    // Add session_id to response metadata (ADR-0002)
+    if (sessionId) {
+      response._meta = {
+        session_id: sessionId,
+      }
+    }
+
+    return response
   }
 
   /**
-   * Create error response with optional available agents list
+   * Create error response with optional available agents list (ADR-0003)
    *
    * @private
    * @param errorMessage - Error message to display
@@ -409,30 +662,24 @@ export class RunAgentTool {
     errorMessage: string,
     availableAgents: string[] | null
   ): McpToolResponse {
-    let responseText = `Error: ${errorMessage}`
-
-    if (availableAgents && availableAgents.length > 0) {
-      responseText += `\n\nAvailable agents:\n${availableAgents.map((name) => `- ${name}`).join('\n')}`
-    }
-
-    const errorStructuredContent: Record<string, unknown> = {
+    // Build error response data
+    const errorData: Record<string, unknown> = {
       status: 'error',
       error: errorMessage,
-    }
-
-    if (availableAgents) {
-      errorStructuredContent['availableAgents'] = availableAgents
+      ...(availableAgents && { available_agents: availableAgents }),
     }
 
     return {
       content: [
         {
           type: 'text',
-          text: responseText,
+          // JSON string format for current MCP clients
+          text: JSON.stringify(errorData, null, 2),
         },
       ],
       isError: true,
-      structuredContent: errorStructuredContent,
+      // Structured data format (MCP 2025-06-18 standard)
+      structuredContent: errorData,
     }
   }
 

@@ -10,6 +10,9 @@
  * - AGENTS_DIR: Directory containing agent definition files (REQUIRED - must be absolute path)
  * - AGENT_TYPE: Type of agent to use ('cursor' | 'claude') (default: 'cursor')
  * - LOG_LEVEL: Log level for server operations (default: 'info')
+ * - SESSION_ENABLED: Enable session management functionality (default: false)
+ * - SESSION_DIR: Directory for storing session files (default: '.mcp-sessions')
+ * - SESSION_RETENTION_DAYS: Number of days to retain session files (default: 1)
  */
 export class ServerConfig {
   /** Server name identifier used for MCP registration */
@@ -29,6 +32,15 @@ export class ServerConfig {
 
   /** Maximum execution timeout in milliseconds for agent execution */
   public readonly executionTimeoutMs: number
+
+  /** Enable session management functionality */
+  public readonly sessionEnabled: boolean
+
+  /** Directory for storing session files */
+  public readonly sessionDir: string
+
+  /** Number of days to retain session files before cleanup */
+  public readonly sessionRetentionDays: number
 
   /**
    * Creates a new ServerConfig instance by loading values from environment variables
@@ -66,6 +78,21 @@ export class ServerConfig {
       this.executionTimeoutMs = Number.isNaN(parsedTimeout) ? 300000 : parsedTimeout
     } else {
       this.executionTimeoutMs = 300000
+    }
+
+    // Session management configuration
+    // Only 'true' string enables session management, all other values are treated as false
+    this.sessionEnabled = process.env['SESSION_ENABLED'] === 'true'
+    this.sessionDir = process.env['SESSION_DIR'] || '.mcp-sessions'
+
+    // Parse SESSION_RETENTION_DAYS with validation (must be positive integer)
+    const retentionDaysEnv = process.env['SESSION_RETENTION_DAYS']
+    if (retentionDaysEnv?.trim()) {
+      const parsedDays = Number.parseInt(retentionDaysEnv, 10)
+      // Use default (1 day) for invalid values (NaN, zero, or negative)
+      this.sessionRetentionDays = Number.isNaN(parsedDays) || parsedDays <= 0 ? 1 : parsedDays
+    } else {
+      this.sessionRetentionDays = 1
     }
   }
 }

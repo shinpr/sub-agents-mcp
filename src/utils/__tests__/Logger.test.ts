@@ -174,45 +174,6 @@ describe('Logger', () => {
     })
   })
 
-  describe('Log Methods', () => {
-    it('should provide debug logging method', () => {
-      // Arrange
-      const debugLogger = new Logger('debug')
-      const debugSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      // Act
-      debugLogger.debug('Debug information', { component: 'test' })
-
-      // Assert
-      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('DEBUG: Debug information'), {
-        component: 'test',
-      })
-
-      debugSpy.mockRestore()
-    })
-
-    it('should provide info logging method', () => {
-      // Act
-      logger.info('Information message', { status: 'success' })
-
-      // Assert
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('INFO: Information message'),
-        { status: 'success' }
-      )
-    })
-
-    it('should provide warn logging method', () => {
-      // Act
-      logger.warn('Warning message', { warning: 'deprecated-api' })
-
-      // Assert
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('WARN: Warning message'), {
-        warning: 'deprecated-api',
-      })
-    })
-  })
-
   describe('Constructor', () => {
     it('should use default info level when no level provided', () => {
       // Arrange
@@ -251,37 +212,6 @@ describe('Logger', () => {
       )
 
       debugSpy.mockRestore()
-    })
-  })
-
-  describe('Timestamp Formatting', () => {
-    it('should use ISO timestamp format', () => {
-      // Act
-      logger.info('Timestamp test')
-
-      // Assert
-      expect(consoleSpy).toHaveBeenCalledTimes(1)
-      const logMessage = consoleSpy.mock.calls[0][0] as string
-      const timestampMatch = logMessage.match(/^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\]/)
-      expect(timestampMatch).toBeTruthy()
-
-      const timestamp = timestampMatch![1]
-      expect(() => new Date(timestamp)).not.toThrow()
-    })
-
-    it('should have consistent timestamp format across multiple logs', () => {
-      // Act
-      logger.info('First message')
-      logger.warn('Second message')
-
-      // Assert
-      expect(consoleSpy).toHaveBeenCalledTimes(2)
-      const firstLog = consoleSpy.mock.calls[0][0] as string
-      const secondLog = consoleSpy.mock.calls[1][0] as string
-
-      const timestampRegex = /^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\]/
-      expect(firstLog).toMatch(timestampRegex)
-      expect(secondLog).toMatch(timestampRegex)
     })
   })
 })

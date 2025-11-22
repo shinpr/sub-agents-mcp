@@ -34,31 +34,27 @@ describe('AgentExecutor Integration', () => {
           on: vi.fn((event, callback) => {
             if (event === 'data') {
               if (isTestAgent) {
-                // Success case - simulate cursor type:result response
-                setTimeout(() => {
-                  callback(
-                    Buffer.from(
-                      `${JSON.stringify({
-                        type: 'result',
-                        data: 'Integration test execution success',
-                      })}\n`
-                    )
+                // Success case - simulate cursor type:result response (synchronous for test stability)
+                callback(
+                  Buffer.from(
+                    `${JSON.stringify({
+                      type: 'result',
+                      data: 'Integration test execution success',
+                    })}\n`
                   )
-                }, 10)
+                )
               } else if (isNonexistentAgent) {
                 // Don't send successful data for nonexistent agents
               } else {
-                // Default success - cursor type:result format
-                setTimeout(() => {
-                  callback(
-                    Buffer.from(
-                      `${JSON.stringify({
-                        type: 'result',
-                        data: 'Default integration execution',
-                      })}\n`
-                    )
+                // Default success - cursor type:result format (synchronous for test stability)
+                callback(
+                  Buffer.from(
+                    `${JSON.stringify({
+                      type: 'result',
+                      data: 'Default integration execution',
+                    })}\n`
                   )
-                }, 10)
+                )
               }
             }
           }),
@@ -66,22 +62,22 @@ describe('AgentExecutor Integration', () => {
         stderr: {
           on: vi.fn((event, callback) => {
             if (event === 'data' && isNonexistentAgent) {
-              setTimeout(() => {
-                callback(Buffer.from('Agent not found'))
-              }, 10)
+              // Synchronous for test stability
+              callback(Buffer.from('Agent not found'))
             }
           }),
         },
         on: vi.fn((event, callback) => {
           if (event === 'close') {
             const exitCode = isNonexistentAgent ? 1 : 0
-            setTimeout(() => callback(exitCode), 50)
+            // Synchronous for test stability
+            callback(exitCode)
           } else if (event === 'error' && isNonexistentAgent) {
-            setTimeout(() => {
-              callback(new Error('Integration execution failed'))
-            }, 10)
+            // Synchronous for test stability
+            callback(new Error('Integration execution failed'))
           } else if (event === 'exit') {
-            setTimeout(() => callback(), 50)
+            // Synchronous for test stability
+            callback()
           }
         }),
         kill: vi.fn(),

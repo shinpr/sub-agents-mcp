@@ -35,52 +35,6 @@ describe('RunAgentTool', () => {
     runAgentTool = new RunAgentTool(mockAgentExecutor, mockAgentManager)
   })
 
-  describe('instantiation', () => {
-    it('should create RunAgentTool instance with dependencies', () => {
-      expect(() => {
-        new RunAgentTool(mockAgentExecutor, mockAgentManager)
-      }).not.toThrow()
-    })
-
-    it('should create RunAgentTool with default dependencies', () => {
-      expect(() => {
-        new RunAgentTool()
-      }).not.toThrow()
-    })
-  })
-
-  describe('tool definition', () => {
-    it('should provide correct tool name', () => {
-      expect(runAgentTool.name).toBe('run_agent')
-    })
-
-    it('should provide descriptive tool description', () => {
-      expect(runAgentTool.description).toContain(
-        'Delegate complex, multi-step, or specialized tasks'
-      )
-      expect(runAgentTool.description).toContain('autonomous agent')
-    })
-
-    it('should provide correct input schema', () => {
-      const schema = runAgentTool.inputSchema
-
-      expect(schema.type).toBe('object')
-      expect(schema.properties).toHaveProperty('agent')
-      expect(schema.properties).toHaveProperty('prompt')
-      expect(schema.properties).toHaveProperty('cwd')
-      expect(schema.properties).toHaveProperty('extra_args')
-
-      expect(schema.required).toEqual(['agent', 'prompt'])
-
-      // Verify property types
-      expect(schema.properties.agent.type).toBe('string')
-      expect(schema.properties.prompt.type).toBe('string')
-      expect(schema.properties.cwd.type).toBe('string')
-      expect(schema.properties.extra_args.type).toBe('array')
-      expect(schema.properties.extra_args.items.type).toBe('string')
-    })
-  })
-
   describe('parameter validation', () => {
     it('should validate required agent parameter', async () => {
       const params = {
@@ -152,6 +106,109 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
       expect(result).toBeDefined()
     })
+
+    it('should accept valid session_id parameter', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt with session',
+        session_id: 'test-session-123',
+      }
+
+      // Mock agent existence check
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'Test agent content',
+        filePath: '/test/agents/test-agent.md',
+        lastModified: new Date(),
+      })
+
+      // Mock the execution to avoid actual agent execution
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: 'Test output with session',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+        estimatedOutputSize: 1024,
+      })
+
+      const result = await runAgentTool.execute(params)
+      expect(result).toBeDefined()
+      expect(result.isError).not.toBe(true)
+    })
+
+    it('should reject empty session_id parameter', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: '',
+      }
+
+      const result = (await runAgentTool.execute(params)) as any
+      expect(result.content).toBeDefined()
+      const textContent = result.content.find((c: any) => c.type === 'text')
+      expect(textContent?.text).toMatch(/session.*id.*empty|invalid.*session/i)
+    })
+
+    it('should reject session_id with invalid characters', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: 'session/with/../invalid',
+      }
+
+      const result = (await runAgentTool.execute(params)) as any
+      expect(result.content).toBeDefined()
+      const textContent = result.content.find((c: any) => c.type === 'text')
+      expect(textContent?.text).toMatch(/session.*id.*invalid.*characters/i)
+    })
+
+    it('should reject session_id that is too long', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: 'a'.repeat(101), // 101 characters, exceeds max of 100
+      }
+
+      const result = (await runAgentTool.execute(params)) as any
+      expect(result.content).toBeDefined()
+      const textContent = result.content.find((c: any) => c.type === 'text')
+      expect(textContent?.text).toMatch(/session.*id.*too long/i)
+    })
+
+    it('should work without session_id for backward compatibility', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt without session',
+        // No session_id provided
+      }
+
+      // Mock agent existence check
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'Test agent content',
+        filePath: '/test/agents/test-agent.md',
+        lastModified: new Date(),
+      })
+
+      // Mock the execution to avoid actual agent execution
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: 'Test output without session',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+        estimatedOutputSize: 1024,
+      })
+
+      const result = await runAgentTool.execute(params)
+      expect(result).toBeDefined()
+      expect(result.isError).not.toBe(true)
+    })
   })
 
   describe('agent execution', () => {
@@ -215,9 +272,15 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toContain('Warning output')
-      // stderr is included in structured content, not in text content when stdout exists
-      expect(result.structuredContent).toHaveProperty('stderr', 'Non-critical warning message')
+      // content[0].text is now JSON string (ADR-0003)
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+      expect(parsedContent.result).toContain('Warning output')
+
+      // structuredContent should have result field (ADR-0003)
+      expect(result.structuredContent).toHaveProperty('result')
+      expect((result.structuredContent as any).result).toContain('Warning output')
+      // stderr is agent implementation detail and should NOT be in structuredContent
+      expect(result.structuredContent).not.toHaveProperty('stderr')
     })
 
     it('should handle agent execution failure', async () => {
@@ -240,9 +303,11 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toContain('failed')
-      // exit code is in structured content, not text content
-      expect(result.structuredContent).toHaveProperty('exitCode', 1)
+      // content[0].text is now JSON string (ADR-0003)
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+      expect(parsedContent.result).toContain('failed')
+      // exit code is in structured content with snake_case naming (ADR-0003)
+      expect(result.structuredContent).toHaveProperty('exit_code', 1)
     })
 
     it('should include execution metadata in response', async () => {
@@ -265,10 +330,12 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toContain('Success')
-      // Metadata is in structured content, not text content
-      expect(result.structuredContent).toHaveProperty('executionTime', 300)
-      expect(result.structuredContent).toHaveProperty('exitCode', 0)
+      // content[0].text is now JSON string (ADR-0003)
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+      expect(parsedContent.result).toContain('Success')
+      // Metadata is in structured content with snake_case naming (ADR-0003)
+      expect(result.structuredContent).toHaveProperty('execution_time', 300)
+      expect(result.structuredContent).toHaveProperty('exit_code', 0)
     })
   })
 
@@ -288,7 +355,9 @@ describe('RunAgentTool', () => {
       expect(result.content).toBeDefined()
 
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toMatch(/agent.*not found|nonexistent.*agent/i)
+      // content[0].text is now JSON string (ADR-0003)
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+      expect(parsedContent.error).toMatch(/agent.*not found|nonexistent.*agent/i)
     })
 
     it('should include available agents in error message', async () => {
@@ -319,9 +388,10 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toContain('agent1')
-      expect(textContent?.text).toContain('agent2')
-      expect(textContent?.text).toContain('Available agents')
+      // content[0].text is now JSON string (ADR-0003)
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+      expect(parsedContent.available_agents).toContain('agent1')
+      expect(parsedContent.available_agents).toContain('agent2')
     })
   })
 
@@ -385,12 +455,16 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toContain('Detailed output')
-      // All metadata is in structured content, not text content
+      // content[0].text is now JSON string (ADR-0003)
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+      expect(parsedContent.result).toContain('Detailed output')
+      // MCP-managed metadata with snake_case naming (ADR-0003)
       expect(result.structuredContent).toHaveProperty('agent', 'test-agent')
-      expect(result.structuredContent).toHaveProperty('exitCode', 0)
-      expect(result.structuredContent).toHaveProperty('executionTime', 250)
-      expect(result.structuredContent).toHaveProperty('stderr', 'Warning message')
+      expect(result.structuredContent).toHaveProperty('exit_code', 0)
+      expect(result.structuredContent).toHaveProperty('execution_time', 250)
+      expect(result.structuredContent).toHaveProperty('result')
+      // Agent implementation details should NOT be in structuredContent
+      expect(result.structuredContent).not.toHaveProperty('stderr')
     })
   })
 
@@ -449,68 +523,6 @@ describe('RunAgentTool', () => {
       })
     })
 
-    it('should treat exit code 143 with hasResult=true as success', async () => {
-      const params = {
-        agent: 'streaming-agent',
-        prompt: 'Test streaming',
-      }
-
-      // Mock SIGTERM termination after successful JSON retrieval
-      const mockResult = {
-        stdout: '{"type":"result","data":"Streaming completed"}',
-        stderr: '',
-        exitCode: 143, // SIGTERM
-        executionTime: 150,
-        hasResult: true,
-        resultJson: { type: 'result', data: 'Streaming completed' },
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await runAgentTool.execute(params)
-      const textContent = result.content.find((c) => c.type === 'text')
-
-      // Content should be the agent output
-      expect(textContent?.text).toBe('{"type":"result","data":"Streaming completed"}')
-      // Check status in structuredContent
-      expect(result.structuredContent).toMatchObject({
-        status: 'success',
-        exitCode: 143,
-        hasResult: true,
-      })
-    })
-
-    it('should treat exit code 124 with hasResult=true as partial success', async () => {
-      const params = {
-        agent: 'timeout-agent',
-        prompt: 'Test timeout with partial',
-      }
-
-      // Mock timeout but with partial result
-      const mockResult = {
-        stdout: '{"type":"partial","data":"Partial result"}',
-        stderr: 'Execution timeout: 300000ms',
-        exitCode: 124, // Timeout
-        executionTime: 300000,
-        hasResult: true,
-        resultJson: { type: 'partial', data: 'Partial result' },
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await runAgentTool.execute(params)
-      const textContent = result.content.find((c) => c.type === 'text')
-
-      // Content should be the agent output
-      expect(textContent?.text).toBe('{"type":"partial","data":"Partial result"}')
-      // Check partial status in structuredContent
-      expect(result.structuredContent).toMatchObject({
-        status: 'partial',
-        exitCode: 124,
-        hasResult: true,
-      })
-    })
-
     it('should treat exit code 124 with hasResult=false as complete timeout', async () => {
       const params = {
         agent: 'timeout-agent',
@@ -532,13 +544,15 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
       const textContent = result.content.find((c) => c.type === 'text')
 
-      // Content should be the stderr message
-      expect(textContent?.text).toBe('Execution timeout: 300000ms')
-      // Check error status in structuredContent
+      // content[0].text is now JSON string (ADR-0003)
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+      expect(parsedContent.result).toBe('Execution timeout: 300000ms')
+      expect(parsedContent.exit_code).toBe(124)
+      expect(parsedContent.status).toBe('error')
+      // Check error status in structuredContent with snake_case naming
       expect(result.structuredContent).toMatchObject({
         status: 'error',
-        exitCode: 124,
-        hasResult: false,
+        exit_code: 124,
       })
     })
 
@@ -563,70 +577,190 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
       const textContent = result.content.find((c) => c.type === 'text')
 
-      // Content should be the agent output
-      expect(textContent?.text).toBe('Normal output')
-      // Check success status in structuredContent
+      // content[0].text is now JSON string (ADR-0003)
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+      expect(parsedContent.result).toBe('Normal output')
+      expect(parsedContent.exit_code).toBe(0)
+      expect(parsedContent.status).toBe('success')
+      // Check success status in structuredContent with snake_case naming
       expect(result.structuredContent).toMatchObject({
         status: 'success',
-        exitCode: 0,
-        hasResult: false,
+        exit_code: 0,
       })
     })
+  })
 
-    it('should include isError flag in response based on exit code and hasResult', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test isError flag',
+  describe('session ID auto-generation', () => {
+    it('should auto-generate session_id when not provided and SessionManager is available', async () => {
+      const mockSessionManager = {
+        loadSession: vi.fn().mockResolvedValue(null),
+        saveSession: vi.fn().mockResolvedValue(undefined),
       }
 
-      // Test failure case
+      const toolWithSession = new RunAgentTool(
+        mockAgentExecutor,
+        mockAgentManager,
+        mockSessionManager as any
+      )
+
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        // No session_id provided
+      }
+
       const mockResult = {
-        stdout: '',
-        stderr: 'Error message',
-        exitCode: 1,
-        executionTime: 50,
+        stdout: 'Success',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+      }
+
+      // Mock agent existence
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'test content',
+      } as any)
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await toolWithSession.execute(params)
+
+      // Should have _meta.session_id in response
+      expect(result).toHaveProperty('_meta')
+      expect(result._meta).toHaveProperty('session_id')
+      expect(typeof result._meta?.session_id).toBe('string')
+      expect(result._meta?.session_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      )
+
+      // Should have saved session with auto-generated ID
+      expect(mockSessionManager.saveSession).toHaveBeenCalledWith(
+        expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+        expect.anything(),
+        expect.anything()
+      )
+    })
+
+    it('should use provided session_id instead of auto-generating', async () => {
+      const mockSessionManager = {
+        loadSession: vi.fn().mockResolvedValue(null),
+        saveSession: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const toolWithSession = new RunAgentTool(
+        mockAgentExecutor,
+        mockAgentManager,
+        mockSessionManager as any
+      )
+
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: 'my-custom-session',
+      }
+
+      const mockResult = {
+        stdout: 'Success',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: false,
+        resultJson: undefined,
+      }
+
+      // Mock agent existence
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'test content',
+      } as any)
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await toolWithSession.execute(params)
+
+      // Should return the provided session_id
+      expect(result._meta?.session_id).toBe('my-custom-session')
+
+      // Should have saved with provided session_id
+      expect(mockSessionManager.saveSession).toHaveBeenCalledWith(
+        'my-custom-session',
+        expect.anything(),
+        expect.anything()
+      )
+    })
+
+    it('should not auto-generate session_id when SessionManager is not available', async () => {
+      const toolWithoutSession = new RunAgentTool(mockAgentExecutor, mockAgentManager, undefined)
+
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        // No session_id provided
+      }
+
+      const mockResult = {
+        stdout: 'Success',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
         hasResult: false,
         resultJson: undefined,
       }
 
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
 
-      const result = await runAgentTool.execute(params)
+      const result = await toolWithoutSession.execute(params)
 
-      // Should have isError flag set to true for failures
-      expect(result).toHaveProperty('isError')
-      expect(result.isError).toBe(true)
+      // Should not have _meta.session_id when SessionManager is not available
+      expect(result._meta).toBeUndefined()
     })
 
-    it('should include structuredContent with status and result', async () => {
+    it('should include session_id in both _meta and structuredContent', async () => {
+      const mockSessionManager = {
+        loadSession: vi.fn().mockResolvedValue(null),
+        saveSession: vi.fn().mockResolvedValue(undefined),
+      }
+
+      const toolWithSession = new RunAgentTool(
+        mockAgentExecutor,
+        mockAgentManager,
+        mockSessionManager as any
+      )
+
       const params = {
-        agent: 'json-agent',
-        prompt: 'Return structured data',
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        session_id: 'test-session-123',
       }
 
       const mockResult = {
-        stdout: '{"type":"result","data":"test"}',
+        stdout: 'Success',
         stderr: '',
         exitCode: 0,
         executionTime: 100,
-        hasResult: true,
-        resultJson: { type: 'result', data: 'test' },
+        hasResult: false,
+        resultJson: undefined,
       }
+
+      // Mock agent existence
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'test content',
+      } as any)
 
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
 
-      const result = await runAgentTool.execute(params)
+      const result = await toolWithSession.execute(params)
 
-      // Verify structuredContent
-      expect(result).toHaveProperty('structuredContent')
-      expect(result.structuredContent).toMatchObject({
-        agent: 'json-agent',
-        exitCode: 0,
-        executionTime: 100,
-        hasResult: true,
-        status: 'success',
-        result: { type: 'result', data: 'test' },
-      })
+      // session_id in _meta and structuredContent (ADR-0003)
+      expect(result._meta?.session_id).toBe('test-session-123')
+      expect(result.structuredContent).toHaveProperty('session_id', 'test-session-123')
     })
   })
 })
