@@ -214,7 +214,11 @@ export class RunAgentTool {
         let promptWithHistory = validatedParams.prompt
         if (sessionId && this.sessionManager) {
           try {
-            const sessionData = await this.sessionManager.loadSession(sessionId)
+            // CRITICAL: Pass agent_type to enforce sub-agent isolation
+            const sessionData = await this.sessionManager.loadSession(
+              sessionId,
+              validatedParams.agent
+            )
             if (sessionData && sessionData.history.length > 0) {
               // Convert session history to Markdown format for token efficiency and LLM comprehension
               const historyMarkdown = formatSessionHistory(sessionData)

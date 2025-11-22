@@ -315,7 +315,7 @@ describe('SessionManager', () => {
       await manager.saveSession(sessionId, request, response)
 
       // Then, load it
-      const loadedSession = await manager.loadSession(sessionId)
+      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
 
       // Verify the loaded session
       expect(loadedSession).not.toBeNull()
@@ -332,7 +332,7 @@ describe('SessionManager', () => {
       const manager = new SessionManager(sessionConfig)
       const nonExistentSessionId = 'non-existent-session'
 
-      const loadedSession = await manager.loadSession(nonExistentSessionId)
+      const loadedSession = await manager.loadSession(nonExistentSessionId, 'rule-advisor')
 
       expect(loadedSession).toBeNull()
     })
@@ -346,7 +346,7 @@ describe('SessionManager', () => {
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, 'invalid json content', 'utf-8')
 
-      const loadedSession = await manager.loadSession(sessionId)
+      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
 
       expect(loadedSession).toBeNull()
     })
@@ -385,10 +385,66 @@ describe('SessionManager', () => {
       await manager.saveSession(sessionId, request2, response2)
 
       // Load session - should get the most recent one
-      const loadedSession = await manager.loadSession(sessionId)
+      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
 
       expect(loadedSession).not.toBeNull()
       expect(loadedSession?.history.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('should isolate sessions by agent type - CRITICAL for sub-agent isolation', async () => {
+      // Red: This test should FAIL with current implementation
+      // Current bug: loadSession(sessionId) ignores agent_type
+      const manager = new SessionManager(sessionConfig)
+      const sessionId = 'shared-session-001'
+
+      // Save session for rule-advisor
+      const ruleAdvisorRequest = {
+        agent: 'rule-advisor',
+        prompt: 'Analyze code quality',
+      }
+      const ruleAdvisorResponse = {
+        stdout: 'Rule advisor response',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+      }
+      await manager.saveSession(sessionId, ruleAdvisorRequest, ruleAdvisorResponse)
+
+      // Wait to ensure different timestamp
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      // Save session for task-executor (same session_id, different agent)
+      const taskExecutorRequest = {
+        agent: 'task-executor',
+        prompt: 'Execute task',
+      }
+      const taskExecutorResponse = {
+        stdout: 'Task executor response',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 200,
+      }
+      await manager.saveSession(sessionId, taskExecutorRequest, taskExecutorResponse)
+
+      // Load session for rule-advisor with agent_type parameter
+      const ruleAdvisorSession = await manager.loadSession(sessionId, 'rule-advisor')
+
+      // Verify isolation: should ONLY get rule-advisor's session, NOT task-executor's
+      expect(ruleAdvisorSession).not.toBeNull()
+      expect(ruleAdvisorSession?.agentType).toBe('rule-advisor')
+      expect(ruleAdvisorSession?.history).toHaveLength(1)
+      expect(ruleAdvisorSession?.history[0].request.prompt).toBe('Analyze code quality')
+      expect(ruleAdvisorSession?.history[0].response.stdout).toBe('Rule advisor response')
+
+      // Load session for task-executor with agent_type parameter
+      const taskExecutorSession = await manager.loadSession(sessionId, 'task-executor')
+
+      // Verify isolation: should ONLY get task-executor's session, NOT rule-advisor's
+      expect(taskExecutorSession).not.toBeNull()
+      expect(taskExecutorSession?.agentType).toBe('task-executor')
+      expect(taskExecutorSession?.history).toHaveLength(1)
+      expect(taskExecutorSession?.history[0].request.prompt).toBe('Execute task')
+      expect(taskExecutorSession?.history[0].response.stdout).toBe('Task executor response')
     })
   })
 

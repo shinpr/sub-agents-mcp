@@ -233,10 +233,13 @@ export class SessionManager {
   }
 
   /**
-   * Loads a session by session ID.
+   * Loads a session by session ID and agent type.
    *
-   * Searches for the most recent session file matching the session ID across all agent types.
-   * If multiple files exist with the same session ID, returns the one with the latest timestamp.
+   * Searches for the most recent session file matching the session ID and agent type.
+   * If multiple files exist with the same session ID and agent type, returns the one with the latest timestamp.
+   *
+   * **CRITICAL**: Sub-agent isolation is enforced - sessions are isolated by agent type.
+   * Same session_id with different agent_type will return different sessions.
    *
    * Error handling follows the error isolation principle:
    * - Returns null if session file does not exist
@@ -244,15 +247,16 @@ export class SessionManager {
    * - Errors are logged but not thrown
    *
    * @param sessionId - The session identifier (alphanumeric, hyphens, underscores only)
+   * @param agentType - The agent type to filter sessions (e.g., 'rule-advisor', 'task-executor')
    * @returns The session data if found, null otherwise
    *
    * @example
-   * const session = await sessionManager.loadSession('session-001')
+   * const session = await sessionManager.loadSession('session-001', 'rule-advisor')
    * if (session) {
    *   console.log(`Loaded session with ${session.history.length} entries`)
    * }
    */
-  public async loadSession(sessionId: string): Promise<SessionData | null> {
+  public async loadSession(sessionId: string, agentType: string): Promise<SessionData | null> {
     try {
       // Validate session ID to prevent directory traversal
       this.validateSessionId(sessionId)
@@ -260,10 +264,10 @@ export class SessionManager {
       // List files in session directory
       const files = await fs.readdir(this.config.sessionDir)
 
-      // Filter files matching the session ID (any agent type)
+      // Filter files matching the session ID AND agent type (CRITICAL: enforce sub-agent isolation)
       // File naming convention: [session_id]_[agent_type]_[timestamp].json
       const sessionFiles = files
-        .filter((file) => file.startsWith(`${sessionId}_`) && file.endsWith('.json'))
+        .filter((file) => file.startsWith(`${sessionId}_${agentType}_`) && file.endsWith('.json'))
         .sort()
         .reverse() // Most recent first (lexicographic sort works because timestamp is at the end)
 

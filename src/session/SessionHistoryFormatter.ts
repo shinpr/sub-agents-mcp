@@ -33,11 +33,11 @@ import type { SessionData } from '../types/SessionData'
  * //
  * // ## 1. User Request
  * //
- * // タスク: TypeScript型エラー修正
+ * // Task: Fix TypeScript type errors
  * //
  * // ## 1. Agent Response
  * //
- * // 型エラーを修正するには...
+ * // To fix type errors...
  * ```
  */
 export function formatSessionHistory(sessionData: SessionData): string {

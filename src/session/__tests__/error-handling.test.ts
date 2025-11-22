@@ -149,7 +149,7 @@ describe('Session Management - Error Handling Tests', () => {
       await manager.saveSession(validSessionId, request, response)
 
       // Verify valid session was saved
-      const loadedSession = await manager.loadSession(validSessionId)
+      const loadedSession = await manager.loadSession(validSessionId, 'rule-advisor')
       expect(loadedSession).not.toBeNull()
 
       consoleErrorSpy.mockRestore()
@@ -164,7 +164,7 @@ describe('Session Management - Error Handling Tests', () => {
       const manager = new SessionManager(sessionConfig)
       const nonExistentSessionId = 'non-existent-session'
 
-      const result = await manager.loadSession(nonExistentSessionId)
+      const result = await manager.loadSession(nonExistentSessionId, 'rule-advisor')
 
       expect(result).toBeNull()
     })
@@ -178,7 +178,7 @@ describe('Session Management - Error Handling Tests', () => {
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, 'invalid json content {{{', 'utf-8')
 
-      const result = await manager.loadSession(sessionId)
+      const result = await manager.loadSession(sessionId, 'rule-advisor')
 
       expect(result).toBeNull()
     })
@@ -195,7 +195,7 @@ describe('Session Management - Error Handling Tests', () => {
       // Spy on console.error
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-      await manager.loadSession(sessionId)
+      await manager.loadSession(sessionId, 'rule-advisor')
 
       // Verify error was logged
       expect(consoleErrorSpy).toHaveBeenCalled()
@@ -240,7 +240,7 @@ describe('Session Management - Error Handling Tests', () => {
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
         // Should return null without throwing
-        const result = await manager.loadSession(sessionId)
+        const result = await manager.loadSession(sessionId, 'rule-advisor')
         expect(result).toBeNull()
 
         consoleErrorSpy.mockRestore()
@@ -257,7 +257,7 @@ describe('Session Management - Error Handling Tests', () => {
       // Mock console.error to suppress error output
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-      const result = await manager.loadSession(invalidSessionId)
+      const result = await manager.loadSession(invalidSessionId, 'rule-advisor')
 
       expect(result).toBeNull()
 
@@ -447,7 +447,7 @@ describe('Session Management - Error Handling Tests', () => {
       await manager.saveSession(validSessionId, request2, response2)
 
       // Verify valid session was saved
-      const loadedSession = await manager.loadSession(validSessionId)
+      const loadedSession = await manager.loadSession(validSessionId, 'rule-advisor')
       expect(loadedSession).not.toBeNull()
       expect(loadedSession?.sessionId).toBe(validSessionId)
 
@@ -472,8 +472,8 @@ describe('Session Management - Error Handling Tests', () => {
           { agent: 'test', prompt: 'test' },
           { stdout: '', stderr: '', exitCode: 0, executionTime: 0 }
         ),
-        manager.loadSession('non-existent-1'),
-        manager.loadSession('non-existent-2'),
+        manager.loadSession('non-existent-1', 'rule-advisor'),
+        manager.loadSession('non-existent-2', 'rule-advisor'),
       ]
 
       // All should complete without throwing
@@ -523,7 +523,7 @@ describe('Session Management - Error Handling Tests', () => {
       await manager.saveSession(sessionId, request2, response2)
 
       // Verify data integrity
-      const loadedSession = await manager.loadSession(sessionId)
+      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
       expect(loadedSession).not.toBeNull()
       expect(loadedSession?.history.length).toBeGreaterThanOrEqual(2)
 

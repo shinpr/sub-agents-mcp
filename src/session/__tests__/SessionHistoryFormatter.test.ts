@@ -14,11 +14,11 @@ describe('SessionHistoryFormatter', () => {
             timestamp: new Date('2025-01-21T12:00:00.000Z'),
             request: {
               agent: 'rule-advisor',
-              prompt: 'タスク: TypeScript型エラー修正',
+              prompt: 'Task: Fix TypeScript type errors',
               cwd: '/path/to/project',
             },
             response: {
-              stdout: '型エラーを修正してください',
+              stdout: 'Please fix the type errors',
               stderr: '',
               exitCode: 0,
               executionTime: 1234,
@@ -35,9 +35,9 @@ describe('SessionHistoryFormatter', () => {
       // Assert
       expect(result).toContain('# Session History: rule-advisor')
       expect(result).toContain('## 1. User Request')
-      expect(result).toContain('タスク: TypeScript型エラー修正')
+      expect(result).toContain('Task: Fix TypeScript type errors')
       expect(result).toContain('## 1. Agent Response')
-      expect(result).toContain('型エラーを修正してください')
+      expect(result).toContain('Please fix the type errors')
     })
 
     it('should handle multiple history entries', () => {

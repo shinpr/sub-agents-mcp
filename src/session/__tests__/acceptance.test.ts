@@ -159,7 +159,7 @@ describe('Session Management - Acceptance Tests', () => {
       await manager.saveSession(sessionId, request1, response1)
 
       // Load session
-      const loadedSession = await manager.loadSession(sessionId)
+      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
 
       // Verify loaded data
       expect(loadedSession).not.toBeNull()
@@ -198,7 +198,7 @@ describe('Session Management - Acceptance Tests', () => {
       await manager.saveSession(sessionId, request2, response2)
 
       // Load session
-      const loadedSession = await manager.loadSession(sessionId)
+      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
 
       // Verify both entries are in history
       expect(loadedSession).not.toBeNull()
@@ -467,7 +467,7 @@ describe('Session Management - Acceptance Tests', () => {
       const nonExistentSessionId = 'non-existent-session'
 
       // Should return null without throwing error
-      const result = await manager.loadSession(nonExistentSessionId)
+      const result = await manager.loadSession(nonExistentSessionId, 'rule-advisor')
       expect(result).toBeNull()
     })
 
@@ -596,7 +596,7 @@ describe('Session Management - Acceptance Tests', () => {
       await manager.saveSession(sessionId, request, response)
 
       // Load and verify complete data
-      const loadedSession = await manager.loadSession(sessionId)
+      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
       expect(loadedSession).not.toBeNull()
       expect(loadedSession?.history[0].request).toEqual(request)
       expect(loadedSession?.history[0].response).toEqual(response)
@@ -626,7 +626,7 @@ describe('Session Management - Acceptance Tests', () => {
       await manager.saveSession(sessionId, request1, response1)
 
       // 2. Load session
-      let loadedSession = await manager.loadSession(sessionId)
+      let loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
       expect(loadedSession?.history).toHaveLength(1)
 
       // 3. Save second interaction (append to history)
@@ -643,7 +643,7 @@ describe('Session Management - Acceptance Tests', () => {
       await manager.saveSession(sessionId, request2, response2)
 
       // 4. Load updated session
-      loadedSession = await manager.loadSession(sessionId)
+      loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
       expect(loadedSession?.history.length).toBeGreaterThanOrEqual(2)
 
       // 5. Verify Markdown formatting works with loaded data

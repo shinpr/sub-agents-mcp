@@ -158,7 +158,7 @@ describe('Session Management - Performance Tests', () => {
 
       // Measure load time
       const startTime = performance.now()
-      const loadedSession = await manager.loadSession(sessionId)
+      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
       const endTime = performance.now()
       const duration = endTime - startTime
 
@@ -191,7 +191,7 @@ describe('Session Management - Performance Tests', () => {
 
       // Measure load time
       const startTime = performance.now()
-      const loadedSession = await manager.loadSession(sessionId)
+      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
       const endTime = performance.now()
       const duration = endTime - startTime
 
@@ -207,7 +207,7 @@ describe('Session Management - Performance Tests', () => {
 
       // Measure load time for non-existent session
       const startTime = performance.now()
-      const loadedSession = await manager.loadSession(nonExistentSessionId)
+      const loadedSession = await manager.loadSession(nonExistentSessionId, 'rule-advisor')
       const endTime = performance.now()
       const duration = endTime - startTime
 
@@ -254,7 +254,10 @@ describe('Session Management - Performance Tests', () => {
 
       // Test loading performance with many files
       const loadStartTime = performance.now()
-      const loadedSession = await manager.loadSession(sessionIds[sessionCount - 1] || '')
+      const loadedSession = await manager.loadSession(
+        sessionIds[sessionCount - 1] || '',
+        'rule-advisor'
+      )
       const loadEndTime = performance.now()
       const loadDuration = loadEndTime - loadStartTime
 
@@ -285,7 +288,7 @@ describe('Session Management - Performance Tests', () => {
       // Measure load time for a specific session
       const targetSessionId = 'perf-many-files-50'
       const startTime = performance.now()
-      const loadedSession = await manager.loadSession(targetSessionId)
+      const loadedSession = await manager.loadSession(targetSessionId, 'rule-advisor')
       const endTime = performance.now()
       const duration = endTime - startTime
 
@@ -398,7 +401,7 @@ describe('Session Management - Performance Tests', () => {
 
       for (let i = 0; i < concurrentCount; i++) {
         const sessionId = `concurrent-load-${i}`
-        loadPromises.push(manager.loadSession(sessionId))
+        loadPromises.push(manager.loadSession(sessionId, 'rule-advisor'))
       }
 
       const results = await Promise.all(loadPromises)

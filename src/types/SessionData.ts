@@ -1,215 +1,215 @@
 /**
- * セッション情報
+ * Session information
  *
- * サブエージェント実行時の過去のリクエスト・レスポンス履歴を保持する。
- * MCPサーバーが自律的に管理し、複数クライアント間で共有される。
+ * Maintains historical request-response records from sub-agent executions.
+ * Autonomously managed by the MCP server and shared across multiple clients.
  */
 export interface SessionData {
   /**
-   * セッションID
+   * Session ID
    *
-   * 一意なセッション識別子。UUID v4形式を推奨。
-   * ディレクトリトラバーサル攻撃を防ぐため、英数字とハイフン、アンダースコアのみを許容。
+   * Unique session identifier. UUID v4 format is recommended.
+   * Only alphanumerics, hyphens, and underscores are allowed to prevent directory traversal attacks.
    */
   sessionId: string
 
   /**
-   * エージェントタイプ
+   * Agent type
    *
-   * このセッションで使用されるエージェントの種類（例: "rule-advisor", "cursor"）。
-   * ファイル命名規則に使用される。
+   * The type of agent used in this session (e.g., "rule-advisor", "cursor").
+   * Used in file naming conventions.
    */
   agentType: string
 
   /**
-   * セッション履歴エントリのリスト
+   * List of session history entries
    *
-   * 過去のリクエスト・レスポンスの時系列記録。
-   * 古いエントリから新しいエントリの順に格納される。
+   * Chronological records of past request-response pairs.
+   * Stored in order from oldest to newest entries.
    */
   history: SessionEntry[]
 
   /**
-   * セッション作成日時
+   * Session creation timestamp
    *
-   * このセッションが最初に作成された日時。
-   * クリーンアップ処理で保持期間の判定に使用される。
+   * The date and time when this session was first created.
+   * Used to determine retention period during cleanup processing.
    */
   createdAt: Date
 
   /**
-   * 最終更新日時
+   * Last update timestamp
    *
-   * このセッションが最後に更新された日時。
-   * 新しいリクエスト・レスポンスが追加されるたびに更新される。
+   * The date and time when this session was last updated.
+   * Updated each time a new request-response pair is added.
    */
   lastUpdatedAt: Date
 }
 
 /**
- * セッション履歴エントリ
+ * Session history entry
  *
- * 1回のサブエージェント実行におけるリクエストとレスポンスのペア。
- * 時系列順にSessionData.historyに格納される。
+ * A request-response pair from a single sub-agent execution.
+ * Stored in chronological order within SessionData.history.
  */
 export interface SessionEntry {
   /**
-   * エントリのタイムスタンプ
+   * Entry timestamp
    *
-   * このリクエスト・レスポンスが記録された日時。
-   * 履歴の順序付けに使用される。
+   * The date and time when this request-response was recorded.
+   * Used for ordering the history.
    */
   timestamp: Date
 
   /**
-   * リクエスト情報
+   * Request information
    *
-   * サブエージェントに送信されたリクエストの詳細。
-   * ExecutionParamsと互換性のある構造を持つ。
+   * Details of the request sent to the sub-agent.
+   * Has a structure compatible with ExecutionParams.
    */
   request: {
     /**
-     * エージェント名
+     * Agent name
      *
-     * 実行されたエージェントの名前（例: "rule-advisor", "quality-fixer"）。
+     * The name of the executed agent (e.g., "rule-advisor", "quality-fixer").
      */
     agent: string
 
     /**
-     * プロンプト
+     * Prompt
      *
-     * エージェントに送信されたユーザー指示や質問。
+     * User instructions or questions sent to the agent.
      */
     prompt: string
 
     /**
-     * 作業ディレクトリ（オプショナル）
+     * Working directory (optional)
      *
-     * エージェント実行時の作業ディレクトリパス。
-     * 指定がない場合は現在の作業ディレクトリが使用される。
+     * The working directory path for agent execution.
+     * If not specified, the current working directory is used.
      */
     cwd?: string
 
     /**
-     * 追加引数（オプショナル）
+     * Additional arguments (optional)
      *
-     * エージェント実行時に渡される追加のコマンドライン引数。
+     * Additional command-line arguments passed during agent execution.
      */
     extra_args?: string[]
   }
 
   /**
-   * レスポンス情報
+   * Response information
    *
-   * サブエージェント実行の結果。
-   * ExecutionResultと互換性のある構造を持つ。
+   * The result of sub-agent execution.
+   * Has a structure compatible with ExecutionResult.
    */
   response: {
     /**
-     * 標準出力
+     * Standard output
      *
-     * エージェント実行時の標準出力内容。
-     * エージェントの主要な応答や結果がここに含まれる。
+     * The standard output content from agent execution.
+     * Contains the agent's primary responses and results.
      */
     stdout: string
 
     /**
-     * 標準エラー出力
+     * Standard error output
      *
-     * エージェント実行時の標準エラー出力内容。
-     * 警告メッセージやデバッグ情報が含まれることがある。
+     * The standard error output content from agent execution.
+     * May contain warning messages or debug information.
      */
     stderr: string
 
     /**
-     * 終了コード
+     * Exit code
      *
-     * エージェントプロセスの終了コード。
-     * 0は正常終了、非0はエラーを示す。
+     * The exit code of the agent process.
+     * 0 indicates successful completion, non-zero indicates an error.
      */
     exitCode: number
 
     /**
-     * 実行時間（ミリ秒）
+     * Execution time (milliseconds)
      *
-     * エージェント実行にかかった時間（ミリ秒単位）。
-     * パフォーマンス分析に使用される。
+     * The time taken for agent execution in milliseconds.
+     * Used for performance analysis.
      */
     executionTime: number
   }
 }
 
 /**
- * セッション設定
+ * Session configuration
  *
- * セッション管理機能の動作を制御する設定値。
- * 環境変数から読み込まれ、SessionManagerの初期化時に使用される。
+ * Configuration values that control the behavior of session management features.
+ * Loaded from environment variables and used during SessionManager initialization.
  */
 export interface SessionConfig {
   /**
-   * セッション管理の有効化フラグ
+   * Session management enabled flag
    *
-   * trueの場合、セッション保存・読み込み機能が有効になる。
-   * falseの場合、セッション機能は完全に無効化され、既存動作を維持する。
-   * 環境変数 SESSION_ENABLED で制御される。
+   * When true, session save and load functionality is enabled.
+   * When false, session functionality is completely disabled, maintaining existing behavior.
+   * Controlled by the SESSION_ENABLED environment variable.
    */
   enabled: boolean
 
   /**
-   * セッションファイルの保存ディレクトリ
+   * Session file storage directory
    *
-   * セッションJSONファイルが保存されるディレクトリのパス。
-   * ディレクトリが存在しない場合は自動的に作成される。
-   * 環境変数 SESSION_DIR で制御される。
+   * The path to the directory where session JSON files are saved.
+   * Automatically created if the directory does not exist.
+   * Controlled by the SESSION_DIR environment variable.
    */
   sessionDir: string
 
   /**
-   * セッションファイルの保持期間（日数）
+   * Session file retention period (days)
    *
-   * この日数より古いセッションファイルはクリーンアップ時に削除される。
-   * ベストエフォート実行で、削除失敗しても処理は継続される。
-   * 環境変数 SESSION_RETENTION_DAYS で制御される。
+   * Session files older than this number of days are deleted during cleanup.
+   * Best-effort execution: processing continues even if deletion fails.
+   * Controlled by the SESSION_RETENTION_DAYS environment variable.
    */
   retentionDays: number
 }
 
 /**
- * セッション保存結果
+ * Session save result
  *
- * SessionManager.saveSession() の実行結果を表すメタデータ。
- * エラー分離設計により、保存失敗しても本流処理は継続される。
+ * Metadata representing the execution result of SessionManager.saveSession().
+ * Due to error isolation design, main flow processing continues even if save fails.
  */
 export interface SessionSaveResult {
   /**
-   * 保存成功フラグ
+   * Save success flag
    *
-   * trueの場合、セッションファイルの保存に成功。
-   * falseの場合、保存に失敗したがエラーログのみ出力され、本流処理は継続される。
+   * When true, the session file was saved successfully.
+   * When false, save failed but only an error log is output and main flow processing continues.
    */
   success: boolean
 
   /**
-   * セッションID
+   * Session ID
    *
-   * 保存対象のセッション識別子。
-   * 成功・失敗にかかわらず常に設定される。
+   * The identifier of the session being saved.
+   * Always set regardless of success or failure.
    */
   sessionId: string
 
   /**
-   * 保存されたファイルパス（オプショナル）
+   * Saved file path (optional)
    *
-   * 保存に成功した場合のみ設定される。
-   * ファイル命名規則: [session_id]_[agent_type]_[timestamp].json
+   * Set only when save is successful.
+   * File naming convention: [session_id]_[agent_type]_[timestamp].json
    */
   filePath?: string
 
   /**
-   * エラーメッセージ（オプショナル）
+   * Error message (optional)
    *
-   * 保存に失敗した場合のみ設定される。
-   * デバッグ用の詳細なエラー情報が含まれる。
+   * Set only when save fails.
+   * Contains detailed error information for debugging.
    */
   error?: string
 }
