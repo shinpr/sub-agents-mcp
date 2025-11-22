@@ -265,7 +265,7 @@ Add these environment variables to your MCP configuration:
         "AGENT_TYPE": "cursor",
         "SESSION_ENABLED": "true",
         "SESSION_DIR": "/absolute/path/to/session-storage",
-        "SESSION_RETENTION_DAYS": "7"
+        "SESSION_RETENTION_DAYS": "1"
       }
     }
   }
@@ -276,7 +276,7 @@ Add these environment variables to your MCP configuration:
 
 - `SESSION_ENABLED` - Set to `"true"` to enable session management (default: `false`)
 - `SESSION_DIR` - Where to store session files (default: `.mcp-sessions` in the current working directory)
-- `SESSION_RETENTION_DAYS` - How long to keep session history in days (default: 7)
+- `SESSION_RETENTION_DAYS` - How long to keep session files based on last modification time in days (default: 1)
 
 **Security consideration:** Session files contain execution history and may include sensitive information. Use absolute paths for `SESSION_DIR`.
 
