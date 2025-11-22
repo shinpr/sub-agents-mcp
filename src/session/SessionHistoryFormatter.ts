@@ -1,11 +1,7 @@
 /**
  * Session history formatter for LLM context
  *
- * Converts SessionData to Markdown format for optimal token efficiency
- * and LLM comprehension.
- *
- * Token reduction: ~52% compared to JSON
- * Format: Standard Markdown (LLM-optimized)
+ * Converts SessionData to Markdown format for optimal token efficiency and LLM comprehension.
  */
 
 import type { SessionData } from '../types/SessionData'
@@ -15,12 +11,6 @@ import type { SessionData } from '../types/SessionData'
  *
  * Extracts only the essential conversation flow (prompts and responses),
  * removing metadata like sessionId, timestamps, and execution details.
- *
- * Benefits:
- * - 52.82% token reduction vs JSON
- * - LLM-optimized format (Markdown is well-understood by LLMs)
- * - Human-readable for debugging
- * - No escaping or compression artifacts
  *
  * @param sessionData - Session data to format
  * @returns Markdown-formatted conversation history
