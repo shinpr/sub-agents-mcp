@@ -4,7 +4,6 @@ import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionConfig } from '../../types/SessionData'
 import { SessionManager } from '../SessionManager'
-import { ToonConverter } from '../ToonConverter'
 
 /**
  * Error handling tests for session management feature.
@@ -14,7 +13,7 @@ import { ToonConverter } from '../ToonConverter'
  * - Session save failures do not block main execution
  * - Session load failures return null gracefully
  * - File system errors are handled gracefully
- * - TOON conversion failures fall back to JSON
+ * - Session history formatting uses Markdown for optimal LLM context
  */
 describe('Session Management - Error Handling Tests', () => {
   let testSessionDir: string
@@ -371,105 +370,6 @@ describe('Session Management - Error Handling Tests', () => {
       } catch {
         // Ignore if file was already deleted
       }
-    })
-  })
-
-  /**
-   * TOON conversion failure tests
-   */
-  describe('TOON conversion failure handling', () => {
-    it('should fall back to JSON when TOON conversion fails', () => {
-      // Create data that might cause conversion issues
-      const problematicData = {
-        circular: null as unknown,
-      }
-      // Create circular reference
-      problematicData.circular = problematicData
-
-      // Mock console.error to suppress error output
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      // Should not throw error and should return something
-      const result = ToonConverter.convertToToon(problematicData)
-
-      expect(result).toBeDefined()
-      expect(typeof result).toBe('string')
-
-      consoleErrorSpy.mockRestore()
-    })
-
-    it('should handle undefined and null values gracefully', () => {
-      const dataWithNulls = {
-        sessionId: 'test',
-        agentType: 'rule-advisor',
-        nullValue: null,
-        undefinedValue: undefined,
-        emptyString: '',
-        emptyArray: [],
-      }
-
-      const toonStr = ToonConverter.convertToToon(dataWithNulls)
-
-      expect(toonStr).toBeDefined()
-      expect(typeof toonStr).toBe('string')
-    })
-
-    it('should handle TOON parse errors gracefully', () => {
-      const invalidToonStr = 'invalid:toon:format:[[['
-
-      // Mock console.error to suppress error output
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      // Should try to fall back to JSON.parse and return a parsed value or throw
-      // The implementation tries TOON parse first, then JSON.parse fallback
-      // If both fail, it throws an error
-      const result = (() => {
-        try {
-          return ToonConverter.convertToJson(invalidToonStr)
-        } catch (error) {
-          return error
-        }
-      })()
-
-      // Either successfully parsed or threw an error - both are acceptable outcomes
-      expect(result).toBeDefined()
-
-      consoleErrorSpy.mockRestore()
-    })
-
-    it('should convert back to JSON even with complex structures', () => {
-      const complexData = {
-        sessionId: 'complex-test',
-        agentType: 'rule-advisor',
-        history: [
-          {
-            timestamp: new Date('2025-01-21T12:00:00Z'),
-            request: {
-              agent: 'rule-advisor',
-              prompt: 'Test prompt',
-              nested: {
-                deep: {
-                  value: 'nested value',
-                },
-              },
-            },
-            response: {
-              stdout: 'Test output',
-              stderr: '',
-              exitCode: 0,
-              executionTime: 100,
-            },
-          },
-        ],
-        createdAt: new Date('2025-01-21T12:00:00Z'),
-        lastUpdatedAt: new Date('2025-01-21T12:00:00Z'),
-      }
-
-      const toonStr = ToonConverter.convertToToon(complexData)
-      const parsedData = ToonConverter.convertToJson(toonStr)
-
-      expect(parsedData).toBeDefined()
-      expect(parsedData).toHaveProperty('sessionId', 'complex-test')
     })
   })
 

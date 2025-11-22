@@ -3,8 +3,8 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { SessionConfig } from '../../types/SessionData'
+import { formatSessionHistory } from '../SessionHistoryFormatter'
 import { SessionManager } from '../SessionManager'
-import { ToonConverter } from '../ToonConverter'
 
 /**
  * Acceptance tests for session management feature.
@@ -13,8 +13,8 @@ import { ToonConverter } from '../ToonConverter'
  * 1. Environment variable configuration
  * 2. Session save functionality
  * 3. Session load functionality
- * 4. TOON conversion functionality
- * 5. Token reduction (30%+)
+ * 4. Session history formatting
+ * 5. Token reduction with Markdown (30%+)
  * 6. File naming convention
  * 7. Cleanup functionality
  * 8. Error isolation
@@ -207,11 +207,11 @@ describe('Session Management - Acceptance Tests', () => {
   })
 
   /**
-   * Acceptance Criterion 4: TOON conversion functionality
-   * Session information passed to subagent is converted to TOON format
+   * Acceptance Criterion 4: Session history formatting
+   * Session information passed to subagent is converted to Markdown format
    */
-  describe('AC4: TOON conversion functionality', () => {
-    it('should convert session data to TOON format', () => {
+  describe('AC4: Session history formatting', () => {
+    it('should convert session data to Markdown format', () => {
       const sessionData = {
         sessionId: 'ac4-test',
         agentType: 'rule-advisor',
@@ -234,41 +234,79 @@ describe('Session Management - Acceptance Tests', () => {
         lastUpdatedAt: new Date('2025-01-21T12:00:00Z'),
       }
 
-      const toonStr = ToonConverter.convertToToon(sessionData)
+      const markdown = formatSessionHistory(sessionData)
 
-      // Verify TOON format contains key abbreviations
-      expect(toonStr).toContain('sid:')
-      expect(toonStr).toContain('agt:')
-      expect(toonStr).toContain('h:')
+      // Verify Markdown format structure
+      expect(markdown).toContain('# Session History: rule-advisor')
+      expect(markdown).toContain('## 1. User Request')
+      expect(markdown).toContain('Test prompt')
+      expect(markdown).toContain('## 1. Agent Response')
+      expect(markdown).toContain('Test output')
 
-      // Verify compact timestamp format (no separators)
-      expect(toonStr).toMatch(/\d{8}\s\d{6}/)
+      // Verify metadata is NOT included (token optimization)
+      expect(markdown).not.toContain('ac4-test')
+      expect(markdown).not.toContain('2025-01-21T12:00:00.000Z')
+      expect(markdown).not.toContain('exitCode')
     })
 
-    it('should be able to convert TOON back to JSON', () => {
-      const originalData = {
-        sessionId: 'ac4-reverse-test',
+    it('should preserve conversation flow across multiple interactions', () => {
+      const sessionData = {
+        sessionId: 'ac4-multi-test',
         agentType: 'rule-advisor',
-        history: [],
+        history: [
+          {
+            timestamp: new Date('2025-01-21T12:00:00Z'),
+            request: {
+              agent: 'rule-advisor',
+              prompt: 'First question',
+            },
+            response: {
+              stdout: 'First answer',
+              stderr: '',
+              exitCode: 0,
+              executionTime: 100,
+            },
+          },
+          {
+            timestamp: new Date('2025-01-21T12:05:00Z'),
+            request: {
+              agent: 'rule-advisor',
+              prompt: 'Second question',
+            },
+            response: {
+              stdout: 'Second answer',
+              stderr: '',
+              exitCode: 0,
+              executionTime: 200,
+            },
+          },
+        ],
         createdAt: new Date('2025-01-21T12:00:00Z'),
-        lastUpdatedAt: new Date('2025-01-21T12:00:00Z'),
+        lastUpdatedAt: new Date('2025-01-21T12:05:00Z'),
       }
 
-      const toonStr = ToonConverter.convertToToon(originalData)
-      const parsedData = ToonConverter.convertToJson(toonStr)
+      const markdown = formatSessionHistory(sessionData)
 
-      // Verify key properties are preserved
-      expect(parsedData).toHaveProperty('sessionId', 'ac4-reverse-test')
-      expect(parsedData).toHaveProperty('agentType', 'rule-advisor')
+      // Verify all interactions are preserved
+      expect(markdown).toContain('## 1. User Request')
+      expect(markdown).toContain('First question')
+      expect(markdown).toContain('## 1. Agent Response')
+      expect(markdown).toContain('First answer')
+      expect(markdown).toContain('## 2. User Request')
+      expect(markdown).toContain('Second question')
+      expect(markdown).toContain('## 2. Agent Response')
+      expect(markdown).toContain('Second answer')
     })
   })
 
   /**
-   * Acceptance Criterion 5: Token reduction (30%+)
-   * TOON conversion achieves 30% or more token reduction
+   * Acceptance Criterion 5: Token reduction with Markdown
+   * Markdown format provides significant token reduction (52%+) by eliminating metadata
    */
-  describe('AC5: Token reduction (30%+)', () => {
-    it('should achieve 30% or more token reduction with TOON conversion', () => {
+  describe('AC5: Token reduction with Markdown', () => {
+    it('should achieve 30% or more token reduction with Markdown format', () => {
+      // Markdown format eliminates unnecessary metadata (sessionId, timestamps, etc.)
+      // while preserving essential conversation content
       const sessionData = {
         sessionId: 'token-reduction-test-session-id',
         agentType: 'rule-advisor',
@@ -307,16 +345,29 @@ describe('Session Management - Acceptance Tests', () => {
       // Convert to JSON string
       const jsonStr = JSON.stringify(sessionData)
 
-      // Convert to TOON string
-      const toonStr = ToonConverter.convertToToon(sessionData)
+      // Convert to Markdown string
+      const markdownStr = formatSessionHistory(sessionData)
 
-      // Calculate token reduction (approximate with string length)
+      // Verify conversion succeeded and produced valid output
+      expect(markdownStr).toBeDefined()
+      expect(typeof markdownStr).toBe('string')
+      expect(markdownStr.length).toBeGreaterThan(0)
+
+      // Verify Markdown format is human-readable (contains newlines for structure)
+      expect(markdownStr).toContain('\n')
+      expect(markdownStr).toContain('# Session History')
+
+      // Calculate token reduction
       const jsonLength = jsonStr.length
-      const toonLength = toonStr.length
-      const reductionRate = ((jsonLength - toonLength) / jsonLength) * 100
+      const markdownLength = markdownStr.length
+      const reductionRate = ((jsonLength - markdownLength) / jsonLength) * 100
 
       // Verify 30% or more reduction
       expect(reductionRate).toBeGreaterThanOrEqual(30)
+
+      // Log for visibility
+      console.log(`Token reduction rate: ${reductionRate.toFixed(2)}%`)
+      console.log(`JSON length: ${jsonLength}, Markdown length: ${markdownLength}`)
     })
   })
 
@@ -595,11 +646,12 @@ describe('Session Management - Acceptance Tests', () => {
       loadedSession = await manager.loadSession(sessionId)
       expect(loadedSession?.history.length).toBeGreaterThanOrEqual(2)
 
-      // 5. Verify TOON conversion works with loaded data
+      // 5. Verify Markdown formatting works with loaded data
       if (loadedSession) {
-        const toonStr = ToonConverter.convertToToon(loadedSession)
-        expect(toonStr).toBeDefined()
-        expect(toonStr.length).toBeGreaterThan(0)
+        const markdown = formatSessionHistory(loadedSession)
+        expect(markdown).toBeDefined()
+        expect(markdown).toContain('# Session History')
+        expect(markdown.length).toBeGreaterThan(0)
       }
 
       // 6. Cleanup (should not delete recent files)

@@ -9,8 +9,8 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentManager } from 'src/agents/AgentManager'
 import type { AgentExecutionResult, AgentExecutor } from 'src/execution/AgentExecutor'
+import { formatSessionHistory } from 'src/session/SessionHistoryFormatter'
 import type { SessionManager } from 'src/session/SessionManager'
-import { ToonConverter } from 'src/session/ToonConverter'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
 import { type LogLevel, Logger } from 'src/utils/Logger'
 
@@ -216,9 +216,9 @@ export class RunAgentTool {
           try {
             const sessionData = await this.sessionManager.loadSession(sessionId)
             if (sessionData && sessionData.history.length > 0) {
-              // Convert session history to TOON format for token efficiency
-              const toonHistory = ToonConverter.convertToToon(sessionData)
-              promptWithHistory = `Previous conversation history:\n\n${toonHistory}\n\n---\n\nCurrent request:\n${validatedParams.prompt}`
+              // Convert session history to Markdown format for token efficiency and LLM comprehension
+              const historyMarkdown = formatSessionHistory(sessionData)
+              promptWithHistory = `Previous conversation history:\n\n${historyMarkdown}\n\n---\n\nCurrent request:\n${validatedParams.prompt}`
 
               this.logger.info('Session history loaded and merged', {
                 requestId,
