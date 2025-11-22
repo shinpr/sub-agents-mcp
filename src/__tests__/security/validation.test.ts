@@ -47,16 +47,15 @@ describe('Security Validation Tests', () => {
           on: vi.fn((event, callback) => {
             if (event === 'data') {
               // For security tests, simulate successful execution
-              setTimeout(() => {
-                callback(
-                  Buffer.from(
-                    `${JSON.stringify({
-                      type: 'result',
-                      data: 'Security test execution',
-                    })}\n`
-                  )
+              // Synchronous for test stability
+              callback(
+                Buffer.from(
+                  `${JSON.stringify({
+                    type: 'result',
+                    data: 'Security test execution',
+                  })}\n`
                 )
-              }, 10)
+              )
             }
           }),
         },
@@ -65,23 +64,21 @@ describe('Security Validation Tests', () => {
             if (event === 'data') {
               // Simulate stderr for invalid cwd test - check cwd in options
               if (options?.cwd?.includes('../../../etc')) {
-                setTimeout(() => {
-                  callback(Buffer.from('Invalid directory path'))
-                }, 10)
+                // Synchronous for test stability
+                callback(Buffer.from('Invalid directory path'))
               }
             }
           }),
         },
         on: vi.fn((event, callback) => {
           if (event === 'close') {
-            setTimeout(() => {
-              // Return exit code based on test scenario - check cwd in options
-              if (options?.cwd?.includes('../../../etc')) {
-                callback(1) // Error exit code for invalid cwd
-              } else {
-                callback(0) // Success
-              }
-            }, 20)
+            // Synchronous for test stability
+            // Return exit code based on test scenario - check cwd in options
+            if (options?.cwd?.includes('../../../etc')) {
+              callback(1) // Error exit code for invalid cwd
+            } else {
+              callback(0) // Success
+            }
           } else if (event === 'error') {
             // Handle error events if needed
           }

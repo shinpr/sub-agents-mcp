@@ -41,24 +41,22 @@ describe('E2E Integration Tests', () => {
         stdout: {
           on: vi.fn((event, callback) => {
             if (event === 'data') {
-              setTimeout(() => {
-                if (isTestAgent) {
-                  callback(Buffer.from('{"type": "result", "data": "E2E test successful"}\n'))
-                } else if (isPerformanceAgent) {
-                  callback(Buffer.from('{"type": "result", "data": "Performance test complete"}\n'))
-                } else {
-                  callback(
-                    Buffer.from('{"type": "result", "data": "Agent executed successfully"}\n')
-                  )
-                }
-              }, 10)
+              // Synchronous for test stability
+              if (isTestAgent) {
+                callback(Buffer.from('{"type": "result", "data": "E2E test successful"}\n'))
+              } else if (isPerformanceAgent) {
+                callback(Buffer.from('{"type": "result", "data": "Performance test complete"}\n'))
+              } else {
+                callback(Buffer.from('{"type": "result", "data": "Agent executed successfully"}\n'))
+              }
             }
           }),
         },
         stderr: { on: vi.fn() },
         on: vi.fn((event, callback) => {
           if (event === 'close') {
-            setTimeout(() => callback(0), 50)
+            // Synchronous for test stability
+            callback(0)
           }
         }),
         kill: vi.fn(),
