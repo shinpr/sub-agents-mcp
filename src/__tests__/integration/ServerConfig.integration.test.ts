@@ -141,13 +141,13 @@ describe('ServerConfig', () => {
       expect(config.sessionRetentionDays).toBe(14)
     })
 
-    it('should default SESSION_RETENTION_DAYS to 7 when not set', () => {
+    it('should default SESSION_RETENTION_DAYS to 1 when not set', () => {
       vi.stubEnv('AGENTS_DIR', testAgentsDir)
       vi.stubEnv('SESSION_RETENTION_DAYS', undefined)
 
       const config = new ServerConfig()
 
-      expect(config.sessionRetentionDays).toBe(7)
+      expect(config.sessionRetentionDays).toBe(1)
     })
 
     it('should use default SESSION_RETENTION_DAYS for invalid values', () => {
@@ -160,7 +160,7 @@ describe('ServerConfig', () => {
 
         const config = new ServerConfig()
 
-        expect(config.sessionRetentionDays).toBe(7)
+        expect(config.sessionRetentionDays).toBe(1)
       }
     })
   })

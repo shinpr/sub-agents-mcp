@@ -34,13 +34,26 @@ export function formatSessionHistory(sessionData: SessionData): string {
   const conversations = sessionData.history
     .map((entry, index) => {
       const number = index + 1
+
+      // Extract only the 'result' field from agent response (removing metadata)
+      let agentResponse = entry.response.stdout
+      try {
+        const parsed = JSON.parse(entry.response.stdout)
+        if (parsed && typeof parsed === 'object' && 'result' in parsed) {
+          agentResponse = String(parsed.result)
+        }
+      } catch {
+        // If parsing fails, use the raw stdout as fallback
+        // This ensures backward compatibility and error resilience
+      }
+
       return `## ${number}. User Request
 
 ${entry.request.prompt}
 
 ## ${number}. Agent Response
 
-${entry.response.stdout}`
+${agentResponse}`
     })
     .join('\n\n')
 

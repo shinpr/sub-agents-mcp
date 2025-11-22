@@ -73,10 +73,7 @@ export class SessionManager {
 
   /**
    * Builds a file path for a session file following the naming convention:
-   * [session_id]_[agent_type]_[timestamp].json
-   *
-   * Timestamp format: ISO 8601 compact format (YYYYMMDDTHHmmssZ)
-   * Example: 20250121T120000Z
+   * [session_id]_[agent_type].json
    *
    * Security measures:
    * - Validates session ID before processing
@@ -85,23 +82,15 @@ export class SessionManager {
    *
    * @param sessionId - The session identifier (validated for security)
    * @param agentType - The type of agent (e.g., 'rule-advisor', 'quality-fixer')
-   * @param timestamp - Unix timestamp in milliseconds
    * @returns The full file path for the session file
    * @throws {Error} If the session ID is invalid or if path traversal is detected
    */
-  public buildFilePath(sessionId: string, agentType: string, timestamp: number): string {
+  public buildFilePath(sessionId: string, agentType: string): string {
     // Validate session ID to prevent directory traversal
     this.validateSessionId(sessionId)
 
-    // Format timestamp in ISO 8601 compact format (YYYYMMDDTHHmmssZ)
-    const date = new Date(timestamp)
-    const isoTimestamp = date
-      .toISOString()
-      .replace(/[-:]/g, '')
-      .replace(/\.\d{3}/, '')
-
     // Build filename following the naming convention
-    const fileName = `${sessionId}_${agentType}_${isoTimestamp}.json`
+    const fileName = `${sessionId}_${agentType}.json`
 
     // Strip any directory components for additional security
     const safeFileName = path.basename(fileName)
@@ -167,9 +156,8 @@ export class SessionManager {
       // Build or update session data
       const sessionData = await this.buildSessionData(sessionId, request.agent, sessionEntry)
 
-      // Build file path with current timestamp
-      const timestamp = Date.now()
-      const filePath = this.buildFilePath(sessionId, request.agent, timestamp)
+      // Build file path (same file for same session_id + agent_type)
+      const filePath = this.buildFilePath(sessionId, request.agent)
 
       // Serialize to JSON with pretty printing
       const jsonContent = JSON.stringify(sessionData, null, 2)
@@ -261,27 +249,17 @@ export class SessionManager {
       // Validate session ID to prevent directory traversal
       this.validateSessionId(sessionId)
 
-      // List files in session directory
-      const files = await fs.readdir(this.config.sessionDir)
+      // Build expected file path
+      // File naming convention: [session_id]_[agent_type].json
+      const filePath = this.buildFilePath(sessionId, agentType)
 
-      // Filter files matching the session ID AND agent type (CRITICAL: enforce sub-agent isolation)
-      // File naming convention: [session_id]_[agent_type]_[timestamp].json
-      const sessionFiles = files
-        .filter((file) => file.startsWith(`${sessionId}_${agentType}_`) && file.endsWith('.json'))
-        .sort()
-        .reverse() // Most recent first (lexicographic sort works because timestamp is at the end)
-
-      if (sessionFiles.length === 0) {
+      // Check if file exists
+      try {
+        await fs.access(filePath)
+      } catch {
+        // File does not exist
         return null
       }
-
-      // Select the most recent file (first in the reversed sorted list)
-      const latestFile = sessionFiles[0]
-      if (!latestFile) {
-        return null
-      }
-
-      const filePath = path.join(this.config.sessionDir, latestFile)
       const fileContent = await fs.readFile(filePath, 'utf-8')
       const sessionData = JSON.parse(fileContent) as SessionData
 
@@ -316,25 +294,17 @@ export class SessionManager {
     agentType: string
   ): Promise<SessionData | null> {
     try {
-      // List files in session directory
-      const files = await fs.readdir(this.config.sessionDir)
+      // Build expected file path
+      // File naming convention: [session_id]_[agent_type].json
+      const filePath = this.buildFilePath(sessionId, agentType)
 
-      // Filter files matching the session ID and agent type
-      const sessionFiles = files
-        .filter((file) => file.startsWith(`${sessionId}_${agentType}_`))
-        .sort()
-        .reverse() // Most recent first
-
-      if (sessionFiles.length === 0) {
+      // Check if file exists
+      try {
+        await fs.access(filePath)
+      } catch {
+        // File does not exist
         return null
       }
-
-      // Read the most recent file
-      const latestFile = sessionFiles[0]
-      if (!latestFile) {
-        return null
-      }
-      const filePath = path.join(this.config.sessionDir, latestFile)
       const fileContent = await fs.readFile(filePath, 'utf-8')
       const sessionData = JSON.parse(fileContent) as SessionData
 

@@ -174,7 +174,7 @@ describe('Session Management - Error Handling Tests', () => {
       const sessionId = 'invalid-json-session'
 
       // Create a file with invalid JSON
-      const fileName = `${sessionId}_rule-advisor_${Date.now()}.json`
+      const fileName = `${sessionId}_rule-advisor.json`
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, 'invalid json content {{{', 'utf-8')
 
@@ -188,7 +188,7 @@ describe('Session Management - Error Handling Tests', () => {
       const sessionId = 'load-error-session'
 
       // Create a file with invalid JSON
-      const fileName = `${sessionId}_rule-advisor_${Date.now()}.json`
+      const fileName = `${sessionId}_rule-advisor.json`
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, 'invalid json', 'utf-8')
 
@@ -306,7 +306,7 @@ describe('Session Management - Error Handling Tests', () => {
       const filePaths: string[] = []
 
       for (let i = 0; i < fileCount; i++) {
-        const fileName = `old-session-${i}_rule-advisor_${Date.now() + i}.json`
+        const fileName = `old-session-${i}_rule-advisor.json`
         const filePath = path.join(testSessionDir, fileName)
         await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
         filePaths.push(filePath)
@@ -344,7 +344,7 @@ describe('Session Management - Error Handling Tests', () => {
       const manager = new SessionManager(sessionConfig)
 
       // Create a file
-      const fileName = `test-session_rule-advisor_${Date.now()}.json`
+      const fileName = 'test-session_rule-advisor.json'
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
 

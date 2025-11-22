@@ -398,9 +398,8 @@ describe('Session Management - Acceptance Tests', () => {
       const sessionFile = files.find((f) => f.startsWith(sessionId))
 
       expect(sessionFile).toBeDefined()
-      // Format: [session_id]_[agent_type]_[ISO8601_timestamp].json
-      // ISO 8601 compact format: YYYYMMDDTHHmmssZ
-      expect(sessionFile).toMatch(new RegExp(`^${sessionId}_${agentType}_\\d{8}T\\d{6}Z\\.json$`))
+      // Format: [session_id]_[agent_type].json
+      expect(sessionFile).toBe(`${sessionId}_${agentType}.json`)
     })
   })
 

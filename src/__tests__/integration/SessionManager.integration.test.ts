@@ -97,18 +97,11 @@ describe('SessionManager', () => {
       const manager = new SessionManager(sessionConfig)
       const sessionId = 'test-session-123'
       const agentType = 'rule-advisor'
-      const timestamp = 1234567890000
 
-      const filePath = manager.buildFilePath(sessionId, agentType, timestamp)
+      const filePath = manager.buildFilePath(sessionId, agentType)
 
-      // Expected format: [session_id]_[agent_type]_[ISO8601_timestamp].json
-      // ISO 8601 compact format: YYYYMMDDTHHmmssZ
-      const date = new Date(timestamp)
-      const isoTimestamp = date
-        .toISOString()
-        .replace(/[-:]/g, '')
-        .replace(/\.\d{3}/, '')
-      const expectedFileName = `${sessionId}_${agentType}_${isoTimestamp}.json`
+      // Expected format: [session_id]_[agent_type].json
+      const expectedFileName = `${sessionId}_${agentType}.json`
       expect(filePath).toBe(path.join(testSessionDir, expectedFileName))
     })
 
@@ -116,9 +109,8 @@ describe('SessionManager', () => {
       const manager = new SessionManager(sessionConfig)
       const maliciousSessionId = '../etc/passwd'
       const agentType = 'rule-advisor'
-      const timestamp = 1234567890000
 
-      expect(() => manager.buildFilePath(maliciousSessionId, agentType, timestamp)).toThrow(
+      expect(() => manager.buildFilePath(maliciousSessionId, agentType)).toThrow(
         'Invalid session ID'
       )
     })
@@ -127,9 +119,8 @@ describe('SessionManager', () => {
       const manager = new SessionManager(sessionConfig)
       const sessionId = 'valid-session'
       const agentType = 'rule-advisor'
-      const timestamp = 1234567890000
 
-      const filePath = manager.buildFilePath(sessionId, agentType, timestamp)
+      const filePath = manager.buildFilePath(sessionId, agentType)
 
       // Verify that the resolved path is within the session directory
       const normalizedFilePath = path.normalize(filePath)
@@ -159,9 +150,8 @@ describe('SessionManager', () => {
       // Verify that file was created
       const files = await fs.readdir(testSessionDir)
       expect(files.length).toBe(1)
-      // File name should match: [session_id]_[agent_type]_[ISO8601_timestamp].json
-      // ISO 8601 compact format: YYYYMMDDTHHmmssZ (e.g., 20250121T120000Z)
-      expect(files[0]).toMatch(/^test-session-001_rule-advisor_\d{8}T\d{6}Z\.json$/)
+      // File name should match: [session_id]_[agent_type].json
+      expect(files[0]).toBe('test-session-001_rule-advisor.json')
 
       // Verify file content
       const filePath = path.join(testSessionDir, files[0])
@@ -342,7 +332,7 @@ describe('SessionManager', () => {
       const sessionId = 'test-session-invalid-json'
 
       // Create a file with invalid JSON
-      const fileName = `${sessionId}_rule-advisor_${Date.now()}.json`
+      const fileName = `${sessionId}_rule-advisor.json`
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, 'invalid json content', 'utf-8')
 
@@ -378,17 +368,14 @@ describe('SessionManager', () => {
       // Save first session
       await manager.saveSession(sessionId, request1, response1)
 
-      // Wait a bit to ensure different timestamp
-      await new Promise((resolve) => setTimeout(resolve, 10))
-
-      // Save second session (creates a new file with appended history)
+      // Save second session (appends to the same file)
       await manager.saveSession(sessionId, request2, response2)
 
-      // Load session - should get the most recent one
+      // Load session - should get both entries in history
       const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
 
       expect(loadedSession).not.toBeNull()
-      expect(loadedSession?.history.length).toBeGreaterThanOrEqual(2)
+      expect(loadedSession?.history.length).toBe(2)
     })
 
     it('should isolate sessions by agent type - CRITICAL for sub-agent isolation', async () => {
@@ -409,9 +396,6 @@ describe('SessionManager', () => {
         executionTime: 100,
       }
       await manager.saveSession(sessionId, ruleAdvisorRequest, ruleAdvisorResponse)
-
-      // Wait to ensure different timestamp
-      await new Promise((resolve) => setTimeout(resolve, 10))
 
       // Save session for task-executor (same session_id, different agent)
       const taskExecutorRequest = {
@@ -453,7 +437,7 @@ describe('SessionManager', () => {
       const manager = new SessionManager(sessionConfig)
 
       // Create test files with different ages
-      const oldFileName = `old-session_rule-advisor_${Date.now()}.json`
+      const oldFileName = 'old-session_rule-advisor.json'
       const oldFilePath = path.join(testSessionDir, oldFileName)
       await fs.writeFile(oldFilePath, JSON.stringify({ test: 'data' }), 'utf-8')
 
@@ -463,7 +447,7 @@ describe('SessionManager', () => {
       await fs.utimes(oldFilePath, eightDaysAgo, eightDaysAgo)
 
       // Create a recent file (within retention period)
-      const recentFileName = `recent-session_rule-advisor_${Date.now()}.json`
+      const recentFileName = 'recent-session_rule-advisor.json'
       const recentFilePath = path.join(testSessionDir, recentFileName)
       await fs.writeFile(recentFilePath, JSON.stringify({ test: 'data' }), 'utf-8')
 
@@ -480,7 +464,7 @@ describe('SessionManager', () => {
       const manager = new SessionManager(sessionConfig)
 
       // Create a file that's 3 days old (within 7-day retention)
-      const fileName = `test-session_rule-advisor_${Date.now()}.json`
+      const fileName = 'test-session_rule-advisor.json'
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
 
@@ -501,7 +485,7 @@ describe('SessionManager', () => {
       const manager = new SessionManager(sessionConfig)
 
       // Create a file
-      const fileName = `test-session_rule-advisor_${Date.now()}.json`
+      const fileName = 'test-session_rule-advisor.json'
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
 
@@ -532,9 +516,9 @@ describe('SessionManager', () => {
     it('should log deleted file count', async () => {
       const manager = new SessionManager(sessionConfig)
 
-      // Create two old files
-      const oldFile1 = `old-session-1_rule-advisor_${Date.now()}.json`
-      const oldFile2 = `old-session-2_rule-advisor_${Date.now() + 1}.json`
+      // Create two old files (different session IDs)
+      const oldFile1 = 'old-session-1_rule-advisor.json'
+      const oldFile2 = 'old-session-2_rule-advisor.json'
       const oldFilePath1 = path.join(testSessionDir, oldFile1)
       const oldFilePath2 = path.join(testSessionDir, oldFile2)
       await fs.writeFile(oldFilePath1, JSON.stringify({ test: 'data' }), 'utf-8')

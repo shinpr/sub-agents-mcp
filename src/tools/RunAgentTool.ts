@@ -37,6 +37,20 @@ interface McpToolResponse {
 }
 
 /**
+ * MCP response data structure (ADR-0003)
+ * This structure is used in both content[0].text (as JSON string) and structuredContent
+ */
+interface McpResponseData {
+  result: string
+  session_id?: string
+  agent: string
+  exit_code: number
+  execution_time: number
+  status: 'success' | 'partial' | 'error'
+  request_id?: string
+}
+
+/**
  * Input schema for run_agent tool parameters
  */
 interface RunAgentInputSchema {
@@ -155,6 +169,19 @@ export class RunAgentTool {
       requestId,
       timestamp: new Date().toISOString(),
     })
+
+    // Best-effort cleanup: old session files (ADR-0002)
+    // Non-blocking execution - does not affect main processing flow
+    if (this.sessionManager) {
+      Promise.resolve()
+        .then(() => this.sessionManager!.cleanupOldSessions())
+        .catch((error) => {
+          this.logger.warn('Session cleanup failed (best-effort)', {
+            requestId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
+    }
 
     try {
       // Validate parameters with enhanced validation
@@ -550,7 +577,12 @@ export class RunAgentTool {
   }
 
   /**
-   * Format agent execution response
+   * Format agent execution response (ADR-0003)
+   *
+   * Returns MCP 2025-06-18 compliant response with:
+   * - content[0].text: JSON string (readable by current clients)
+   * - structuredContent: structured data (MCP 2025-06-18 standard)
+   * - _meta.session_id: session tracking (ADR-0002)
    *
    * @private
    * @param result - Agent execution result
@@ -568,7 +600,7 @@ export class RunAgentTool {
     // Determine if response indicates an error (agent-level or process-level)
     const isError = this.isAgentError(result.resultJson, result.exitCode)
 
-    // Extract actual content from agent response (hiding implementation details)
+    // Extract actual content from agent response
     const contentText = this.extractAgentContent(
       result.resultJson,
       isError,
@@ -576,48 +608,39 @@ export class RunAgentTool {
       result.stderr
     )
 
-    // Determine detailed status for structuredContent
+    // Determine detailed status
     const isSuccess =
       result.exitCode === 0 || // Normal completion
       (result.exitCode === 143 && result.hasResult === true) // SIGTERM with result
 
     const isPartialSuccess = result.exitCode === 124 && result.hasResult === true // Timeout with partial result
 
-    // MCP response metadata (no agent implementation details)
-    const structuredContent: Record<string, unknown> = {
+    // Build response data structure (ADR-0003)
+    // This object is used in both content[0].text and structuredContent
+    const responseData: McpResponseData = {
+      result: contentText,
       agent: agentName,
-      exitCode: result.exitCode,
-      executionTime: result.executionTime,
-      hasResult: result.hasResult || false,
+      exit_code: result.exitCode,
+      execution_time: result.executionTime,
       status: isSuccess ? 'success' : isPartialSuccess ? 'partial' : 'error',
-    }
-
-    if (requestId) {
-      structuredContent['requestId'] = requestId
-    }
-    if (sessionId) {
-      structuredContent['sessionId'] = sessionId
-    }
-
-    // Update statistics
-    const stats = this.executionStats.get(agentName)
-    if (stats) {
-      structuredContent['usageCount'] = stats.count
-      structuredContent['averageTime'] = Math.round(stats.totalTime / stats.count)
+      ...(sessionId && { session_id: sessionId }),
+      ...(requestId && { request_id: requestId }),
     }
 
     const response: McpToolResponse = {
       content: [
         {
           type: 'text',
-          text: contentText,
+          // JSON string format for current MCP clients (Cursor, Claude Code, etc.)
+          text: JSON.stringify(responseData, null, 2),
         },
       ],
       isError: isError,
-      structuredContent,
+      // Structured data format (MCP 2025-06-18 standard)
+      structuredContent: responseData,
     }
 
-    // Add session_id to response metadata if available
+    // Add session_id to response metadata (ADR-0002)
     if (sessionId) {
       response._meta = {
         session_id: sessionId,
@@ -628,7 +651,7 @@ export class RunAgentTool {
   }
 
   /**
-   * Create error response with optional available agents list
+   * Create error response with optional available agents list (ADR-0003)
    *
    * @private
    * @param errorMessage - Error message to display
@@ -639,30 +662,24 @@ export class RunAgentTool {
     errorMessage: string,
     availableAgents: string[] | null
   ): McpToolResponse {
-    let responseText = `Error: ${errorMessage}`
-
-    if (availableAgents && availableAgents.length > 0) {
-      responseText += `\n\nAvailable agents:\n${availableAgents.map((name) => `- ${name}`).join('\n')}`
-    }
-
-    const errorStructuredContent: Record<string, unknown> = {
+    // Build error response data
+    const errorData: Record<string, unknown> = {
       status: 'error',
       error: errorMessage,
-    }
-
-    if (availableAgents) {
-      errorStructuredContent['availableAgents'] = availableAgents
+      ...(availableAgents && { available_agents: availableAgents }),
     }
 
     return {
       content: [
         {
           type: 'text',
-          text: responseText,
+          // JSON string format for current MCP clients
+          text: JSON.stringify(errorData, null, 2),
         },
       ],
       isError: true,
-      structuredContent: errorStructuredContent,
+      // Structured data format (MCP 2025-06-18 standard)
+      structuredContent: errorData,
     }
   }
 

@@ -12,7 +12,7 @@
  * - LOG_LEVEL: Log level for server operations (default: 'info')
  * - SESSION_ENABLED: Enable session management functionality (default: false)
  * - SESSION_DIR: Directory for storing session files (default: '.mcp-sessions')
- * - SESSION_RETENTION_DAYS: Number of days to retain session files (default: 7)
+ * - SESSION_RETENTION_DAYS: Number of days to retain session files (default: 1)
  */
 export class ServerConfig {
   /** Server name identifier used for MCP registration */
@@ -89,10 +89,10 @@ export class ServerConfig {
     const retentionDaysEnv = process.env['SESSION_RETENTION_DAYS']
     if (retentionDaysEnv?.trim()) {
       const parsedDays = Number.parseInt(retentionDaysEnv, 10)
-      // Use default (7 days) for invalid values (NaN, zero, or negative)
-      this.sessionRetentionDays = Number.isNaN(parsedDays) || parsedDays <= 0 ? 7 : parsedDays
+      // Use default (1 day) for invalid values (NaN, zero, or negative)
+      this.sessionRetentionDays = Number.isNaN(parsedDays) || parsedDays <= 0 ? 1 : parsedDays
     } else {
-      this.sessionRetentionDays = 7
+      this.sessionRetentionDays = 1
     }
   }
 }
