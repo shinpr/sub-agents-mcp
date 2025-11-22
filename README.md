@@ -289,6 +289,28 @@ Sessions work well for:
 
 Note that sessions require additional storage and processing overhead.
 
+### How Session Continuity Works
+
+When sessions are enabled, the MCP response includes a `session_id` field. To continue the same session, pass this ID back in the next request.
+
+**Important:** Your AI assistant must explicitly include the session_id in subsequent requests. While some assistants may do this automatically, it's not guaranteed. For reliable session continuity, add explicit instructions to your prompts or project rules.
+
+**Example prompt instruction:**
+```markdown
+When using sub-agents with sessions enabled, always include the session_id
+from the previous response in your next request to maintain context.
+```
+
+**Example project rule (e.g., `AGENTS.md`):**
+```markdown
+# Sub-Agent Session Guidelines
+
+When calling the same sub-agent multiple times:
+1. Extract the session_id from the MCP response
+2. Pass it as a parameter in subsequent calls
+3. This preserves context between executions
+```
+
 ## Troubleshooting
 
 ### Timeout errors or authentication failures
