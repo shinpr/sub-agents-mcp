@@ -25,6 +25,7 @@ Claude Code offers powerful sub-agent workflows—but they're limited to its own
 - [Usage Examples](#usage-examples)
 - [Agent Examples](#agent-examples)
 - [Configuration Reference](#configuration-reference)
+- [Session Management](#session-management)
 - [Troubleshooting](#troubleshooting)
 - [Design Philosophy](#design-philosophy)
 - [How It Works](#how-it-works)
@@ -237,6 +238,56 @@ Example with timeout:
 ### Security Note
 
 Agents have access to your project directory. Only use agent definitions from trusted sources.
+
+## Session Management
+
+Session management allows sub-agents to remember previous executions, which helps when you want agents to build on earlier work or maintain context across multiple calls.
+
+### Why Sessions Matter
+
+By default, each sub-agent execution starts with no context. With sessions enabled:
+- Agents can reference their earlier work
+- You get execution history for debugging
+- Related tasks share context
+
+### Enabling Sessions
+
+Add these environment variables to your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "sub-agents": {
+      "command": "npx",
+      "args": ["-y", "sub-agents-mcp"],
+      "env": {
+        "AGENTS_DIR": "/absolute/path/to/agents",
+        "AGENT_TYPE": "cursor",
+        "SESSION_ENABLED": "true",
+        "SESSION_DIR": "/absolute/path/to/session-storage",
+        "SESSION_RETENTION_DAYS": "7"
+      }
+    }
+  }
+}
+```
+
+**Configuration options:**
+
+- `SESSION_ENABLED` - Set to `"true"` to enable session management (default: `false`)
+- `SESSION_DIR` - Where to store session files (default: `.mcp-sessions` in the current working directory)
+- `SESSION_RETENTION_DAYS` - How long to keep session history in days (default: 7)
+
+**Security consideration:** Session files contain execution history and may include sensitive information. Use absolute paths for `SESSION_DIR`.
+
+### When to Use Sessions
+
+Sessions work well for:
+- **Iterative development**: "Based on your earlier findings, now fix the issues"
+- **Multi-step workflows**: Breaking complex tasks into smaller sub-agent calls
+- **Debugging**: Reviewing exactly what was executed and what results were returned
+
+Note that sessions require additional storage and processing overhead.
 
 ## Troubleshooting
 
