@@ -57,7 +57,7 @@ interface RunAgentInputSchema {
   [x: string]: unknown
   type: 'object'
   properties: {
-    [x: string]: unknown
+    [x: string]: object
     agent: {
       type: 'string'
       description: string
