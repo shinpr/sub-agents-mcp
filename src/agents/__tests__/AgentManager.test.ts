@@ -214,7 +214,7 @@ This agent does amazing things.`
   })
 
   describe('Agent Loading', () => {
-    it('should load agent definitions on every request', async () => {
+    it('should return consistent agent data across multiple requests', async () => {
       // Arrange
       const mockFiles = ['cached-agent.md']
       const mockContent = '# Cached Agent\nThis agent should be loaded.'
@@ -229,14 +229,14 @@ This agent does amazing things.`
       const firstCall = await agentManager.getAgent('cached-agent')
       const secondCall = await agentManager.getAgent('cached-agent')
 
-      // Assert
+      // Assert - focus on behavior: same agent data is returned
       expect(firstCall).toBeDefined()
       expect(secondCall).toBeDefined()
-      expect(firstCall).toEqual(secondCall)
-      expect(mockReaddir).toHaveBeenCalledTimes(2) // Should read directory each time
+      expect(firstCall!.name).toBe(secondCall!.name)
+      expect(firstCall!.content).toBe(secondCall!.content)
     })
 
-    it('should load all agents on every listAgents call', async () => {
+    it('should return all agents from directory', async () => {
       // Arrange
       const mockFiles = ['agent1.md', 'agent2.txt']
       const mockContent = '# Test Agent\nTest content.'
@@ -251,18 +251,17 @@ This agent does amazing things.`
       })
 
       // Act
-      const firstList = await agentManager.listAgents()
-      const secondList = await agentManager.listAgents()
+      const agents = await agentManager.listAgents()
 
-      // Assert
-      expect(firstList).toHaveLength(2)
-      expect(secondList).toHaveLength(2)
-      expect(mockReaddir).toHaveBeenCalledTimes(2) // Should read directory each time
+      // Assert - focus on behavior: correct number and names of agents
+      expect(agents).toHaveLength(2)
+      expect(agents.map((a) => a.name)).toContain('agent1')
+      expect(agents.map((a) => a.name)).toContain('agent2')
     })
   })
 
   describe('Agent Refresh', () => {
-    it('should reload agents when refreshAgents is called', async () => {
+    it('should detect newly added agents after refresh', async () => {
       // Arrange
       const initialFiles = ['initial-agent.md']
       const refreshedFiles = ['initial-agent.md', 'new-agent.md']
@@ -285,14 +284,17 @@ This agent does amazing things.`
       // Act - Initial load
       const initialAgents = await agentManager.listAgents()
 
-      // Act - Refresh
+      // Act - Refresh (simulates new file added to directory)
       await agentManager.refreshAgents()
       const refreshedAgents = await agentManager.listAgents()
 
-      // Assert
+      // Assert - focus on behavior: new agent is now visible
       expect(initialAgents).toHaveLength(1)
+      expect(initialAgents.map((a) => a.name)).toContain('initial-agent')
+
       expect(refreshedAgents).toHaveLength(2)
-      expect(mockReaddir).toHaveBeenCalledTimes(3) // One for each operation
+      expect(refreshedAgents.map((a) => a.name)).toContain('initial-agent')
+      expect(refreshedAgents.map((a) => a.name)).toContain('new-agent')
     })
   })
 

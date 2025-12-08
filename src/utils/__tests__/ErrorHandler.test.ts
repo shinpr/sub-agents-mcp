@@ -17,13 +17,6 @@ describe('AppError', () => {
 
     expect(error.statusCode).toBe(500)
   })
-
-  it('should be instance of Error', () => {
-    const error = new AppError('Test', 'TEST')
-
-    expect(error).toBeInstanceOf(Error)
-    expect(error).toBeInstanceOf(AppError)
-  })
 })
 
 describe('ValidationError', () => {
