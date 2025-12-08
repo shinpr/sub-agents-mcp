@@ -25,7 +25,7 @@ export class ServerConfig {
   public readonly agentsDir: string
 
   /** Type of agent to use for execution */
-  public readonly agentType: 'cursor' | 'claude'
+  public readonly agentType: 'cursor' | 'claude' | 'gemini'
 
   /** Log level for server operations */
   public readonly logLevel: 'debug' | 'info' | 'warn' | 'error'
@@ -69,7 +69,7 @@ export class ServerConfig {
     }
     this.agentsDir = agentsDir
 
-    this.agentType = (process.env['AGENT_TYPE'] as 'cursor' | 'claude') || 'cursor'
+    this.agentType = (process.env['AGENT_TYPE'] as 'cursor' | 'claude' | 'gemini') || 'cursor'
     this.logLevel = (process.env['LOG_LEVEL'] as 'debug' | 'info' | 'warn' | 'error') || 'info'
 
     const timeoutEnv = process.env['EXECUTION_TIMEOUT_MS']

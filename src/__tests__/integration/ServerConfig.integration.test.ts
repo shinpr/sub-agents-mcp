@@ -39,6 +39,15 @@ describe('ServerConfig', () => {
     expect(config.agentType).toBe('claude')
   })
 
+  it('should load AGENT_TYPE as gemini when set', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('AGENT_TYPE', 'gemini')
+
+    const config = new ServerConfig()
+
+    expect(config.agentType).toBe('gemini')
+  })
+
   it('should throw error when AGENTS_DIR is not set', () => {
     // Ensure AGENTS_DIR is not set
     vi.stubEnv('AGENTS_DIR', undefined)

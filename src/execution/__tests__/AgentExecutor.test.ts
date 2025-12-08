@@ -128,6 +128,59 @@ describe('AgentExecutor', () => {
       const customExecutor = new AgentExecutor(customConfig)
       expect(customExecutor).toBeInstanceOf(AgentExecutor)
     })
+
+    it('should create instance with gemini agent type', () => {
+      const geminiConfig = createExecutionConfig('gemini')
+      const geminiExecutor = new AgentExecutor(geminiConfig)
+      expect(geminiExecutor).toBeInstanceOf(AgentExecutor)
+    })
+  })
+
+  describe('command generation', () => {
+    it('should use cursor-agent command for cursor type', async () => {
+      const cursorConfig = createExecutionConfig('cursor')
+      const cursorExecutor = new AgentExecutor(cursorConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await cursorExecutor.executeAgent(params)
+
+      expect(mockSpawn).toHaveBeenCalledWith('cursor-agent', expect.any(Array), expect.any(Object))
+    })
+
+    it('should use claude command for claude type', async () => {
+      const claudeConfig = createExecutionConfig('claude')
+      const claudeExecutor = new AgentExecutor(claudeConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await claudeExecutor.executeAgent(params)
+
+      expect(mockSpawn).toHaveBeenCalledWith('claude', expect.any(Array), expect.any(Object))
+    })
+
+    it('should use gemini command for gemini type', async () => {
+      const geminiConfig = createExecutionConfig('gemini')
+      const geminiExecutor = new AgentExecutor(geminiConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await geminiExecutor.executeAgent(params)
+
+      expect(mockSpawn).toHaveBeenCalledWith('gemini', expect.any(Array), expect.any(Object))
+    })
   })
 
   describe('executeAgent with spawn method', () => {

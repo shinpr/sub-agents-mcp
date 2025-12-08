@@ -57,9 +57,9 @@ export interface ExecutionConfig {
 
   /**
    * Type of agent to use for execution.
-   * 'cursor' or 'claude'
+   * 'cursor', 'claude', or 'gemini'
    */
-  agentType: 'cursor' | 'claude'
+  agentType: 'cursor' | 'claude' | 'gemini'
 }
 
 export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
@@ -70,7 +70,7 @@ export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
  * @param overrides - Optional overrides for thresholds
  */
 export function createExecutionConfig(
-  agentType: 'cursor' | 'claude',
+  agentType: 'cursor' | 'claude' | 'gemini',
   overrides?: Partial<Omit<ExecutionConfig, 'agentType'>>
 ): ExecutionConfig {
   return {
@@ -221,7 +221,12 @@ export class AgentExecutor {
       const args = ['--output-format', 'json', '-p', formattedPrompt]
 
       // Determine command based on agent type
-      const command = this.config.agentType === 'claude' ? 'claude' : 'cursor-agent'
+      const command =
+        this.config.agentType === 'claude'
+          ? 'claude'
+          : this.config.agentType === 'gemini'
+            ? 'gemini'
+            : 'cursor-agent'
 
       // Add API key for cursor-cli if available
       if (this.config.agentType === 'cursor' && process.env['CLI_API_KEY']) {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
   "name": "io.github.shinpr/sub-agents-mcp",
-  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor and other tools",
+  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude, and Gemini",
   "vendor": "Shinsuke Kagawa",
   "license": "MIT",
   "repository": {
@@ -28,7 +28,7 @@
         },
         {
           "name": "AGENT_TYPE",
-          "description": "Type of AI CLI to use: 'cursor' or 'claude'",
+          "description": "Type of AI CLI to use: 'cursor', 'claude', or 'gemini'",
           "isRequired": true,
           "format": "string",
           "isSecret": false
@@ -86,6 +86,7 @@
     "ai-agents",
     "claude-code",
     "cursor",
+    "gemini",
     "llm",
     "cli",
     "agent-orchestration"
