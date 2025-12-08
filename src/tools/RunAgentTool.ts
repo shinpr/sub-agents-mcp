@@ -11,6 +11,7 @@ import type { AgentManager } from 'src/agents/AgentManager'
 import type { AgentExecutionResult, AgentExecutor } from 'src/execution/AgentExecutor'
 import { formatSessionHistory } from 'src/session/SessionHistoryFormatter'
 import type { SessionManager } from 'src/session/SessionManager'
+import type { AgentDefinition } from 'src/types/AgentDefinition'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
 import { type LogLevel, Logger } from 'src/utils/Logger'
 
@@ -201,10 +202,11 @@ export class RunAgentTool {
         sessionIdGenerated: !validatedParams.session_id && !!sessionId,
       })
 
-      // Check if agent exists
+      // Check if agent exists and load agent definition once
+      let agentDefinition: AgentDefinition | undefined
       if (this.agentManager) {
-        const agent = await this.agentManager.getAgent(validatedParams.agent)
-        if (!agent) {
+        agentDefinition = await this.agentManager.getAgent(validatedParams.agent)
+        if (!agentDefinition) {
           this.logger.warn('Agent not found', {
             requestId,
             requestedAgent: validatedParams.agent,
@@ -218,8 +220,8 @@ export class RunAgentTool {
 
         this.logger.debug('Agent found and validated', {
           requestId,
-          agentName: agent.name,
-          agentDescription: agent.description,
+          agentName: agentDefinition.name,
+          agentDescription: agentDefinition.description,
         })
       }
 
@@ -227,15 +229,8 @@ export class RunAgentTool {
       if (this.agentExecutor) {
         // Report progress: Starting agent execution
 
-        // Get agent definition content if available
-        let agentContext = validatedParams.agent
-        if (this.agentManager) {
-          const agent = await this.agentManager.getAgent(validatedParams.agent)
-          if (agent?.content) {
-            // Include full agent definition content as system context
-            agentContext = agent.content
-          }
-        }
+        // Use agent definition content if available (already loaded above)
+        const agentContext = agentDefinition?.content ?? validatedParams.agent
 
         // Load session history if session_id is provided and SessionManager is available
         let promptWithHistory = validatedParams.prompt

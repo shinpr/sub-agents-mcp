@@ -218,7 +218,10 @@ export class AgentExecutor {
     return new Promise((resolve) => {
       // Generate command and args - both CLIs use the same interface
       const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
-      const args = ['--output-format', 'json', '-p', formattedPrompt]
+      // Use stream-json for Gemini (each line is a complete JSON object)
+      // Use json for Cursor and Claude (single JSON response)
+      const outputFormat = this.config.agentType === 'gemini' ? 'stream-json' : 'json'
+      const args = ['--output-format', outputFormat, '-p', formattedPrompt]
 
       // Determine command based on agent type
       const command =

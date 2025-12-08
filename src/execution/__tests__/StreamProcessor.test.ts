@@ -19,15 +19,16 @@ describe('StreamProcessor', () => {
       })
     })
 
-    it('should ignore subsequent JSONs after the first one', () => {
-      const json1 = '{"response": "First JSON", "status": "success"}'
-      const json2 = '{"response": "Second JSON", "status": "also success"}'
+    it('should ignore subsequent JSONs after finding result type', () => {
+      const json1 = '{"type": "result", "response": "First JSON", "status": "success"}'
+      const json2 = '{"type": "result", "response": "Second JSON", "status": "also success"}'
 
       expect(processor.processLine(json1)).toBe(true)
       expect(processor.processLine(json2)).toBe(false)
 
       // Should still have the first JSON
       expect(processor.getResult()).toEqual({
+        type: 'result',
         response: 'First JSON',
         status: 'success',
       })
@@ -67,11 +68,61 @@ describe('StreamProcessor', () => {
     })
 
     it('should handle claude JSON format', () => {
-      const claudeJson = '{"response": "Claude output", "status": "complete"}'
+      const claudeJson =
+        '{"type":"result","subtype":"success","is_error":false,"duration_ms":2856,"result":"Hi!","session_id":"711419a4-3a19-4448-aa4a-31de7c4fa7a5"}'
 
       expect(processor.processLine(claudeJson)).toBe(true)
       expect(processor.getResult()).toEqual({
-        response: 'Claude output',
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        duration_ms: 2856,
+        result: 'Hi!',
+        session_id: '711419a4-3a19-4448-aa4a-31de7c4fa7a5',
+      })
+    })
+
+    it('should handle gemini stream-json format by accumulating assistant messages', () => {
+      // Gemini stream-json outputs multiple JSON lines:
+      // - init: signals stream-json mode
+      // - message with role: "user": user prompt (ignored)
+      // - message with role: "assistant": response content (accumulated)
+      // - result: signals completion with stats
+      const initJson =
+        '{"type":"init","timestamp":"2025-12-08T01:58:05.481Z","session_id":"abc123","model":"auto"}'
+      const userMessageJson =
+        '{"type":"message","timestamp":"2025-12-08T01:58:05.481Z","role":"user","content":"say hello"}'
+      const assistantDelta1 =
+        '{"type":"message","timestamp":"2025-12-08T01:58:09.614Z","role":"assistant","content":"Hello! ","delta":true}'
+      const assistantDelta2 =
+        '{"type":"message","timestamp":"2025-12-08T01:58:09.642Z","role":"assistant","content":"How can I help you?","delta":true}'
+      const resultJson =
+        '{"type":"result","timestamp":"2025-12-08T01:58:09.651Z","status":"success","stats":{"total_tokens":100}}'
+
+      // init signals Gemini stream-json mode
+      expect(processor.processLine(initJson)).toBe(false)
+      // user message is ignored
+      expect(processor.processLine(userMessageJson)).toBe(false)
+      // assistant messages are accumulated
+      expect(processor.processLine(assistantDelta1)).toBe(false)
+      expect(processor.processLine(assistantDelta2)).toBe(false)
+
+      // Result type should return true and include accumulated response
+      expect(processor.processLine(resultJson)).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Hello! How can I help you?',
+        status: 'success',
+        stats: { total_tokens: 100 },
+      })
+    })
+
+    it('should handle JSON without type field for backwards compatibility', () => {
+      const legacyJson = '{"response": "Legacy output", "status": "complete"}'
+
+      expect(processor.processLine(legacyJson)).toBe(true)
+      expect(processor.getResult()).toEqual({
+        response: 'Legacy output',
         status: 'complete',
       })
     })
@@ -95,8 +146,9 @@ describe('StreamProcessor', () => {
     it('should handle malformed JSON gracefully', () => {
       expect(processor.processLine('{invalid json')).toBe(false)
       expect(processor.processLine('{"incomplete": ')).toBe(false)
-      expect(processor.processLine('null')).toBe(true) // null is valid JSON
-      expect(processor.getResult()).toBe(null) // but stored as null
+      // null is valid JSON but not an object with type field, so it's ignored
+      expect(processor.processLine('null')).toBe(false)
+      expect(processor.getResult()).toBeNull()
     })
   })
 
