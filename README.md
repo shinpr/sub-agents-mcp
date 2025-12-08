@@ -5,7 +5,7 @@
 
 Bring Claude Code–style sub-agents to any MCP-compatible tool.
 
-This MCP server lets you define task-specific AI agents (like "test-writer" or "code-reviewer") in markdown files, and execute them via Cursor CLI or Claude Code CLI backends.
+This MCP server lets you define task-specific AI agents (like "test-writer" or "code-reviewer") in markdown files, and execute them via Cursor CLI, Claude Code CLI, or Gemini CLI backends.
 
 ## Why?
 
@@ -14,7 +14,7 @@ Claude Code offers powerful sub-agent workflows—but they're limited to its own
 **Concrete benefits:**
 - Define reusable agents once, use them across multiple tools
 - Share agent definitions within teams regardless of IDE choice
-- Leverage Cursor CLI or Claude Code CLI capabilities from any MCP client
+- Leverage Cursor CLI, Claude Code CLI, or Gemini CLI capabilities from any MCP client
 
 → [Read the full story](https://dev.to/shinpr/bringing-claude-codes-sub-agents-to-any-mcp-compatible-tool-1hb9)
 
@@ -36,6 +36,7 @@ Claude Code offers powerful sub-agent workflows—but they're limited to its own
 - One of these execution engines (they actually run the sub-agents):
   - `cursor-agent` CLI (from Cursor)
   - `claude` CLI (from Claude Code)
+  - `gemini` CLI (from Gemini CLI)
 - An MCP-compatible tool (Cursor IDE, Claude Desktop, Windsurf, etc.)
 
 ## Quick Start
@@ -78,6 +79,17 @@ npm install -g @anthropic-ai/claude-code
 
 Note: Claude Code installs the `claude` CLI command.
 
+**For Gemini CLI users:**
+```bash
+# Install Gemini CLI
+npm install -g @google/gemini-cli
+
+# Authenticate via browser (required before first use)
+gemini
+```
+
+Note: Gemini CLI uses OAuth authentication. Run `gemini` once to authenticate via browser.
+
 ### 3. Configure MCP
 
 Add this to your MCP configuration file:
@@ -93,7 +105,7 @@ Add this to your MCP configuration file:
       "args": ["-y", "sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/absolute/path/to/your/agents-folder",
-        "AGENT_TYPE": "cursor"  // or "claude"
+        "AGENT_TYPE": "cursor"  // or "claude" or "gemini"
       }
     }
   }
@@ -120,6 +132,9 @@ Sub-agents may fail to execute shell commands with permission errors. This happe
 
    # For Claude Code users
    claude
+
+   # For Gemini CLI users
+   gemini
    ```
 
 2. When prompted to allow commands (e.g., "Add Shell(cd), Shell(make) to allowlist?"), approve them
@@ -212,6 +227,7 @@ Path to your agents folder. Must be absolute.
 Which execution engine to use:
 - `"cursor"` - uses `cursor-agent` CLI
 - `"claude"` - uses `claude` CLI
+- `"gemini"` - uses `gemini` CLI
 
 ### Optional Settings
 
@@ -335,7 +351,7 @@ Check that:
 
 ### Other execution errors
 
-1. Verify `AGENT_TYPE` is set correctly (`cursor` or `claude`)
+1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, or `gemini`)
 2. Ensure your chosen CLI tool is installed and accessible
 3. Double-check that all environment variables are set in the MCP config
 
@@ -364,14 +380,14 @@ The startup overhead is an intentional trade-off: the system favors clarity and 
 
 ## How It Works
 
-This MCP server acts as a bridge between your AI tool and a supported execution engine (Cursor CLI or Claude Code CLI).
+This MCP server acts as a bridge between your AI tool and a supported execution engine (Cursor CLI, Claude Code CLI, or Gemini CLI).
 
 **The flow:**
 
 1. You configure the MCP server in your client (Cursor, Claude Desktop, etc.)
 2. The client automatically launches `sub-agents-mcp` as a background process when it starts
 3. When your main AI assistant needs a sub-agent, it makes an MCP tool call
-4. The MCP server reads the agent definition (markdown file) and invokes the selected CLI (`cursor-agent` or `claude`)
+4. The MCP server reads the agent definition (markdown file) and invokes the selected CLI (`cursor-agent`, `claude`, or `gemini`)
 5. The execution engine runs the agent and streams results back through the MCP server
 6. Your main assistant receives the results and continues working
 
