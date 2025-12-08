@@ -114,25 +114,29 @@ describe('AgentExecutor', () => {
     vi.restoreAllMocks()
   })
 
-  describe('constructor', () => {
-    it('should create instance with config', () => {
+  describe('createExecutionConfig', () => {
+    it('should create config with default timeout when no overrides provided', () => {
       const config = createExecutionConfig('cursor')
-      const defaultExecutor = new AgentExecutor(config)
-      expect(defaultExecutor).toBeInstanceOf(AgentExecutor)
+
+      expect(config.agentType).toBe('cursor')
+      expect(config.executionTimeout).toBe(DEFAULT_EXECUTION_TIMEOUT)
     })
 
-    it('should create instance with custom config', () => {
-      const customConfig = createExecutionConfig('cursor', {
-        executionTimeout: 15000,
-      })
-      const customExecutor = new AgentExecutor(customConfig)
-      expect(customExecutor).toBeInstanceOf(AgentExecutor)
+    it('should allow overriding execution timeout', () => {
+      const customTimeout = 15000
+      const config = createExecutionConfig('cursor', { executionTimeout: customTimeout })
+
+      expect(config.executionTimeout).toBe(customTimeout)
     })
 
-    it('should create instance with gemini agent type', () => {
+    it('should support all agent types', () => {
+      const cursorConfig = createExecutionConfig('cursor')
+      const claudeConfig = createExecutionConfig('claude')
       const geminiConfig = createExecutionConfig('gemini')
-      const geminiExecutor = new AgentExecutor(geminiConfig)
-      expect(geminiExecutor).toBeInstanceOf(AgentExecutor)
+
+      expect(cursorConfig.agentType).toBe('cursor')
+      expect(claudeConfig.agentType).toBe('claude')
+      expect(geminiConfig.agentType).toBe('gemini')
     })
   })
 
@@ -183,8 +187,8 @@ describe('AgentExecutor', () => {
     })
   })
 
-  describe('executeAgent with spawn method', () => {
-    it('should execute agent successfully with spawn', async () => {
+  describe('executeAgent', () => {
+    it('should return successful result with parsed JSON on success', async () => {
       const params: ExecutionParams = {
         agent: 'test-agent',
         prompt: 'Help me',
@@ -193,19 +197,16 @@ describe('AgentExecutor', () => {
 
       const result = await executor.executeAgent(params)
 
-      expect(result).toEqual({
-        stdout: expect.any(String),
-        stderr: expect.any(String),
-        exitCode: expect.any(Number),
-        executionTime: expect.any(Number),
-        hasResult: expect.any(Boolean),
-        resultJson: expect.anything(),
-      })
       expect(result.exitCode).toBe(0)
+      expect(result.hasResult).toBe(true)
+      expect(result.resultJson).toEqual({
+        type: 'result',
+        data: 'Test execution successful',
+      })
       expect(result.executionTime).toBeGreaterThan(0)
     })
 
-    it('should handle exec execution failure', async () => {
+    it('should return non-zero exit code and error message on failure', async () => {
       const params: ExecutionParams = {
         agent: 'nonexistent-agent',
         prompt: 'This should fail',
@@ -215,34 +216,34 @@ describe('AgentExecutor', () => {
       const result = await executor.executeAgent(params)
 
       expect(result.exitCode).not.toBe(0)
-      expect(result.stderr).toBeTruthy()
-      expect(result.exitCode).toBeDefined()
+      expect(result.stderr).toContain('Agent not found')
+      expect(result.hasResult).toBe(false)
     })
 
-    it('should execute agent successfully with spawn for large output', async () => {
+    it('should handle large prompts without truncation', async () => {
+      const largePrompt = 'Generate detailed documentation'.repeat(200)
       const params: ExecutionParams = {
         agent: 'test-agent',
-        prompt: 'Generate detailed documentation'.repeat(200),
+        prompt: largePrompt,
         cwd: '/tmp',
       }
 
       const result = await executor.executeAgent(params)
 
-      expect(result).toEqual({
-        stdout: expect.any(String),
-        stderr: expect.any(String),
-        exitCode: expect.any(Number),
-        executionTime: expect.any(Number),
-        hasResult: expect.any(Boolean),
-        resultJson: expect.anything(),
-      })
-      expect(result.stdout.length).toBeGreaterThan(0)
+      expect(result.exitCode).toBe(0)
+      expect(result.hasResult).toBe(true)
+      // Verify prompt was passed to spawn (check mock was called with prompt containing full text)
+      expect(mockSpawn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining(['-p', expect.stringContaining('Generate detailed documentation')]),
+        expect.any(Object)
+      )
     })
 
-    it('should handle spawn execution failure', async () => {
+    it('should return error details when agent execution fails', async () => {
       const params: ExecutionParams = {
         agent: 'bad-agent',
-        prompt: 'This should fail with spawn'.repeat(200),
+        prompt: 'This should fail',
         cwd: '/invalid-directory',
       }
 
@@ -250,7 +251,8 @@ describe('AgentExecutor', () => {
 
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toBeTruthy()
-      expect(result.exitCode).toBeDefined()
+      expect(result.hasResult).toBe(false)
+      expect(result.resultJson).toBeUndefined()
     })
   })
 
@@ -268,26 +270,6 @@ describe('AgentExecutor', () => {
 
       expect(result.executionTime).toBeGreaterThanOrEqual(0)
       expect(result.executionTime).toBeLessThanOrEqual(endTime - startTime + 100) // Allow 100ms tolerance
-    })
-
-    it('should execute agents with different prompt sizes', async () => {
-      const smallParams: ExecutionParams = {
-        agent: 'test-agent',
-        prompt: 'Small task',
-        cwd: '/tmp',
-      }
-
-      const largeParams: ExecutionParams = {
-        agent: 'test-agent',
-        prompt: 'Large task'.repeat(1000),
-        cwd: '/tmp',
-      }
-
-      const smallResult = await executor.executeAgent(smallParams)
-      const largeResult = await executor.executeAgent(largeParams)
-
-      expect(smallResult.exitCode).toBeDefined()
-      expect(largeResult.exitCode).toBeDefined()
     })
   })
 

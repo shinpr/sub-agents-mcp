@@ -513,7 +513,7 @@ describe('SessionManager', () => {
       }
     })
 
-    it('should log deleted file count', async () => {
+    it('should delete multiple old files in a single cleanup', async () => {
       const manager = new SessionManager(sessionConfig)
 
       // Create two old files (different session IDs)
@@ -530,19 +530,13 @@ describe('SessionManager', () => {
       await fs.utimes(oldFilePath1, eightDaysAgo, eightDaysAgo)
       await fs.utimes(oldFilePath2, eightDaysAgo, eightDaysAgo)
 
-      // Spy on console.log
-      const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
       // Execute cleanup
       await manager.cleanupOldSessions()
 
-      // Verify log was called with deletion count
-      expect(consoleLogSpy).toHaveBeenCalled()
-      const logCalls = consoleLogSpy.mock.calls
-      const hasCleanupLog = logCalls.some((call) => JSON.stringify(call).includes('Cleaned up'))
-      expect(hasCleanupLog).toBe(true)
-
-      consoleLogSpy.mockRestore()
+      // Assert - focus on behavior: both old files are deleted
+      const remainingFiles = await fs.readdir(testSessionDir)
+      expect(remainingFiles).not.toContain(oldFile1)
+      expect(remainingFiles).not.toContain(oldFile2)
     })
   })
 })

@@ -16,7 +16,7 @@ describe('Logger', () => {
   })
 
   describe('Log Level Management', () => {
-    it('should filter logs based on constructor level', () => {
+    it('should filter logs below warn level when created with warn level', () => {
       // Arrange
       const warnLogger = new Logger('warn')
       const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -27,10 +27,11 @@ describe('Logger', () => {
       warnLogger.warn('Warning message')
       warnLogger.error('Error message')
 
-      // Assert
-      expect(warnSpy).toHaveBeenCalledTimes(2) // Only warn and error should be logged
+      // Assert - focus on behavior: only warn and error messages appear
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('WARN: Warning message'))
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('DEBUG:'))
+      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('INFO:'))
 
       warnSpy.mockRestore()
     })
@@ -46,8 +47,7 @@ describe('Logger', () => {
       debugLogger.warn('Warning message')
       debugLogger.error('Error message')
 
-      // Assert
-      expect(debugSpy).toHaveBeenCalledTimes(4)
+      // Assert - focus on behavior: all message types appear
       expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('DEBUG: Debug message'))
       expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('INFO: Info message'))
       expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('WARN: Warning message'))
@@ -67,9 +67,11 @@ describe('Logger', () => {
       errorLogger.warn('Warning message')
       errorLogger.error('Error message')
 
-      // Assert
-      expect(errorSpy).toHaveBeenCalledTimes(1)
+      // Assert - focus on behavior: only error messages appear
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
+      expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('DEBUG:'))
+      expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('INFO:'))
+      expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('WARN:'))
 
       errorSpy.mockRestore()
     })
@@ -184,9 +186,9 @@ describe('Logger', () => {
       defaultLogger.debug('Debug msg')
       defaultLogger.info('Info msg')
 
-      // Assert
-      expect(infoSpy).toHaveBeenCalledTimes(1)
+      // Assert - focus on behavior: info logs, debug does not
       expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining('INFO: Info msg'))
+      expect(infoSpy).not.toHaveBeenCalledWith(expect.stringContaining('DEBUG:'))
 
       infoSpy.mockRestore()
     })
@@ -202,14 +204,15 @@ describe('Logger', () => {
       errorLogger.debug('Debug from error logger')
       errorLogger.error('Error from error logger')
 
-      // Assert
-      expect(debugSpy).toHaveBeenCalledTimes(2) // debug logger's debug + error logger's error
+      // Assert - focus on behavior: debug logger logs debug, error logger only logs error
       expect(debugSpy).toHaveBeenCalledWith(
         expect.stringContaining('DEBUG: Debug from debug logger')
       )
       expect(debugSpy).toHaveBeenCalledWith(
         expect.stringContaining('ERROR: Error from error logger')
       )
+      // error logger should NOT log debug messages
+      expect(debugSpy).not.toHaveBeenCalledWith(expect.stringContaining('Debug from error logger'))
 
       debugSpy.mockRestore()
     })

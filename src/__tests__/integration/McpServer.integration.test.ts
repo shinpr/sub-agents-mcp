@@ -83,7 +83,7 @@ describe('McpServer Integration', () => {
       expect(agentListResource?.description).toContain('List of available Claude Code sub-agents')
     })
 
-    it('should provide individual agent resources', async () => {
+    it('should provide individual agent resources with valid URI format', async () => {
       const resources = await server.listResources()
 
       // Check if individual agent resources are available
@@ -91,13 +91,10 @@ describe('McpServer Integration', () => {
         (resource) => resource.uri.startsWith('agents://') && resource.uri !== 'agents://list'
       )
 
-      expect(agentResources.length).toBeGreaterThanOrEqual(0)
-
       // If there are agent resources, verify their structure
-      if (agentResources.length > 0) {
-        const agentResource = agentResources[0]
-        expect(agentResource.name).toBeDefined()
-        expect(agentResource.description).toBeDefined()
+      for (const agentResource of agentResources) {
+        expect(agentResource.name).toBeTruthy()
+        expect(agentResource.description).toBeTruthy()
         expect(agentResource.uri).toMatch(/^agents:\/\/[\w-]+$/)
       }
     })
