@@ -120,7 +120,7 @@ export class RunAgentTool {
     properties: {
       agent: {
         type: 'string',
-        description: 'Identifier of the specialized agent to delegate the task to',
+        description: 'Agent name exactly as listed in list_agents resource.',
       },
       prompt: {
         type: 'string',

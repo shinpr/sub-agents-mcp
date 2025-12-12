@@ -228,10 +228,16 @@ export class AgentExecutor {
         args = ['exec', '--json', formattedPrompt]
       } else {
         // Cursor, Claude, Gemini use similar interface with -p flag
-        // Use stream-json for Gemini (each line is a complete JSON object)
-        // Use json for Cursor and Claude (single JSON response)
-        const outputFormat = this.config.agentType === 'gemini' ? 'stream-json' : 'json'
-        args = ['--output-format', outputFormat, '-p', formattedPrompt]
+        // Claude/Gemini: Use stream-json for real-time output (avoids buffering issues)
+        // Cursor: Use json (single JSON response)
+        if (this.config.agentType === 'claude') {
+          // Claude needs --verbose with stream-json for proper line-by-line flushing
+          args = ['--output-format', 'stream-json', '--verbose', '-p', formattedPrompt]
+        } else if (this.config.agentType === 'gemini') {
+          args = ['--output-format', 'stream-json', '-p', formattedPrompt]
+        } else {
+          args = ['--output-format', 'json', '-p', formattedPrompt]
+        }
 
         // Determine command based on agent type
         command =
