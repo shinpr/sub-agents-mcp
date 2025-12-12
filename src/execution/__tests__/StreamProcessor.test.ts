@@ -52,7 +52,7 @@ describe('StreamProcessor', () => {
 
     it('should handle cursor-agent error JSON format', () => {
       const cursorErrorJson =
-        '{"type":"result","subtype":"error","is_error":true,"duration_ms":1234,"error":"エラーが発生しました","error_type":"execution_error","session_id":"bf18d32c-fd61-4890-b7ba-bd64effd86bd","request_id":"9f5d1b48-9338-4bc0-ab87-8f9d2a22965a"}'
+        '{"type":"result","subtype":"error","is_error":true,"duration_ms":1234,"error":"An error occurred","error_type":"execution_error","session_id":"bf18d32c-fd61-4890-b7ba-bd64effd86bd","request_id":"9f5d1b48-9338-4bc0-ab87-8f9d2a22965a"}'
 
       expect(processor.processLine(cursorErrorJson)).toBe(true)
       expect(processor.getResult()).toEqual({
@@ -60,7 +60,7 @@ describe('StreamProcessor', () => {
         subtype: 'error',
         is_error: true,
         duration_ms: 1234,
-        error: 'エラーが発生しました',
+        error: 'An error occurred',
         error_type: 'execution_error',
         session_id: 'bf18d32c-fd61-4890-b7ba-bd64effd86bd',
         request_id: '9f5d1b48-9338-4bc0-ab87-8f9d2a22965a',
@@ -133,7 +133,7 @@ describe('StreamProcessor', () => {
         '{"type":"thread.started","thread_id":"019b1291-a763-74a1-bffe-39670dad4b6b"}',
         '{"type":"turn.started"}',
         '{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Responding to greeting**"}}',
-        '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"こんにちは！今日はどうしますか？"}}',
+        '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Hello! How can I help you today?"}}',
         '{"type":"turn.completed","usage":{"input_tokens":3482,"cached_input_tokens":3072,"output_tokens":13}}',
       ]
 
@@ -145,7 +145,7 @@ describe('StreamProcessor', () => {
       // Then: Result contains only the agent_message text
       expect(processor.getResult()).toEqual({
         type: 'result',
-        result: 'こんにちは！今日はどうしますか？',
+        result: 'Hello! How can I help you today?',
         usage: { input_tokens: 3482, cached_input_tokens: 3072, output_tokens: 13 },
         status: 'success',
       })
