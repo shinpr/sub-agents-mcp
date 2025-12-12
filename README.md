@@ -182,6 +182,13 @@ Just tell your AI to use an agent:
 
 Your AI automatically invokes the specialized agent and returns results.
 
+**Tip:** Always include *what you want done* in your request—not just which agent to use. For example:
+
+- ✅ "Use the code-reviewer agent **to check my UserService class**"
+- ❌ "Use the code-reviewer agent" (too vague—the agent won't know what to review)
+
+The more specific your task, the better the results.
+
 ## Agent Examples
 
 Each `.md` or `.txt` file in your agents folder becomes an agent. The filename becomes the agent name (e.g., `test-writer.md` → "test-writer").
