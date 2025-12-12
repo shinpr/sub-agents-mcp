@@ -88,7 +88,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
-        cwd: '/test/directory',
+        cwd: process.cwd(),
         extra_args: ['--verbose', '--debug'],
       }
 
@@ -111,6 +111,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt with session',
+        cwd: process.cwd(),
         session_id: 'test-session-123',
       }
 
@@ -143,6 +144,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
         session_id: '',
       }
 
@@ -156,6 +158,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
         session_id: 'session/with/../invalid',
       }
 
@@ -169,6 +172,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
         session_id: 'a'.repeat(101), // 101 characters, exceeds max of 100
       }
 
@@ -182,6 +186,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt without session',
+        cwd: process.cwd(),
         // No session_id provided
       }
 
@@ -227,6 +232,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       const mockResult = {
@@ -256,6 +262,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       const mockResult = {
@@ -287,6 +294,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'failing-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       const mockResult = {
@@ -314,6 +322,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       const mockResult = {
@@ -344,6 +353,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'nonexistent-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       // Mock agent not found
@@ -364,6 +374,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'nonexistent-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       // Mock agent not found
@@ -410,6 +421,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       const mockResult = {
@@ -439,6 +451,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test with details',
+        cwd: process.cwd(),
       }
 
       const mockResult = {
@@ -473,6 +486,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
@@ -499,6 +513,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       // Mock agent manager throwing an error
@@ -527,6 +542,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'timeout-agent',
         prompt: 'Test complete timeout',
+        cwd: process.cwd(),
       }
 
       // Mock complete timeout without any result
@@ -560,6 +576,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'normal-agent',
         prompt: 'Test normal completion',
+        cwd: process.cwd(),
       }
 
       // Mock normal completion
@@ -606,6 +623,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
         // No session_id provided
       }
 
@@ -660,6 +678,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
         session_id: 'my-custom-session',
       }
 
@@ -700,6 +719,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
         // No session_id provided
       }
 
@@ -735,6 +755,7 @@ describe('RunAgentTool', () => {
       const params = {
         agent: 'test-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
         session_id: 'test-session-123',
       }
 

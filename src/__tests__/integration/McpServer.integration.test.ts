@@ -61,7 +61,7 @@ describe('McpServer Integration', () => {
       expect(runAgentTool?.inputSchema.properties).toHaveProperty('prompt')
       expect(runAgentTool?.inputSchema.properties).toHaveProperty('cwd')
       expect(runAgentTool?.inputSchema.properties).toHaveProperty('extra_args')
-      expect(runAgentTool?.inputSchema.required).toEqual(['agent', 'prompt'])
+      expect(runAgentTool?.inputSchema.required).toEqual(['agent', 'prompt', 'cwd'])
     })
   })
 
@@ -141,6 +141,7 @@ describe('McpServer Integration', () => {
       const params = {
         agent: 'nonexistent-agent',
         prompt: 'Test prompt',
+        cwd: process.cwd(),
       }
 
       const result = await server.callTool('run_agent', params)
@@ -233,6 +234,7 @@ describe('McpServer Integration', () => {
       await server.callTool('run_agent', {
         agent: 'test-agent',
         prompt: 'State test',
+        cwd: process.cwd(),
       })
 
       // Check that tool and resource lists remain consistent

@@ -90,7 +90,7 @@ interface RunAgentInputSchema {
 interface RunAgentParams {
   agent: string
   prompt: string
-  cwd?: string | undefined
+  cwd: string
   extra_args?: string[] | undefined
   /**
    * Session ID for continuing previous conversation context (optional)
@@ -129,7 +129,8 @@ export class RunAgentTool {
       },
       cwd: {
         type: 'string',
-        description: 'Working directory path for agent execution context (optional)',
+        description:
+          'Working directory path for agent execution context. Must be an absolute path to a valid directory.',
       },
       extra_args: {
         type: 'array',
@@ -142,7 +143,7 @@ export class RunAgentTool {
           'Session ID for continuing previous conversation context (optional). If omitted, a new session will be auto-generated and returned in response metadata. Reuse the returned session_id in subsequent calls to maintain context continuity.',
       },
     },
-    required: ['agent', 'prompt'],
+    required: ['agent', 'prompt', 'cwd'],
   }
 
   constructor(
@@ -417,20 +418,27 @@ export class RunAgentTool {
       throw new Error('Prompt too long (max 50,000 characters)')
     }
 
-    // Validate optional cwd parameter with path validation
-    if (p['cwd'] !== undefined) {
-      if (typeof p['cwd'] !== 'string') {
-        throw new Error('CWD parameter must be a string if provided')
-      }
+    // Validate required cwd parameter with path validation
+    if (p['cwd'] === undefined || p['cwd'] === null) {
+      throw new Error('CWD parameter is required')
+    }
 
-      if (p['cwd'].length > 1000) {
-        throw new Error('Working directory path too long (max 1000 characters)')
-      }
+    if (typeof p['cwd'] !== 'string') {
+      throw new Error('CWD parameter must be a string')
+    }
 
-      // Basic path security check - prevent obvious malicious paths
-      if (p['cwd'].includes('..') || p['cwd'].includes('\0')) {
-        throw new Error('Invalid working directory path')
-      }
+    const cwd = p['cwd'].trim()
+    if (cwd === '') {
+      throw new Error('CWD parameter cannot be empty')
+    }
+
+    if (cwd.length > 1000) {
+      throw new Error('Working directory path too long (max 1000 characters)')
+    }
+
+    // Basic path security check - prevent obvious malicious paths
+    if (cwd.includes('..') || cwd.includes('\0')) {
+      throw new Error('Invalid working directory path')
     }
 
     // Validate optional extra_args parameter with enhanced checks
@@ -480,7 +488,7 @@ export class RunAgentTool {
     return {
       agent: agentName,
       prompt: prompt,
-      cwd: p['cwd'] as string | undefined,
+      cwd: cwd,
       extra_args: p['extra_args'] as string[] | undefined,
       session_id: p['session_id'] as string | undefined,
     }
