@@ -125,7 +125,7 @@ export class RunAgentTool {
       prompt: {
         type: 'string',
         description:
-          'Task description or instructions for the agent to execute. When referencing file paths, use absolute paths to ensure proper file access.',
+          "User's direct request content. Agent context is separately provided via agent parameter.",
       },
       cwd: {
         type: 'string',
