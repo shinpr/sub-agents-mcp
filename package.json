@@ -21,10 +21,11 @@
     "ai-agents",
     "claude-code",
     "cursor",
+    "gemini",
+    "codex",
     "llm",
     "cli",
-    "agent-orchestration",
-    "typescript"
+    "agent-orchestration"
   ],
   "author": "Shinsuke Kagawa",
   "license": "MIT",
