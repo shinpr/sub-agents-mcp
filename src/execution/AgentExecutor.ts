@@ -57,9 +57,9 @@ export interface ExecutionConfig {
 
   /**
    * Type of agent to use for execution.
-   * 'cursor', 'claude', or 'gemini'
+   * 'cursor', 'claude', 'gemini', or 'codex'
    */
-  agentType: 'cursor' | 'claude' | 'gemini'
+  agentType: 'cursor' | 'claude' | 'gemini' | 'codex'
 }
 
 export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
@@ -70,7 +70,7 @@ export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
  * @param overrides - Optional overrides for thresholds
  */
 export function createExecutionConfig(
-  agentType: 'cursor' | 'claude' | 'gemini',
+  agentType: 'cursor' | 'claude' | 'gemini' | 'codex',
   overrides?: Partial<Omit<ExecutionConfig, 'agentType'>>
 ): ExecutionConfig {
   return {
@@ -216,24 +216,35 @@ export class AgentExecutor {
     resultJson?: unknown
   }> {
     return new Promise((resolve) => {
-      // Generate command and args - both CLIs use the same interface
+      // Generate command and args based on agent type
       const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
-      // Use stream-json for Gemini (each line is a complete JSON object)
-      // Use json for Cursor and Claude (single JSON response)
-      const outputFormat = this.config.agentType === 'gemini' ? 'stream-json' : 'json'
-      const args = ['--output-format', outputFormat, '-p', formattedPrompt]
 
-      // Determine command based on agent type
-      const command =
-        this.config.agentType === 'claude'
-          ? 'claude'
-          : this.config.agentType === 'gemini'
-            ? 'gemini'
-            : 'cursor-agent'
+      let command: string
+      let args: string[]
 
-      // Add API key for cursor-cli if available
-      if (this.config.agentType === 'cursor' && process.env['CLI_API_KEY']) {
-        args.push('-a', process.env['CLI_API_KEY'])
+      if (this.config.agentType === 'codex') {
+        // Codex uses different command structure: codex exec --json "prompt"
+        command = 'codex'
+        args = ['exec', '--json', formattedPrompt]
+      } else {
+        // Cursor, Claude, Gemini use similar interface with -p flag
+        // Use stream-json for Gemini (each line is a complete JSON object)
+        // Use json for Cursor and Claude (single JSON response)
+        const outputFormat = this.config.agentType === 'gemini' ? 'stream-json' : 'json'
+        args = ['--output-format', outputFormat, '-p', formattedPrompt]
+
+        // Determine command based on agent type
+        command =
+          this.config.agentType === 'claude'
+            ? 'claude'
+            : this.config.agentType === 'gemini'
+              ? 'gemini'
+              : 'cursor-agent'
+
+        // Add API key for cursor-cli if available
+        if (this.config.agentType === 'cursor' && process.env['CLI_API_KEY']) {
+          args.push('-a', process.env['CLI_API_KEY'])
+        }
       }
 
       this.logger.debug('Executing with spawn', {

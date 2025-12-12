@@ -8,7 +8,7 @@
  * - SERVER_NAME: Name identifier for the MCP server (default: 'sub-agents-mcp-server')
  * - SERVER_VERSION: Version of the MCP server (default: '1.0.0')
  * - AGENTS_DIR: Directory containing agent definition files (REQUIRED - must be absolute path)
- * - AGENT_TYPE: Type of agent to use ('cursor' | 'claude') (default: 'cursor')
+ * - AGENT_TYPE: Type of agent to use ('cursor' | 'claude' | 'gemini' | 'codex') (default: 'cursor')
  * - LOG_LEVEL: Log level for server operations (default: 'info')
  * - SESSION_ENABLED: Enable session management functionality (default: false)
  * - SESSION_DIR: Directory for storing session files (default: '.mcp-sessions')
@@ -25,7 +25,7 @@ export class ServerConfig {
   public readonly agentsDir: string
 
   /** Type of agent to use for execution */
-  public readonly agentType: 'cursor' | 'claude' | 'gemini'
+  public readonly agentType: 'cursor' | 'claude' | 'gemini' | 'codex'
 
   /** Log level for server operations */
   public readonly logLevel: 'debug' | 'info' | 'warn' | 'error'
@@ -69,7 +69,8 @@ export class ServerConfig {
     }
     this.agentsDir = agentsDir
 
-    this.agentType = (process.env['AGENT_TYPE'] as 'cursor' | 'claude' | 'gemini') || 'cursor'
+    this.agentType =
+      (process.env['AGENT_TYPE'] as 'cursor' | 'claude' | 'gemini' | 'codex') || 'cursor'
     this.logLevel = (process.env['LOG_LEVEL'] as 'debug' | 'info' | 'warn' | 'error') || 'info'
 
     const timeoutEnv = process.env['EXECUTION_TIMEOUT_MS']

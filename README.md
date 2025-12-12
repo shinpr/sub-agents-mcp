@@ -105,7 +105,7 @@ Add this to your MCP configuration file:
       "args": ["-y", "sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/absolute/path/to/your/agents-folder",
-        "AGENT_TYPE": "cursor"  // or "claude" or "gemini"
+        "AGENT_TYPE": "cursor"  // or "claude", "gemini", or "codex"
       }
     }
   }
@@ -135,6 +135,9 @@ Sub-agents may fail to execute shell commands with permission errors. This happe
 
    # For Gemini CLI users
    gemini
+
+   # For Codex CLI users
+   codex
    ```
 
 2. When prompted to allow commands (e.g., "Add Shell(cd), Shell(make) to allowlist?"), approve them
@@ -178,6 +181,13 @@ Just tell your AI to use an agent:
 ```
 
 Your AI automatically invokes the specialized agent and returns results.
+
+**Tip:** Always include *what you want done* in your request—not just which agent to use. For example:
+
+- ✅ "Use the code-reviewer agent **to check my UserService class**"
+- ❌ "Use the code-reviewer agent" (too vague—the agent won't know what to review)
+
+The more specific your task, the better the results.
 
 ## Agent Examples
 
@@ -228,6 +238,7 @@ Which execution engine to use:
 - `"cursor"` - uses `cursor-agent` CLI
 - `"claude"` - uses `claude` CLI
 - `"gemini"` - uses `gemini` CLI
+- `"codex"` - uses `codex` CLI (OpenAI Codex)
 
 ### Optional Settings
 
@@ -351,7 +362,7 @@ Check that:
 
 ### Other execution errors
 
-1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, or `gemini`)
+1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, `gemini`, or `codex`)
 2. Ensure your chosen CLI tool is installed and accessible
 3. Double-check that all environment variables are set in the MCP config
 

@@ -52,7 +52,7 @@ describe('StreamProcessor', () => {
 
     it('should handle cursor-agent error JSON format', () => {
       const cursorErrorJson =
-        '{"type":"result","subtype":"error","is_error":true,"duration_ms":1234,"error":"エラーが発生しました","error_type":"execution_error","session_id":"bf18d32c-fd61-4890-b7ba-bd64effd86bd","request_id":"9f5d1b48-9338-4bc0-ab87-8f9d2a22965a"}'
+        '{"type":"result","subtype":"error","is_error":true,"duration_ms":1234,"error":"An error occurred","error_type":"execution_error","session_id":"bf18d32c-fd61-4890-b7ba-bd64effd86bd","request_id":"9f5d1b48-9338-4bc0-ab87-8f9d2a22965a"}'
 
       expect(processor.processLine(cursorErrorJson)).toBe(true)
       expect(processor.getResult()).toEqual({
@@ -60,7 +60,7 @@ describe('StreamProcessor', () => {
         subtype: 'error',
         is_error: true,
         duration_ms: 1234,
-        error: 'エラーが発生しました',
+        error: 'An error occurred',
         error_type: 'execution_error',
         session_id: 'bf18d32c-fd61-4890-b7ba-bd64effd86bd',
         request_id: '9f5d1b48-9338-4bc0-ab87-8f9d2a22965a',
@@ -124,6 +124,78 @@ describe('StreamProcessor', () => {
       expect(processor.getResult()).toEqual({
         response: 'Legacy output',
         status: 'complete',
+      })
+    })
+
+    it('should extract agent_message text from codex output stream', () => {
+      // Given: A complete Codex output stream with reasoning and agent_message
+      const codexOutputStream = [
+        '{"type":"thread.started","thread_id":"019b1291-a763-74a1-bffe-39670dad4b6b"}',
+        '{"type":"turn.started"}',
+        '{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Responding to greeting**"}}',
+        '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Hello! How can I help you today?"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":3482,"cached_input_tokens":3072,"output_tokens":13}}',
+      ]
+
+      // When: Processing the entire stream
+      for (const line of codexOutputStream) {
+        processor.processLine(line)
+      }
+
+      // Then: Result contains only the agent_message text
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Hello! How can I help you today?',
+        usage: { input_tokens: 3482, cached_input_tokens: 3072, output_tokens: 13 },
+        status: 'success',
+      })
+    })
+
+    it('should concatenate multiple agent_messages with newlines', () => {
+      // Given: Codex output with multiple agent_message items
+      const codexOutputStream = [
+        '{"type":"thread.started","thread_id":"019b1292-47b5-7bf3-8f7a-ef0986d5b982"}',
+        '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Message 1"}}',
+        '{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Message 2"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":20}}',
+      ]
+
+      // When: Processing the stream
+      for (const line of codexOutputStream) {
+        processor.processLine(line)
+      }
+
+      // Then: Messages are joined with newlines
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Message 1\nMessage 2',
+        usage: { input_tokens: 100, output_tokens: 20 },
+        status: 'success',
+      })
+    })
+
+    it('should ignore command_execution items and only include agent_message', () => {
+      // Given: Codex output with command execution (reasoning, command, then summary)
+      const codexOutputStream = [
+        '{"type":"thread.started","thread_id":"019b1292-e66c-7c61-bcc5-4262b08f3535"}',
+        '{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Listing sandbox contents**"}}',
+        '{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc ls"}}',
+        '{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc ls","aggregated_output":"file1\\nfile2\\n","exit_code":0}}',
+        '{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Files: file1, file2"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":500,"output_tokens":50}}',
+      ]
+
+      // When: Processing the stream
+      for (const line of codexOutputStream) {
+        processor.processLine(line)
+      }
+
+      // Then: Only agent_message content is in the result
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Files: file1, file2',
+        usage: { input_tokens: 500, output_tokens: 50 },
+        status: 'success',
       })
     })
   })

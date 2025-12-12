@@ -173,6 +173,7 @@ describe('Critical User Journeys - E2E Tests', () => {
     const result1 = await server.callTool('run_agent', {
       agent: 'non-existent-agent',
       prompt: 'This should fail gracefully',
+      cwd: process.cwd(),
     })
 
     // I expect a clear error message
@@ -184,6 +185,7 @@ describe('Critical User Journeys - E2E Tests', () => {
     const result2 = await server.callTool('run_agent', {
       agent: '', // Empty agent name
       prompt: 'This should also fail',
+      cwd: process.cwd(),
     })
 
     // I expect a helpful error message
