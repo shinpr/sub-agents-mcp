@@ -97,6 +97,9 @@ jobs:
         fi
         echo "Build successful"
 
+    - name: Check production dependencies
+      run: npx report-missing-dependencies
+
   quality-check:
     name: Quality Check
     runs-on: ubuntu-latest
