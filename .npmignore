@@ -12,6 +12,7 @@ coverage/
 tsconfig.json
 tsconfig.build.json
 biome.json
+.rmdrc.cjs
 vitest.config.ts
 .husky/
 
