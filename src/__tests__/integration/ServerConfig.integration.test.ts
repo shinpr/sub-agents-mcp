@@ -174,6 +174,35 @@ describe('ServerConfig', () => {
     })
   })
 
+  describe('AGENTS_SETTINGS_PATH configuration', () => {
+    it('should load AGENTS_SETTINGS_PATH when set', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('AGENTS_SETTINGS_PATH', '/custom/settings/path')
+
+      const config = new ServerConfig()
+
+      expect(config.agentsSettingsPath).toBe('/custom/settings/path')
+    })
+
+    it('should return undefined when AGENTS_SETTINGS_PATH is not set', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('AGENTS_SETTINGS_PATH', undefined)
+
+      const config = new ServerConfig()
+
+      expect(config.agentsSettingsPath).toBeUndefined()
+    })
+
+    it('should return undefined when AGENTS_SETTINGS_PATH is empty string', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('AGENTS_SETTINGS_PATH', '')
+
+      const config = new ServerConfig()
+
+      expect(config.agentsSettingsPath).toBeUndefined()
+    })
+  })
+
   describe('execution timeout validation', () => {
     it('should use default timeout when EXECUTION_TIMEOUT_MS is not set', () => {
       vi.stubEnv('EXECUTION_TIMEOUT_MS', undefined)

@@ -13,6 +13,7 @@
  * - SESSION_ENABLED: Enable session management functionality (default: false)
  * - SESSION_DIR: Directory for storing session files (default: '.mcp-sessions')
  * - SESSION_RETENTION_DAYS: Number of days to retain session files (default: 1)
+ * - AGENTS_SETTINGS_PATH: Path to CLI settings file/directory (optional)
  */
 export class ServerConfig {
   /** Server name identifier used for MCP registration */
@@ -41,6 +42,9 @@ export class ServerConfig {
 
   /** Number of days to retain session files before cleanup */
   public readonly sessionRetentionDays: number
+
+  /** Path to CLI settings file/directory for agent execution */
+  public readonly agentsSettingsPath: string | undefined
 
   /**
    * Creates a new ServerConfig instance by loading values from environment variables
@@ -95,5 +99,13 @@ export class ServerConfig {
     } else {
       this.sessionRetentionDays = 1
     }
+
+    // CLI settings path (optional)
+    // Used to specify custom settings file/directory for each CLI:
+    // - Claude: passed as --settings argument
+    // - Cursor: set as CURSOR_CONFIG_DIR environment variable
+    // - Codex: set as CODEX_HOME environment variable
+    // - Gemini: not supported (upstream limitation)
+    this.agentsSettingsPath = process.env['AGENTS_SETTINGS_PATH'] || undefined
   }
 }
