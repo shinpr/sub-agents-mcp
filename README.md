@@ -23,6 +23,7 @@ Claude Code offers powerful sub-agent workflows—but they're limited to its own
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Usage Examples](#usage-examples)
+- [Writing Effective Agents](#writing-effective-agents)
 - [Agent Examples](#agent-examples)
 - [Configuration Reference](#configuration-reference)
 - [Session Management](#session-management)
@@ -49,12 +50,19 @@ Create a folder for your agents and add `code-reviewer.md`:
 ```markdown
 # Code Reviewer
 
-You are a specialized AI assistant that reviews code.
-Focus on:
-- Finding bugs and potential issues
-- Suggesting improvements
-- Checking code quality
+Review code for quality and maintainability issues.
+
+## Task
+- Find bugs and potential issues
+- Suggest improvements
+- Check code style consistency
+
+## Done When
+- All target files reviewed
+- Issues listed with explanations
 ```
+
+See [Writing Effective Agents](#writing-effective-agents) for more on agent design.
 
 ### 2. Install Your Execution Engine
 
@@ -196,42 +204,76 @@ Your AI automatically invokes the specialized agent and returns results.
 
 The more specific your task, the better the results.
 
+## Writing Effective Agents
+
+### The Single Responsibility Principle
+
+Each agent should do **one thing well**. Avoid "swiss army knife" agents.
+
+| ✅ Good | ❌ Bad |
+|---------|--------|
+| Reviews code for security issues | Reviews code, writes tests, and refactors |
+| Writes unit tests for a module | Writes tests and fixes bugs it finds |
+
+### Essential Structure
+
+```markdown
+# Agent Name
+
+One-sentence purpose.
+
+## Task
+- Action 1
+- Action 2
+
+## Done When
+- Criterion 1
+- Criterion 2
+```
+
+### Keep Agents Self-Contained
+
+Agents run in isolation with fresh context. Avoid:
+
+- References to other agents ("then use X agent...")
+- Assumptions about prior context ("continuing from before...")
+- Scope creep beyond the stated purpose
+
+### Advanced Patterns
+
+For complex agents, consider adding:
+
+- **Scope boundaries**: Explicitly state what's *out of scope*
+- **Prohibited actions**: List common mistakes the agent should avoid
+- **Output format**: Define structured output when needed
+
 ## Agent Examples
 
-Each `.md` or `.txt` file in your agents folder becomes an agent. The filename becomes the agent name (e.g., `test-writer.md` → "test-writer").
+Each `.md` or `.txt` file in your agents folder becomes an agent. The filename becomes the agent name (e.g., `bug-investigator.md` → "bug-investigator").
 
-### Test Writer
-
-**`test-writer.md`**
+**`bug-investigator.md`**
 ```markdown
-# Test Writer
-You specialize in writing comprehensive unit tests.
-- Cover edge cases
-- Follow project testing patterns
-- Ensure good coverage
+# Bug Investigator
+
+Investigate bug reports and identify root causes.
+
+## Task
+- Collect evidence from error logs, code, and git history
+- Generate multiple hypotheses for the cause
+- Trace each hypothesis to its root cause
+- Report findings with supporting evidence
+
+## Out of Scope
+- Fixing the bug (investigation only)
+- Making assumptions without evidence
+
+## Done When
+- At least 2 hypotheses documented with evidence
+- Most likely cause identified with confidence level
+- Affected code locations listed
 ```
 
-### SQL Expert
-
-**`sql-expert.md`**
-```markdown
-# SQL Expert
-You're a database specialist who helps with queries.
-- Optimize for performance
-- Suggest proper indexes
-- Help with complex JOINs
-```
-
-### Security Checker
-
-**`security-checker.md`**
-```markdown
-# Security Checker
-You focus on finding security vulnerabilities.
-- Check for SQL injection risks
-- Identify authentication issues
-- Find potential data leaks
-```
+For more advanced patterns (completion checklists, prohibited actions, structured output), see [claude-code-workflows/agents](https://github.com/shinpr/claude-code-workflows/tree/main/agents). These are written for Claude Code, but the design patterns apply to any execution engine.
 
 ## Configuration Reference
 
@@ -252,7 +294,16 @@ Which execution engine to use:
 **`EXECUTION_TIMEOUT_MS`**
 How long agents can run before timing out (default: 5 minutes, max: 10 minutes)
 
-Example with timeout:
+**`AGENTS_SETTINGS_PATH`**
+Path to custom CLI settings directory for sub-agents.
+
+Each CLI normally reads settings from project-level directories (`.claude/`, `.cursor/`, `.codex/`) or user-level directories (`~/.claude/`, `~/.cursor/`, `~/.codex/`). If you want sub-agents to run with different settings (e.g., different permissions or model), specify a separate settings directory here.
+
+Supported CLI types: `claude`, `cursor`, `codex`
+
+Note: Gemini CLI does not support custom settings paths, so this option has no effect when `AGENT_TYPE` is `gemini`.
+
+Example with custom settings:
 ```json
 {
   "mcpServers": {
@@ -262,7 +313,8 @@ Example with timeout:
       "env": {
         "AGENTS_DIR": "/absolute/path/to/agents",
         "AGENT_TYPE": "cursor",
-        "EXECUTION_TIMEOUT_MS": "600000"
+        "EXECUTION_TIMEOUT_MS": "600000",
+        "AGENTS_SETTINGS_PATH": "/absolute/path/to/custom-cli-settings"
       }
     }
   }
@@ -372,6 +424,29 @@ Check that:
 1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, `gemini`, or `codex`)
 2. Ensure your chosen CLI tool is installed and accessible
 3. Double-check that all environment variables are set in the MCP config
+
+### Recursive sub-agent calls (infinite loop)
+
+If sub-agents keep spawning more sub-agents, there are typically two causes:
+
+**1. MCP configuration inheritance**
+
+Create a separate settings directory without the sub-agents MCP configuration and specify it via `AGENTS_SETTINGS_PATH`. This prevents sub-agents from having access to this MCP server.
+
+**2. AGENTS.md instruction inheritance (Codex)**
+
+Codex concatenates AGENTS.md from CODEX_HOME and project root. If your project AGENTS.md has delegation instructions, sub-agents inherit them too.
+
+Solution: Don't place AGENTS.md at the project root. Use separate directories:
+```
+/your-project
+├── .codex-main/AGENTS.md      # Main agent instructions
+├── .codex-sub/AGENTS.md       # Sub-agent instructions (no delegation)
+└── (no AGENTS.md at root)
+```
+
+- Run main Codex with `CODEX_HOME=/your-project/.codex-main`
+- Set `AGENTS_SETTINGS_PATH=/your-project/.codex-sub` in sub-agents-mcp config
 
 ## Design Philosophy
 
