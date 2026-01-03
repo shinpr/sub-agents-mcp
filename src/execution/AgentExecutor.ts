@@ -60,6 +60,16 @@ export interface ExecutionConfig {
    * 'cursor', 'claude', 'gemini', or 'codex'
    */
   agentType: 'cursor' | 'claude' | 'gemini' | 'codex'
+
+  /**
+   * Path to CLI settings file/directory.
+   * Applied differently based on agentType:
+   * - claude: passed as --settings argument
+   * - cursor: set as CURSOR_CONFIG_DIR environment variable
+   * - codex: set as CODEX_HOME environment variable
+   * - gemini: not supported (ignored)
+   */
+  agentsSettingsPath?: string
 }
 
 export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
@@ -67,7 +77,7 @@ export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
 /**
  * Creates a complete ExecutionConfig with the provided agent type.
  * @param agentType - The type of agent to use
- * @param overrides - Optional overrides for thresholds
+ * @param overrides - Optional overrides for configuration values
  */
 export function createExecutionConfig(
   agentType: 'cursor' | 'claude' | 'gemini' | 'codex',
@@ -251,6 +261,27 @@ export class AgentExecutor {
         if (this.config.agentType === 'cursor' && process.env['CLI_API_KEY']) {
           args.push('-a', process.env['CLI_API_KEY'])
         }
+
+        // Add --settings for Claude when agentsSettingsPath is configured
+        if (this.config.agentType === 'claude' && this.config.agentsSettingsPath) {
+          args.push('--settings', this.config.agentsSettingsPath)
+        }
+      }
+
+      // Build environment variables for spawn
+      // Apply CLI-specific settings path configuration
+      const spawnEnv: NodeJS.ProcessEnv = { ...process.env }
+      if (this.config.agentsSettingsPath) {
+        switch (this.config.agentType) {
+          case 'cursor':
+            spawnEnv['CURSOR_CONFIG_DIR'] = this.config.agentsSettingsPath
+            break
+          case 'codex':
+            spawnEnv['CODEX_HOME'] = this.config.agentsSettingsPath
+            break
+          // claude: handled via --settings argument above
+          // gemini: not supported (upstream limitation)
+        }
       }
 
       this.logger.debug('Executing with spawn', {
@@ -263,7 +294,7 @@ export class AgentExecutor {
         cwd: params.cwd || process.cwd(),
         stdio: ['ignore', 'pipe', 'pipe'], // stdin set to 'ignore' as cursor-agent receives prompt via args
         shell: false,
-        env: process.env,
+        env: spawnEnv,
       })
 
       // Initialize stream processor and buffers

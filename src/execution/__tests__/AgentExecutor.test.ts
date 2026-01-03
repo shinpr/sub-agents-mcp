@@ -138,6 +138,20 @@ describe('AgentExecutor', () => {
       expect(claudeConfig.agentType).toBe('claude')
       expect(geminiConfig.agentType).toBe('gemini')
     })
+
+    it('should allow setting agentsSettingsPath', () => {
+      const config = createExecutionConfig('claude', {
+        agentsSettingsPath: '/path/to/settings',
+      })
+
+      expect(config.agentsSettingsPath).toBe('/path/to/settings')
+    })
+
+    it('should have undefined agentsSettingsPath when not provided', () => {
+      const config = createExecutionConfig('cursor')
+
+      expect(config.agentsSettingsPath).toBeUndefined()
+    })
   })
 
   describe('command generation', () => {
@@ -184,6 +198,154 @@ describe('AgentExecutor', () => {
       await geminiExecutor.executeAgent(params)
 
       expect(mockSpawn).toHaveBeenCalledWith('gemini', expect.any(Array), expect.any(Object))
+    })
+  })
+
+  describe('agentsSettingsPath handling', () => {
+    it('should pass --settings argument for claude when agentsSettingsPath is set', async () => {
+      const claudeConfig = createExecutionConfig('claude', {
+        agentsSettingsPath: '/path/to/claude/settings.json',
+      })
+      const claudeExecutor = new AgentExecutor(claudeConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await claudeExecutor.executeAgent(params)
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'claude',
+        expect.arrayContaining(['--settings', '/path/to/claude/settings.json']),
+        expect.any(Object)
+      )
+    })
+
+    it('should set CURSOR_CONFIG_DIR env for cursor when agentsSettingsPath is set', async () => {
+      const cursorConfig = createExecutionConfig('cursor', {
+        agentsSettingsPath: '/path/to/cursor/config',
+      })
+      const cursorExecutor = new AgentExecutor(cursorConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await cursorExecutor.executeAgent(params)
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'cursor-agent',
+        expect.any(Array),
+        expect.objectContaining({
+          env: expect.objectContaining({
+            CURSOR_CONFIG_DIR: '/path/to/cursor/config',
+          }),
+        })
+      )
+    })
+
+    it('should set CODEX_HOME env for codex when agentsSettingsPath is set', async () => {
+      const codexConfig = createExecutionConfig('codex', {
+        agentsSettingsPath: '/path/to/codex/home',
+      })
+      const codexExecutor = new AgentExecutor(codexConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await codexExecutor.executeAgent(params)
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'codex',
+        expect.any(Array),
+        expect.objectContaining({
+          env: expect.objectContaining({
+            CODEX_HOME: '/path/to/codex/home',
+          }),
+        })
+      )
+    })
+
+    it('should not modify env for gemini when agentsSettingsPath is set', async () => {
+      const originalEnv = { ...process.env }
+      const geminiConfig = createExecutionConfig('gemini', {
+        agentsSettingsPath: '/path/to/gemini/settings',
+      })
+      const geminiExecutor = new AgentExecutor(geminiConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await geminiExecutor.executeAgent(params)
+
+      // Should not have GEMINI_CONFIG_DIR or similar in env
+      const spawnCall = mockSpawn.mock.calls[0]
+      const spawnEnv = spawnCall[2].env
+      expect(spawnEnv['GEMINI_CONFIG_DIR']).toBeUndefined()
+      expect(spawnEnv['GEMINI_HOME']).toBeUndefined()
+    })
+
+    it('should not pass --settings for claude when agentsSettingsPath is not set', async () => {
+      const claudeConfig = createExecutionConfig('claude')
+      const claudeExecutor = new AgentExecutor(claudeConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await claudeExecutor.executeAgent(params)
+
+      const spawnCall = mockSpawn.mock.calls[0]
+      const args = spawnCall[1]
+      expect(args).not.toContain('--settings')
+    })
+
+    it('should not set CURSOR_CONFIG_DIR env for cursor when agentsSettingsPath is not set', async () => {
+      const cursorConfig = createExecutionConfig('cursor')
+      const cursorExecutor = new AgentExecutor(cursorConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await cursorExecutor.executeAgent(params)
+
+      const spawnCall = mockSpawn.mock.calls[0]
+      const spawnEnv = spawnCall[2].env
+      // CURSOR_CONFIG_DIR should not be explicitly set (may exist from process.env but not added by us)
+      expect(spawnEnv['CURSOR_CONFIG_DIR']).toBeUndefined()
+    })
+
+    it('should not set CODEX_HOME env for codex when agentsSettingsPath is not set', async () => {
+      const codexConfig = createExecutionConfig('codex')
+      const codexExecutor = new AgentExecutor(codexConfig)
+
+      const params: ExecutionParams = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      }
+
+      await codexExecutor.executeAgent(params)
+
+      const spawnCall = mockSpawn.mock.calls[0]
+      const spawnEnv = spawnCall[2].env
+      // CODEX_HOME should not be explicitly set (may exist from process.env but not added by us)
+      expect(spawnEnv['CODEX_HOME']).toBeUndefined()
     })
   })
 

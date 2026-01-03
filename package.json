@@ -1,6 +1,6 @@
 {
   "name": "sub-agents-mcp",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "mcpName": "io.github.shinpr/sub-agents-mcp",
   "description": "MCP server for delegating tasks to specialized AI assistants in Cursor and other tools",
   "main": "dist/index.js",
