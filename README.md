@@ -18,6 +18,18 @@ Claude Code offers powerful sub-agent workflows—but they're limited to its own
 
 → [Read the full story](https://dev.to/shinpr/bringing-claude-codes-sub-agents-to-any-mcp-compatible-tool-1hb9)
 
+## Alternative: Agent Skills
+
+[sub-agents-skills](https://github.com/shinpr/sub-agents-skills) offers a lightweight alternative.
+
+| | sub-agents-mcp | sub-agents-skills |
+|---|---|---|
+| **Setup** | MCP configuration required | Copy skill files to your environment |
+| **Features** | Session management, error handling | Minimal |
+| **Stability** | More robust | Lightweight |
+
+Choose **sub-agents-mcp** for production use with reliability features. Choose **sub-agents-skills** for quick setup in Skill-compatible environments.
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
