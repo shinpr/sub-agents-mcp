@@ -7,7 +7,7 @@
 
 import { ServerConfig } from 'src/config/ServerConfig'
 import { McpServer } from 'src/server/McpServer'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 describe('McpServer', () => {
   let server: McpServer

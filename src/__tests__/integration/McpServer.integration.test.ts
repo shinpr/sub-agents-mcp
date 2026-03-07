@@ -5,8 +5,6 @@
  * registration, agent resources publication, and MCP client interaction.
  */
 
-import { AgentManager } from 'src/agents/AgentManager'
-import { AgentExecutor } from 'src/execution/AgentExecutor'
 import { McpServer } from 'src/server/McpServer'
 import type { ServerConfigInterface } from 'src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'

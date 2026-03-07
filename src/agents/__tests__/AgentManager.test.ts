@@ -1,6 +1,5 @@
 import { AgentManager } from 'src/agents/AgentManager'
 import type { ServerConfig } from 'src/config/ServerConfig'
-import type { AgentDefinition } from 'src/types/AgentDefinition'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock fs module

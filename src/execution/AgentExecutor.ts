@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
-import { type LogLevel, Logger } from 'src/utils/Logger'
+import { Logger, type LogLevel } from 'src/utils/Logger'
 import { StreamProcessor } from './StreamProcessor'
 
 /**

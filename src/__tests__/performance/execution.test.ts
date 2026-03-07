@@ -58,8 +58,8 @@ vi.mock('node:child_process', () => ({
 }))
 
 vi.mock('node:util', () => ({
-  promisify: vi.fn((fn) => {
-    return (command: string, options: any) => {
+  promisify: vi.fn((_fn) => {
+    return (command: string, _options: any) => {
       // Simulate quick execution for performance testing
       const agent = command.match(/([\w-]+):/)?.[1]
 
@@ -116,7 +116,7 @@ describe('Execution Performance Tests', () => {
     const mockedSpawn = vi.mocked(spawn)
 
     // Mock spawn to behave consistently for performance tests - override the vi.mock definition
-    mockedSpawn.mockImplementation((cmd: string, args: string[], options: any) => {
+    mockedSpawn.mockImplementation((_cmd: string, args: string[], _options: any) => {
       // Return the same mock ChildProcess that was defined in the vi.mock
       const mockChildProcess = {
         stdin: { end: vi.fn() },
@@ -389,7 +389,7 @@ describe('Execution Performance Tests', () => {
 
     try {
       // This should still start quickly even if it will timeout
-      const result = await agentExecutor.executeAgent({
+      const _result = await agentExecutor.executeAgent({
         agent: 'timeout-agent',
         prompt: 'Timeout performance test',
         cwd: process.cwd(),
@@ -398,7 +398,7 @@ describe('Execution Performance Tests', () => {
       // Execution might complete or timeout, but start should be fast
       const executionStartTime = Date.now() - startTime
       expect(executionStartTime).toBeLessThan(1000) // Start time requirement
-    } catch (error) {
+    } catch (_error) {
       // If timeout occurs, the start should still have been fast
       const startupTime = Date.now() - startTime
       expect(startupTime).toBeGreaterThan(999) // Should have at least tried to execute
