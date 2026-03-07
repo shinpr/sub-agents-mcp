@@ -504,7 +504,7 @@ describe('Session Management - Acceptance Tests', () => {
    */
   describe('AC9: Backward compatibility', () => {
     it('should not create session files when session_id is not specified', async () => {
-      const manager = new SessionManager(sessionConfig)
+      const _manager = new SessionManager(sessionConfig)
 
       // Simulate run_agent without session_id by not calling saveSession
       // In the actual implementation, RunAgentTool should skip session save when session_id is not provided

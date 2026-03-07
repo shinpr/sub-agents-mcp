@@ -19,7 +19,7 @@ describe('AgentExecutor Integration', () => {
     executor = new AgentExecutor(testConfig)
 
     // Setup spawn mock for integration tests
-    mockSpawn.mockImplementation((cmd: string, args: string[], options: any) => {
+    mockSpawn.mockImplementation((_cmd: string, args: string[], _options: any) => {
       // Extract the prompt which should be the last argument after -p flag
       const promptIndex = args.indexOf('-p')
       const prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''

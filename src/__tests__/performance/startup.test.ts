@@ -5,7 +5,7 @@
  * as specified in the Design Doc (≤3 seconds).
  */
 
-import { ChildProcess, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'

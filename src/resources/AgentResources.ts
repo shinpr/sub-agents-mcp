@@ -327,7 +327,7 @@ export class AgentResources {
     try {
       const agents = await this.agentManager.listAgents()
       return agents.map((agent) => agent.name)
-    } catch (error) {
+    } catch (_error) {
       return []
     }
   }

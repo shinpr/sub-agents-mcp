@@ -37,7 +37,7 @@ describe('Critical User Journeys - E2E Tests', () => {
     vi.clearAllMocks()
 
     // Setup spawn mock for E2E testing
-    mockSpawn.mockImplementation((cmd: string, args: string[], options: any) => {
+    mockSpawn.mockImplementation((_cmd: string, args: string[], _options: any) => {
       const prompt = args.includes('-p') ? args[args.indexOf('-p') + 1] : ''
       const isTestAgent = prompt.includes('test-agent') || args.includes('test-agent')
       const isPerformanceAgent =

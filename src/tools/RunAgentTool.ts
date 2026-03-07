@@ -13,7 +13,7 @@ import { formatSessionHistory } from 'src/session/SessionHistoryFormatter'
 import type { SessionManager } from 'src/session/SessionManager'
 import type { AgentDefinition } from 'src/types/AgentDefinition'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
-import { type LogLevel, Logger } from 'src/utils/Logger'
+import { Logger, type LogLevel } from 'src/utils/Logger'
 
 /**
  * MCP tool content type for text responses

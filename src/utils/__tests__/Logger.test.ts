@@ -1,4 +1,4 @@
-import { type LogEntry, type LogLevel, Logger } from 'src/utils/Logger'
+import { Logger } from 'src/utils/Logger'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('Logger', () => {

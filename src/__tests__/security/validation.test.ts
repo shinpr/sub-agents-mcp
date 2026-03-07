@@ -34,10 +34,10 @@ describe('Security Validation Tests', () => {
     vi.clearAllMocks()
 
     // Setup spawn mock for security tests
-    mockSpawn.mockImplementation((cmd: string, args: string[], options: any) => {
+    mockSpawn.mockImplementation((_cmd: string, args: string[], options: any) => {
       // Extract the prompt which should be the last argument after -p flag
       const promptIndex = args.indexOf('-p')
-      const prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''
+      const _prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''
 
       const mockProcess = {
         stdin: {
@@ -199,7 +199,7 @@ describe('Security Validation Tests', () => {
     })
 
     test('sanitizes prompt input', async () => {
-      const agent = await agentManager.getAgent('valid-agent')
+      const _agent = await agentManager.getAgent('valid-agent')
 
       // Test prompt with potential injection attempts
       const maliciousPrompts = [
@@ -261,7 +261,7 @@ describe('Security Validation Tests', () => {
         await expect(agentManager.getAgent('malicious-link')).rejects.toThrow(
           /forbidden|symlink|traversal/i
         )
-      } catch (error) {
+      } catch (_error) {
         // If symlink creation fails (permissions), that's also acceptable
         // as it indicates the system is secure
         expect(true).toBe(true)
@@ -284,7 +284,7 @@ describe('Security Validation Tests', () => {
 
   describe('Resource Limit Security', () => {
     test('enforces maximum concurrent executions', async () => {
-      const agent = await agentManager.getAgent('valid-agent')
+      const _agent = await agentManager.getAgent('valid-agent')
 
       // Start more concurrent executions than allowed (use default limit)
       const maxConcurrent = 5 // Default concurrent execution limit
@@ -315,7 +315,7 @@ describe('Security Validation Tests', () => {
         '# Large Output Agent\n\nProduces large output for testing.\n\nUsage: yes | head -n 100000'
       )
 
-      const agent = await agentManager.getAgent('large-output-agent')
+      const _agent = await agentManager.getAgent('large-output-agent')
 
       // Should handle large output without crashing
       const result = await agentExecutor.executeAgent({
@@ -339,7 +339,7 @@ describe('Security Validation Tests', () => {
         const errorMessage = error instanceof Error ? error.message : String(error)
 
         // Should not reveal absolute paths or system details
-        expect(errorMessage).not.toMatch(/\/[a-zA-Z0-9\/._-]+\/[a-zA-Z0-9\/._-]+/) // No absolute paths
+        expect(errorMessage).not.toMatch(/\/[a-zA-Z0-9/._-]+\/[a-zA-Z0-9/._-]+/) // No absolute paths
         expect(errorMessage).not.toContain(process.env.HOME || '/home')
         expect(errorMessage).not.toContain(process.env.USER || 'user')
         expect(errorMessage).not.toContain('password')
@@ -349,7 +349,7 @@ describe('Security Validation Tests', () => {
     })
 
     test('execution results do not leak environment variables', async () => {
-      const agent = await agentManager.getAgent('valid-agent')
+      const _agent = await agentManager.getAgent('valid-agent')
 
       const result = await agentExecutor.executeAgent({
         agent: 'valid-agent',
@@ -373,7 +373,7 @@ describe('Security Validation Tests', () => {
       // This test would capture and validate log output
       // For now, we verify that the system doesn't crash with sensitive operations
 
-      const agent = await agentManager.getAgent('valid-agent')
+      const _agent = await agentManager.getAgent('valid-agent')
 
       const result = await agentExecutor.executeAgent({
         agent: 'valid-agent',
@@ -391,7 +391,7 @@ describe('Security Validation Tests', () => {
 
   describe('Recursion Prevention Security', () => {
     test('recursion warning prevents infinite loops', async () => {
-      const agent = await agentManager.getAgent('valid-agent')
+      const _agent = await agentManager.getAgent('valid-agent')
 
       const result = await agentExecutor.executeAgent({
         agent: 'valid-agent',
@@ -408,7 +408,7 @@ describe('Security Validation Tests', () => {
     })
 
     test('prevents nested MCP server calls', async () => {
-      const agent = await agentManager.getAgent('valid-agent')
+      const _agent = await agentManager.getAgent('valid-agent')
 
       // Attempt to execute an agent with prompt containing MCP tool calls
       const result = await agentExecutor.executeAgent({
@@ -444,7 +444,7 @@ describe('Security Validation Tests', () => {
     })
 
     test('prevents command injection through extra_args', async () => {
-      const agent = await agentManager.getAgent('valid-agent')
+      const _agent = await agentManager.getAgent('valid-agent')
 
       const maliciousArgs = [
         '; echo "INJECTION_SUCCESSFUL"',

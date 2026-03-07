@@ -1,7 +1,7 @@
 import {
   AgentExecutor,
-  DEFAULT_EXECUTION_TIMEOUT,
   createExecutionConfig,
+  DEFAULT_EXECUTION_TIMEOUT,
 } from 'src/execution/AgentExecutor'
 import type { ExecutionParams } from 'src/types/ExecutionParams'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,7 +23,7 @@ describe('AgentExecutor', () => {
     executor = new AgentExecutor(testConfig)
 
     // Setup spawn mock
-    mockSpawn.mockImplementation((cmd: string, args: string[], options: any) => {
+    mockSpawn.mockImplementation((_cmd: string, args: string[], _options: any) => {
       // Extract the prompt which should be the last argument after -p flag
       const promptIndex = args.indexOf('-p')
       const prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''
@@ -274,7 +274,7 @@ describe('AgentExecutor', () => {
     })
 
     it('should not modify env for gemini when agentsSettingsPath is set', async () => {
-      const originalEnv = { ...process.env }
+      const _originalEnv = { ...process.env }
       const geminiConfig = createExecutionConfig('gemini', {
         agentsSettingsPath: '/path/to/gemini/settings',
       })
