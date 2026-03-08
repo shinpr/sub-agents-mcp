@@ -1,6 +1,6 @@
-import { AgentExecutor, createExecutionConfig } from 'src/execution/AgentExecutor'
-import type { ExecutionParams } from 'src/types/ExecutionParams'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AgentExecutor, createExecutionConfig } from '../../execution/AgentExecutor.js'
+import type { ExecutionParams } from '../../types/ExecutionParams.js'
 
 // Mock child_process module for integration testing
 vi.mock('node:child_process', () => ({

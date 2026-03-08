@@ -8,8 +8,8 @@
  * through the Model Context Protocol.
  */
 
-import { ServerConfig } from 'src/config/ServerConfig'
-import { McpServer } from 'src/server/McpServer'
+import { ServerConfig } from './config/ServerConfig.js'
+import { McpServer } from './server/McpServer.js'
 
 /**
  * Main function to start the MCP server
@@ -42,13 +42,9 @@ async function main(): Promise<void> {
   }
 }
 
-// Start the server if this module is the main entry point
-// Note: Using process.argv check instead of import.meta for broader compatibility
-if (require.main === module) {
-  main().catch((error) => {
-    console.error('Unhandled error in main:', error)
-    process.exit(1)
-  })
-}
+main().catch((error) => {
+  console.error('Unhandled error in main:', error)
+  process.exit(1)
+})
 
-export { McpServer } from 'src/server/McpServer'
+export { McpServer } from './server/McpServer.js'

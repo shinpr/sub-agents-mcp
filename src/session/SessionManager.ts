@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
-import type { SessionConfig, SessionData, SessionEntry } from '../types/SessionData'
+import type { SessionConfig, SessionData, SessionEntry } from '../types/SessionData.js'
 
 /**
  * Session manager for handling session data persistence.

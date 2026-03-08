@@ -1,5 +1,5 @@
-import { AppError, ValidationError } from 'src/utils/ErrorHandler'
 import { describe, expect, it } from 'vitest'
+import { AppError, ValidationError } from '../ErrorHandler.js'
 
 describe('AppError', () => {
   it('should create error with message, code, and statusCode', () => {

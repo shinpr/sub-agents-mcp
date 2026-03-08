@@ -7,13 +7,13 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { AgentManager } from 'src/agents/AgentManager'
-import type { AgentExecutionResult, AgentExecutor } from 'src/execution/AgentExecutor'
-import { formatSessionHistory } from 'src/session/SessionHistoryFormatter'
-import type { SessionManager } from 'src/session/SessionManager'
-import type { AgentDefinition } from 'src/types/AgentDefinition'
-import type { ExecutionParams } from 'src/types/ExecutionParams'
-import { Logger, type LogLevel } from 'src/utils/Logger'
+import type { AgentManager } from '../agents/AgentManager.js'
+import type { AgentExecutionResult, AgentExecutor } from '../execution/AgentExecutor.js'
+import { formatSessionHistory } from '../session/SessionHistoryFormatter.js'
+import type { SessionManager } from '../session/SessionManager.js'
+import type { AgentDefinition } from '../types/AgentDefinition.js'
+import type { ExecutionParams } from '../types/ExecutionParams.js'
+import { Logger, type LogLevel } from '../utils/Logger.js'
 
 /**
  * MCP tool content type for text responses

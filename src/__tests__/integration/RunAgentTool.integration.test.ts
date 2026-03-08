@@ -5,17 +5,17 @@
  * agent execution integration, and MCP response formatting.
  */
 
-import { AgentManager } from 'src/agents/AgentManager'
-import { AgentExecutor, createExecutionConfig } from 'src/execution/AgentExecutor'
-import { RunAgentTool } from 'src/tools/RunAgentTool'
-import type { ServerConfigInterface } from 'src/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AgentManager } from '../../agents/AgentManager.js'
+import type { ServerConfig } from '../../config/ServerConfig.js'
+import { AgentExecutor, createExecutionConfig } from '../../execution/AgentExecutor.js'
+import { RunAgentTool } from '../../tools/RunAgentTool.js'
 
 describe('RunAgentTool', () => {
   let runAgentTool: RunAgentTool
   let mockAgentExecutor: AgentExecutor
   let mockAgentManager: AgentManager
-  let mockConfig: ServerConfigInterface
+  let mockConfig: ServerConfig
 
   beforeEach(() => {
     mockConfig = {

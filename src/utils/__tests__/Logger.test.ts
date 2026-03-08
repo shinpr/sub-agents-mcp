@@ -1,5 +1,5 @@
-import { Logger } from 'src/utils/Logger'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Logger } from '../Logger.js'
 
 describe('Logger', () => {
   let logger: Logger

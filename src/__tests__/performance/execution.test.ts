@@ -8,11 +8,11 @@
 import fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { AgentManager } from 'src/agents/AgentManager'
-import { ServerConfig } from 'src/config/ServerConfig'
-import { AgentExecutor, createExecutionConfig } from 'src/execution/AgentExecutor'
-import { McpServer } from 'src/server/McpServer'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+import { AgentManager } from '../../agents/AgentManager.js'
+import { ServerConfig } from '../../config/ServerConfig.js'
+import { AgentExecutor, createExecutionConfig } from '../../execution/AgentExecutor.js'
+import { McpServer } from '../../server/McpServer.js'
 
 // Mock child_process for performance tests
 vi.mock('node:child_process', () => ({

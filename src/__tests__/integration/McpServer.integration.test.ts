@@ -5,13 +5,13 @@
  * registration, agent resources publication, and MCP client interaction.
  */
 
-import { McpServer } from 'src/server/McpServer'
-import type { ServerConfigInterface } from 'src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { ServerConfig } from '../../config/ServerConfig.js'
+import { McpServer } from '../../server/McpServer.js'
 
 describe('McpServer Integration', () => {
   let server: McpServer
-  let mockConfig: ServerConfigInterface
+  let mockConfig: ServerConfig
 
   beforeEach(() => {
     mockConfig = {

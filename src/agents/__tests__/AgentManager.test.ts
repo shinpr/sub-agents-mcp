@@ -1,6 +1,6 @@
-import { AgentManager } from 'src/agents/AgentManager'
-import type { ServerConfig } from 'src/config/ServerConfig'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ServerConfig } from '../../config/ServerConfig.js'
+import { AgentManager } from '../AgentManager.js'
 
 // Mock fs module
 vi.mock('node:fs', () => ({

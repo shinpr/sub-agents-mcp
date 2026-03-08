@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import type { ExecutionParams } from 'src/types/ExecutionParams'
-import { Logger, type LogLevel } from 'src/utils/Logger'
-import { StreamProcessor } from './StreamProcessor'
+import type { ExecutionParams } from '../types/ExecutionParams.js'
+import { Logger, type LogLevel } from '../utils/Logger.js'
+import { StreamProcessor } from './StreamProcessor.js'
 
 /**
  * Detailed execution result that includes performance metrics and method information.

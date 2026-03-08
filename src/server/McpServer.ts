@@ -25,14 +25,14 @@ import {
   ReadResourceRequestSchema,
   type ReadResourceResult,
 } from '@modelcontextprotocol/sdk/types.js'
-import { AgentManager } from 'src/agents/AgentManager'
-import type { ServerConfig } from 'src/config/ServerConfig'
-import { AgentExecutor, createExecutionConfig } from 'src/execution/AgentExecutor'
-import { AgentResources } from 'src/resources/AgentResources'
-import { SessionManager } from 'src/session/SessionManager'
-import { RunAgentTool } from 'src/tools/RunAgentTool'
-import { AppError, ValidationError } from 'src/utils/ErrorHandler'
-import { Logger } from 'src/utils/Logger'
+import { AgentManager } from '../agents/AgentManager.js'
+import type { ServerConfig } from '../config/ServerConfig.js'
+import { AgentExecutor, createExecutionConfig } from '../execution/AgentExecutor.js'
+import { AgentResources } from '../resources/AgentResources.js'
+import { SessionManager } from '../session/SessionManager.js'
+import { RunAgentTool } from '../tools/RunAgentTool.js'
+import { AppError, ValidationError } from '../utils/ErrorHandler.js'
+import { Logger } from '../utils/Logger.js'
 
 /**
  * Server information interface for MCP server identification

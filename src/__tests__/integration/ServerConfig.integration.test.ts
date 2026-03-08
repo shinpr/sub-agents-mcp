@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { ServerConfig } from 'src/config/ServerConfig'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ServerConfig } from '../../config/ServerConfig.js'
 
 describe('ServerConfig', () => {
   let testAgentsDir: string

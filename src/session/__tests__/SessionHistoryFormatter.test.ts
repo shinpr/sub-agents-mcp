@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { SessionData } from '../../types/SessionData'
-import { formatSessionHistory } from '../SessionHistoryFormatter'
+import type { SessionData } from '../../types/SessionData.js'
+import { formatSessionHistory } from '../SessionHistoryFormatter.js'
 
 describe('SessionHistoryFormatter', () => {
   describe('formatSessionHistory', () => {

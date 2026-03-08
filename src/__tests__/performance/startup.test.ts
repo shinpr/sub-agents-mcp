@@ -9,9 +9,10 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { ServerConfig } from 'src/config/ServerConfig'
-import { McpServer } from 'src/server/McpServer'
+import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { ServerConfig } from '../../config/ServerConfig.js'
+import { McpServer } from '../../server/McpServer.js'
 
 describe('Startup Performance Tests', () => {
   let testAgentsDir: string
@@ -46,7 +47,10 @@ describe('Startup Performance Tests', () => {
     }
 
     // Start server process
-    const serverPath = path.join(__dirname, '../../../dist/index.js')
+    const serverPath = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '../../../dist/index.js'
+    )
     const serverProcess = spawn('node', [serverPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: testEnv,
@@ -137,7 +141,10 @@ describe('Startup Performance Tests', () => {
         AGENTS_DIR: stressTestDir,
       }
 
-      const serverPath = path.join(__dirname, '../../../dist/index.js')
+      const serverPath = path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        '../../../dist/index.js'
+      )
       const serverProcess = spawn('node', [serverPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: testEnv,
