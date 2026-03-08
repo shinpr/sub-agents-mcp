@@ -4,7 +4,7 @@
  * Converts SessionData to Markdown format for optimal token efficiency and LLM comprehension.
  */
 
-import type { SessionData } from '../types/SessionData'
+import type { SessionData } from '../types/SessionData.js'
 
 /**
  * Formats session history as Markdown for LLM context.

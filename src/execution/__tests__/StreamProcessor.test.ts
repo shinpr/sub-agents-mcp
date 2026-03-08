@@ -1,4 +1,4 @@
-import { StreamProcessor } from '../StreamProcessor'
+import { StreamProcessor } from '../StreamProcessor.js'
 
 describe('StreamProcessor', () => {
   let processor: StreamProcessor

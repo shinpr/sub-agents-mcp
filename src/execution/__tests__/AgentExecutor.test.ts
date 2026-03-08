@@ -1,10 +1,10 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ExecutionParams } from '../../types/ExecutionParams.js'
 import {
   AgentExecutor,
   createExecutionConfig,
   DEFAULT_EXECUTION_TIMEOUT,
-} from 'src/execution/AgentExecutor'
-import type { ExecutionParams } from 'src/types/ExecutionParams'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+} from '../AgentExecutor.js'
 
 // Mock child_process module
 vi.mock('node:child_process', () => ({

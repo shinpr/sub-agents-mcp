@@ -5,9 +5,9 @@
  * configuration integration, and transport setup.
  */
 
-import { ServerConfig } from 'src/config/ServerConfig'
-import { McpServer } from 'src/server/McpServer'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ServerConfig } from '../../config/ServerConfig.js'
+import { McpServer } from '../../server/McpServer.js'
 
 describe('McpServer', () => {
   let server: McpServer

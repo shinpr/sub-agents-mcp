@@ -15,9 +15,9 @@
 import fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { ServerConfig } from 'src/config/ServerConfig'
-import { McpServer } from 'src/server/McpServer'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+import { ServerConfig } from '../../config/ServerConfig.js'
+import { McpServer } from '../../server/McpServer.js'
 
 // Mock child_process module for E2E testing
 vi.mock('node:child_process', () => ({

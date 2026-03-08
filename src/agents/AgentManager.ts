@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ServerConfig } from 'src/config/ServerConfig'
-import type { AgentDefinition } from 'src/types/AgentDefinition'
-import { type Logger, Logger as LoggerClass } from 'src/utils/Logger'
+import type { ServerConfig } from '../config/ServerConfig.js'
+import type { AgentDefinition } from '../types/AgentDefinition.js'
+import { type Logger, Logger as LoggerClass } from '../utils/Logger.js'
 
 /**
  * AgentManager class for discovering, loading, parsing, and caching agent definitions.

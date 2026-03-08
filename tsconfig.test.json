@@ -7,11 +7,7 @@
     "noPropertyAccessFromIndexSignature": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    // Ensure path mapping works for test files
-    "baseUrl": ".",
-    "paths": {
-      "src/*": ["src/*"]
-    }
+    "noUnusedParameters": false
   },
   "include": ["src/**/*.test.ts", "src/**/*.spec.ts"],
   "exclude": ["node_modules", "dist"]

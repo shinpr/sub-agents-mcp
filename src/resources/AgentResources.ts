@@ -5,9 +5,9 @@
  * available agents and individual agent definition resources.
  */
 
-import type { AgentManager } from 'src/agents/AgentManager'
-import type { AgentDefinition } from 'src/types/AgentDefinition'
-import { Logger } from 'src/utils/Logger'
+import type { AgentManager } from '../agents/AgentManager.js'
+import type { AgentDefinition } from '../types/AgentDefinition.js'
+import { Logger } from '../utils/Logger.js'
 
 /**
  * MCP resource content type for text responses
