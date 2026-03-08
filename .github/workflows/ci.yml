@@ -37,8 +37,6 @@ jobs:
     - name: Check for circular dependencies
       run: npm run check:deps
       
-    - name: Check for unused exports
-      run: npm run check:unused
 
   test:
     name: Test

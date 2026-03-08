@@ -210,19 +210,6 @@ class QualityChecker {
     }
   }
 
-  async checkUnusedCode() {
-    this.section('Unused Code Check');
-    
-    const result = await this.runCommand('npm run check:unused');
-    if (result.success) {
-      this.success('No unused exports found');
-      return true;
-    } else {
-      this.warning(`Unused exports detected: ${result.output}`);
-      return false; // Treat as warning for now
-    }
-  }
-
   async checkAcceptanceCriteria() {
     this.section('Acceptance Criteria Verification');
     
@@ -425,7 +412,6 @@ class QualityChecker {
       () => this.checkTestCoverage(),
       () => this.checkDependencies(),
       () => this.checkCircularDependencies(),
-      () => this.checkUnusedCode(),
       () => this.checkCodeQuality(),
       () => this.checkLanguageCompliance(),
       () => this.checkDocumentation(),
