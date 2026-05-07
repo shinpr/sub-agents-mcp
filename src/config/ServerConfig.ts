@@ -1,4 +1,12 @@
-import { AGENT_TYPES, type AgentType, isAgentType } from '../execution/AgentExecutor.js'
+import {
+  AGENT_PERMISSIONS,
+  AGENT_TYPES,
+  type AgentPermission,
+  type AgentType,
+  DEFAULT_AGENT_PERMISSION,
+  isAgentPermission,
+  isAgentType,
+} from '../execution/AgentExecutor.js'
 import { isLogLevel, LOG_LEVELS, type LogLevel } from '../utils/Logger.js'
 
 /**
@@ -12,6 +20,7 @@ import { isLogLevel, LOG_LEVELS, type LogLevel } from '../utils/Logger.js'
  * - SERVER_VERSION: Version of the MCP server (default: '1.0.0')
  * - AGENTS_DIR: Directory containing agent definition files (REQUIRED - must be absolute path)
  * - AGENT_TYPE: Type of agent to use ('cursor' | 'claude' | 'gemini' | 'codex') (default: 'cursor')
+ * - AGENT_PERMISSION: Approval/sandbox level for sub-agents ('read-only' | 'safe-edit' | 'yolo') (default: 'safe-edit')
  * - LOG_LEVEL: Log level for server operations (default: 'info')
  * - SESSION_ENABLED: Enable session management functionality (default: false)
  * - SESSION_DIR: Directory for storing session files (default: '.mcp-sessions')
@@ -30,6 +39,9 @@ export class ServerConfig {
 
   /** Type of agent to use for execution */
   public readonly agentType: AgentType
+
+  /** Approval/sandbox level for sub-agent execution */
+  public readonly agentPermission: AgentPermission
 
   /** Log level for server operations */
   public readonly logLevel: LogLevel
@@ -87,6 +99,17 @@ export class ServerConfig {
     } else {
       throw new Error(
         `Invalid AGENT_TYPE: "${agentTypeEnv}". Must be one of: ${AGENT_TYPES.join(', ')}.`
+      )
+    }
+
+    const agentPermissionEnv = process.env['AGENT_PERMISSION']?.trim()
+    if (!agentPermissionEnv) {
+      this.agentPermission = DEFAULT_AGENT_PERMISSION
+    } else if (isAgentPermission(agentPermissionEnv)) {
+      this.agentPermission = agentPermissionEnv
+    } else {
+      throw new Error(
+        `Invalid AGENT_PERMISSION: "${agentPermissionEnv}". Must be one of: ${AGENT_PERMISSIONS.join(', ')}.`
       )
     }
 
