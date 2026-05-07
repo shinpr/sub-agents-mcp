@@ -210,7 +210,7 @@ describe('Execution Performance Tests', () => {
 
     server = new McpServer(config)
     agentManager = new AgentManager(config)
-    const executionConfig = createExecutionConfig('bash')
+    const executionConfig = createExecutionConfig('cursor')
     agentExecutor = new AgentExecutor(executionConfig)
 
     await server.start()

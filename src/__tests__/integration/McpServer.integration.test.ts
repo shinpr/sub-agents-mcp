@@ -20,6 +20,7 @@ describe('McpServer Integration', () => {
       agentsDir: './test-agents',
       logLevel: 'info',
       agentType: 'cursor',
+      agentPermission: 'safe-edit',
       executionTimeoutMs: 300000,
       sessionEnabled: false,
       sessionDir: '.mcp-sessions',

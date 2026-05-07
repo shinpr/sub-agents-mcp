@@ -303,6 +303,15 @@ Which execution engine to use:
 
 ### Optional Settings
 
+**`AGENT_PERMISSION`**
+Approval/sandbox level the sub-agent runs with. Default: `"safe-edit"`.
+
+- `"read-only"` — investigation/review only, no edits or shell writes (codex `-s read-only` / claude `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan`)
+- `"safe-edit"` — auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust`)
+- `"yolo"` — bypass all approvals and sandboxing. Use with care.
+
+Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts; the depth of sandboxing depends on the CLI — codex enforces a `workspace-write` sandbox, while claude / gemini / cursor only auto-approve and do not jail edits to the workspace. If you need strict containment, use `read-only` and run privileged steps separately.
+
 **`EXECUTION_TIMEOUT_MS`**
 How long agents can run before timing out (default: 5 minutes, max: 10 minutes)
 

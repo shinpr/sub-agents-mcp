@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExecutionParams } from '../../types/ExecutionParams.js'
 import {
   AgentExecutor,
+  type AgentPermission,
+  type AgentType,
   createExecutionConfig,
   DEFAULT_EXECUTION_TIMEOUT,
 } from '../AgentExecutor.js'
@@ -521,6 +523,143 @@ describe('AgentExecutor', () => {
 
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toContain('timeout')
+    })
+  })
+
+  describe('permission flag mapping', () => {
+    type Case = {
+      agent: AgentType
+      perm: AgentPermission
+      expected: readonly string[]
+    }
+
+    const cases: readonly Case[] = [
+      // codex
+      { agent: 'codex', perm: 'read-only', expected: ['-s', 'read-only'] },
+      {
+        agent: 'codex',
+        perm: 'safe-edit',
+        expected: ['-s', 'workspace-write', '-c', 'approval_policy=never'],
+      },
+      { agent: 'codex', perm: 'yolo', expected: ['--dangerously-bypass-approvals-and-sandbox'] },
+      // claude
+      { agent: 'claude', perm: 'read-only', expected: ['--permission-mode', 'plan'] },
+      { agent: 'claude', perm: 'safe-edit', expected: ['--permission-mode', 'acceptEdits'] },
+      { agent: 'claude', perm: 'yolo', expected: ['--dangerously-skip-permissions'] },
+      // gemini
+      { agent: 'gemini', perm: 'read-only', expected: ['--approval-mode', 'plan'] },
+      { agent: 'gemini', perm: 'safe-edit', expected: ['--approval-mode', 'auto_edit'] },
+      { agent: 'gemini', perm: 'yolo', expected: ['-y'] },
+      // cursor
+      { agent: 'cursor', perm: 'read-only', expected: ['--mode', 'plan'] },
+      { agent: 'cursor', perm: 'safe-edit', expected: ['--trust'] },
+      { agent: 'cursor', perm: 'yolo', expected: ['-f', '--trust'] },
+    ]
+
+    it.each(cases)('should prepend $expected for agent=$agent permission=$perm', async ({
+      agent,
+      perm,
+      expected,
+    }) => {
+      const executor = new AgentExecutor(createExecutionConfig(agent, { permission: perm }))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      // Permission flags must occupy the head of argv (before the per-CLI base flags).
+      expect(args.slice(0, expected.length)).toEqual(expected)
+    })
+
+    it('should default to safe-edit when permission is not specified in createExecutionConfig', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('claude'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      expect(args.slice(0, 2)).toEqual(['--permission-mode', 'acceptEdits'])
+    })
+
+    it('should fall back to safe-edit when overrides.permission is undefined (mocks bypassing TS)', async () => {
+      // Simulates a test mock or JS caller that passes { permission: undefined }
+      // — without the `??` guard the spread would overwrite the default and
+      // leave the sub-agent without any approval flag, deadlocking on prompt.
+      const executor = new AgentExecutor(
+        createExecutionConfig('claude', { permission: undefined as unknown as AgentPermission })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      expect(args.slice(0, 2)).toEqual(['--permission-mode', 'acceptEdits'])
+    })
+  })
+
+  describe('new required CLI flags', () => {
+    it('should include --skip-git-repo-check for codex', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('codex'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      expect(args).toContain('--skip-git-repo-check')
+    })
+
+    it('should include --skip-trust for gemini unconditionally', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('gemini'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      expect(args).toContain('--skip-trust')
+    })
+
+    it('should include --skip-trust for gemini even when agentFilePath is provided', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('gemini'))
+
+      await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+        agentFilePath: '/path/to/agent.md',
+      })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      expect(args).toContain('--skip-trust')
+    })
+
+    it('should not leak codex-specific flags into other CLIs', async () => {
+      for (const agent of ['claude', 'gemini', 'cursor'] as const) {
+        mockSpawn.mockClear()
+        const executor = new AgentExecutor(createExecutionConfig(agent))
+        await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+        const args = mockSpawn.mock.calls[0][1] as string[]
+        expect(args).not.toContain('--skip-git-repo-check')
+      }
+    })
+  })
+
+  describe('codex prompt assembly', () => {
+    it('should concatenate system context into the prompt regardless of agentFilePath', async () => {
+      // codex's `-c model_instructions_file` was deliberately not adopted: it
+      // replaces codex's built-in system prompt and measurably increased
+      // exploration overhead and token usage in real-task comparisons.
+      const executor = new AgentExecutor(createExecutionConfig('codex'))
+
+      await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+        agentFilePath: '/path/to/agent.md',
+      })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      const promptArg = args[args.length - 1]
+      expect(promptArg).toContain('[System Context]')
+      expect(promptArg).toContain('test-agent')
+      expect(promptArg).toContain('[User Prompt]')
+      expect(promptArg).toContain('Test prompt')
+      // model_instructions_file must never appear in argv.
+      expect(args.some((a) => a.startsWith('model_instructions_file='))).toBe(false)
     })
   })
 

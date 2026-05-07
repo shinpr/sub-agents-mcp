@@ -62,6 +62,16 @@ export interface ExecutionConfig {
   agentType: AgentType
 
   /**
+   * Approval/sandbox level the sub-agent runs with.
+   *
+   * Sub-agents have no stdin, so any approval prompt would deadlock the run.
+   * The default 'safe-edit' keeps writes confined to the workspace while
+   * suppressing prompts. The default value is owned by ServerConfig and
+   * threaded through here; this field is required.
+   */
+  permission: AgentPermission
+
+  /**
    * Path to CLI settings file/directory.
    * Applied differently based on agentType:
    * - claude: passed as --settings argument
@@ -93,6 +103,58 @@ export function isAgentType(value: unknown): value is AgentType {
 }
 
 /**
+ * Supported permission levels. Single source of truth for both runtime
+ * validation (ServerConfig) and static typing.
+ */
+export const AGENT_PERMISSIONS = ['read-only', 'safe-edit', 'yolo'] as const
+
+export type AgentPermission = (typeof AGENT_PERMISSIONS)[number]
+
+export function isAgentPermission(value: unknown): value is AgentPermission {
+  return typeof value === 'string' && (AGENT_PERMISSIONS as readonly string[]).includes(value)
+}
+
+/**
+ * Default permission level used when AGENT_PERMISSION is not set.
+ * Owned here so ServerConfig and createExecutionConfig share a single constant.
+ */
+export const DEFAULT_AGENT_PERMISSION: AgentPermission = 'safe-edit'
+
+/**
+ * Permission level → per-CLI flag mapping.
+ *
+ * Levels:
+ * - 'read-only': investigation/review only, no edits or shell writes.
+ * - 'safe-edit' (default): auto-approve edits inside the workspace, suppress prompts.
+ * - 'yolo': bypass all approvals and sandboxing.
+ *
+ * Order is preserved when these flags are spliced into argv; tests assert
+ * exact arrays via toEqual, so any change here must be reflected in tests.
+ */
+const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly string[]>> = {
+  codex: {
+    'read-only': ['-s', 'read-only'],
+    'safe-edit': ['-s', 'workspace-write', '-c', 'approval_policy=never'],
+    yolo: ['--dangerously-bypass-approvals-and-sandbox'],
+  },
+  claude: {
+    'read-only': ['--permission-mode', 'plan'],
+    'safe-edit': ['--permission-mode', 'acceptEdits'],
+    yolo: ['--dangerously-skip-permissions'],
+  },
+  gemini: {
+    'read-only': ['--approval-mode', 'plan'],
+    'safe-edit': ['--approval-mode', 'auto_edit'],
+    yolo: ['-y'],
+  },
+  cursor: {
+    'read-only': ['--mode', 'plan'],
+    'safe-edit': ['--trust'],
+    yolo: ['-f', '--trust'],
+  },
+}
+
+/**
  * Creates a complete ExecutionConfig with the provided agent type.
  * @param agentType - The type of agent to use
  * @param overrides - Optional overrides for configuration values
@@ -101,9 +163,13 @@ export function createExecutionConfig(
   agentType: AgentType,
   overrides?: Partial<Omit<ExecutionConfig, 'agentType'>>
 ): ExecutionConfig {
+  // permission is applied via `??` rather than letting the spread overwrite the
+  // default, so a caller passing `{ permission: undefined }` (e.g. via a mock
+  // that bypasses TS) does not silently disable approval handling.
   return {
     executionTimeout: DEFAULT_EXECUTION_TIMEOUT,
     ...overrides,
+    permission: overrides?.permission ?? DEFAULT_AGENT_PERMISSION,
     agentType,
   }
 }
@@ -232,9 +298,10 @@ export class AgentExecutor {
   /**
    * Builds CLI-specific command, args, and environment overrides.
    *
-   * - Claude: uses --append-system-prompt to separate agent definition from user prompt
-   * - Gemini: uses GEMINI_SYSTEM_MD env var pointing to the agent definition file
-   * - Codex/Cursor: concatenates system context and user prompt (no separation)
+   * Each CLI's argv layout follows the pattern: permission flags first
+   * (so the per-CLI base flags and the prompt remain at the tail). Per-CLI
+   * specifics (system-prompt injection, settings path, API key) are handled
+   * by the dedicated builder.
    *
    * @private
    */
@@ -243,74 +310,118 @@ export class AgentExecutor {
     args: string[]
     envOverrides: Record<string, string>
   } {
-    const envOverrides: Record<string, string> = {}
+    const envOverrides = this.buildSettingsPathEnv()
 
-    // Apply CLI-specific settings path configuration
+    switch (this.config.agentType) {
+      case 'codex':
+        return this.buildCodexArgs(params, envOverrides)
+      case 'claude':
+        return this.buildClaudeArgs(params, envOverrides)
+      case 'gemini':
+        return this.buildGeminiArgs(params, envOverrides)
+      case 'cursor':
+        return this.buildCursorArgs(params, envOverrides)
+    }
+  }
+
+  /**
+   * Maps AGENTS_SETTINGS_PATH onto the per-CLI env var (claude is handled
+   * via argv, gemini does not support it). Gemini ignoring this is a known
+   * upstream limitation, not a bug here.
+   *
+   * @private
+   */
+  private buildSettingsPathEnv(): Record<string, string> {
+    const env: Record<string, string> = {}
+    if (!this.config.agentsSettingsPath) return env
+    switch (this.config.agentType) {
+      case 'cursor':
+        env['CURSOR_CONFIG_DIR'] = this.config.agentsSettingsPath
+        break
+      case 'codex':
+        env['CODEX_HOME'] = this.config.agentsSettingsPath
+        break
+      // claude: handled via --settings argv below
+      // gemini: not supported (upstream limitation)
+    }
+    return env
+  }
+
+  private permissionFlags(): readonly string[] {
+    return PERMISSION_FLAGS[this.config.agentType][this.config.permission]
+  }
+
+  private buildCodexArgs(
+    params: ExecutionParams,
+    envOverrides: Record<string, string>
+  ): { command: string; args: string[]; envOverrides: Record<string, string> } {
+    const perm = this.permissionFlags()
+    // System context is concatenated into the user prompt rather than injected
+    // via `-c model_instructions_file=...`: that flag fully replaces codex's
+    // default system prompt, which removed the built-in tool-use guidance and
+    // measurably increased exploration overhead and token usage in our tests.
+    // Concatenation keeps codex's defaults intact and matches the cursor path.
+    const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
+    const args = [...perm, 'exec', '--json', '--skip-git-repo-check', formattedPrompt]
+    return { command: 'codex', args, envOverrides }
+  }
+
+  private buildClaudeArgs(
+    params: ExecutionParams,
+    envOverrides: Record<string, string>
+  ): { command: string; args: string[]; envOverrides: Record<string, string> } {
+    const perm = this.permissionFlags()
+    const cwd = params.cwd || process.cwd()
+    const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
+    const args: string[] = [
+      ...perm,
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--append-system-prompt',
+      systemPrompt,
+      '-p',
+      params.prompt,
+    ]
     if (this.config.agentsSettingsPath) {
-      switch (this.config.agentType) {
-        case 'cursor':
-          envOverrides['CURSOR_CONFIG_DIR'] = this.config.agentsSettingsPath
-          break
-        case 'codex':
-          envOverrides['CODEX_HOME'] = this.config.agentsSettingsPath
-          break
-        // claude: handled via --settings argument below
-        // gemini: not supported (upstream limitation)
+      args.push('--settings', this.config.agentsSettingsPath)
+    }
+    return { command: 'claude', args, envOverrides }
+  }
+
+  private buildGeminiArgs(
+    params: ExecutionParams,
+    envOverrides: Record<string, string>
+  ): { command: string; args: string[]; envOverrides: Record<string, string> } {
+    const perm = this.permissionFlags()
+    // --skip-trust is unconditional: headless runs in untrusted folders are
+    // refused without it (Gemini downgrades to interactive prompts which
+    // deadlock here since we have no stdin).
+    if (params.agentFilePath) {
+      const args = [...perm, '--skip-trust', '--output-format', 'stream-json', '-p', params.prompt]
+      return {
+        command: 'gemini',
+        args,
+        envOverrides: { ...envOverrides, GEMINI_SYSTEM_MD: params.agentFilePath },
       }
     }
+    const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
+    const args = [...perm, '--skip-trust', '--output-format', 'stream-json', '-p', formattedPrompt]
+    return { command: 'gemini', args, envOverrides }
+  }
 
-    if (this.config.agentType === 'codex') {
-      const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
-      return { command: 'codex', args: ['exec', '--json', formattedPrompt], envOverrides }
+  private buildCursorArgs(
+    params: ExecutionParams,
+    envOverrides: Record<string, string>
+  ): { command: string; args: string[]; envOverrides: Record<string, string> } {
+    const perm = this.permissionFlags()
+    const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
+    const args = [...perm, '--output-format', 'json', '-p', formattedPrompt]
+    const env: Record<string, string> = { ...envOverrides }
+    if (this.config.cursorApiKey) {
+      env['CURSOR_API_KEY'] = this.config.cursorApiKey
     }
-
-    // Determine command
-    const command =
-      this.config.agentType === 'claude'
-        ? 'claude'
-        : this.config.agentType === 'gemini'
-          ? 'gemini'
-          : 'cursor-agent'
-
-    let args: string[]
-
-    if (this.config.agentType === 'claude') {
-      // Claude: separate system prompt via --append-system-prompt
-      const cwd = params.cwd || process.cwd()
-      const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
-      args = [
-        '--output-format',
-        'stream-json',
-        '--verbose',
-        '--append-system-prompt',
-        systemPrompt,
-        '-p',
-        params.prompt,
-      ]
-
-      if (this.config.agentsSettingsPath) {
-        args.push('--settings', this.config.agentsSettingsPath)
-      }
-    } else if (this.config.agentType === 'gemini' && params.agentFilePath) {
-      // Gemini: pass agent file as system prompt via env var
-      args = ['--output-format', 'stream-json', '-p', params.prompt]
-      envOverrides['GEMINI_SYSTEM_MD'] = params.agentFilePath
-    } else {
-      // Cursor or Gemini without agentFilePath: concatenate as before
-      const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
-      if (this.config.agentType === 'gemini') {
-        args = ['--output-format', 'stream-json', '-p', formattedPrompt]
-      } else {
-        args = ['--output-format', 'json', '-p', formattedPrompt]
-      }
-    }
-
-    // Pass API key for cursor-agent via environment variable (not CLI arg, to avoid ps exposure)
-    if (this.config.agentType === 'cursor' && this.config.cursorApiKey) {
-      envOverrides['CURSOR_API_KEY'] = this.config.cursorApiKey
-    }
-
-    return { command, args, envOverrides }
+    return { command: 'cursor-agent', args, envOverrides: env }
   }
 
   /**

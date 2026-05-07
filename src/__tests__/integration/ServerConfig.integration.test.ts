@@ -64,6 +64,44 @@ describe('ServerConfig', () => {
     expect(() => new ServerConfig()).toThrow(/Invalid AGENT_TYPE/)
   })
 
+  it.each([
+    'read-only',
+    'safe-edit',
+    'yolo',
+  ] as const)('should accept AGENT_PERMISSION=%s', (permission) => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('AGENT_PERMISSION', permission)
+
+    const config = new ServerConfig()
+
+    expect(config.agentPermission).toBe(permission)
+  })
+
+  it('should default AGENT_PERMISSION to safe-edit when not set', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('AGENT_PERMISSION', undefined)
+
+    const config = new ServerConfig()
+
+    expect(config.agentPermission).toBe('safe-edit')
+  })
+
+  it('should default AGENT_PERMISSION to safe-edit when empty string', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('AGENT_PERMISSION', '')
+
+    const config = new ServerConfig()
+
+    expect(config.agentPermission).toBe('safe-edit')
+  })
+
+  it('should throw error when AGENT_PERMISSION is an unsupported value', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('AGENT_PERMISSION', 'godmode')
+
+    expect(() => new ServerConfig()).toThrow(/Invalid AGENT_PERMISSION/)
+  })
+
   it('should throw error when LOG_LEVEL is an unsupported value', () => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('LOG_LEVEL', 'verbose')

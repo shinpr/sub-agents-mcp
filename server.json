@@ -8,13 +8,13 @@
     "url": "https://github.com/shinpr/sub-agents-mcp",
     "source": "github"
   },
-  "version": "0.7.1",
+  "version": "0.8.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sub-agents-mcp",
-      "version": "0.7.1",
+      "version": "0.8.0",
       "transport": {
         "type": "stdio"
       },
@@ -28,10 +28,24 @@
         },
         {
           "name": "AGENT_TYPE",
-          "description": "Type of AI CLI to use: 'cursor', 'claude', or 'gemini'",
+          "description": "Type of AI CLI to use: 'cursor', 'claude', 'gemini', or 'codex'",
           "isRequired": true,
           "format": "string",
           "isSecret": false
+        },
+        {
+          "name": "AGENT_PERMISSION",
+          "description": "Approval/sandbox level for sub-agents: 'read-only', 'safe-edit' (default), or 'yolo'",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "CURSOR_API_KEY",
+          "description": "API key for cursor-agent authentication (used only when AGENT_TYPE=cursor; passed via env, never via CLI args)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
         },
         {
           "name": "EXECUTION_TIMEOUT_MS",

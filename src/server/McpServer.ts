@@ -74,7 +74,8 @@ export class McpServer {
 
     // Create ExecutionConfig with the agent type from server config
     const executionConfig = createExecutionConfig(config.agentType, {
-      executionTimeout: config.executionTimeoutMs, // Use timeout from config (env var or 90s default)
+      executionTimeout: config.executionTimeoutMs,
+      permission: config.agentPermission,
       ...(config.agentsSettingsPath && { agentsSettingsPath: config.agentsSettingsPath }),
       ...(config.cursorApiKey && { cursorApiKey: config.cursorApiKey }),
     })

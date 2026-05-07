@@ -23,6 +23,7 @@ describe('RunAgentTool', () => {
       serverVersion: '1.0.0',
       agentsDir: './test-agents',
       agentType: 'cursor',
+      agentPermission: 'safe-edit',
       logLevel: 'info',
       executionTimeoutMs: 300000,
       sessionEnabled: false,
