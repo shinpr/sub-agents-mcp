@@ -315,6 +315,15 @@ Sub-agents have no stdin, so any approval prompt would deadlock the run. The def
 **`EXECUTION_TIMEOUT_MS`**
 How long agents can run before timing out (default: 5 minutes, max: 10 minutes)
 
+### Per-Call Overrides on `run_agent`
+
+The `run_agent` MCP tool accepts two optional, **execution-only** parameters that override the corresponding server-wide defaults for a single call:
+
+- **`timeout_ms`** — positive integer, between 1 and 600000 (10 minutes). Overrides `EXECUTION_TIMEOUT_MS` for this call only. When omitted, the server-wide `EXECUTION_TIMEOUT_MS` (or its default) is used.
+- **`permission`** — one of `"read-only"`, `"safe-edit"`, or `"yolo"`. Overrides `AGENT_PERMISSION` for this call only. When omitted, the server-wide `AGENT_PERMISSION` (or its default) is used.
+
+Both controls are **execution-only**: they affect only the current `run_agent` invocation, never mutate server-wide configuration, and are **not** persisted to the session history. A subsequent `run_agent` call with the same `session_id` but no overrides reverts to the server-wide defaults — the previous overrides are not replayed. Invalid values (non-integer / non-positive / over the 10-minute ceiling for `timeout_ms`, or any value outside the three permission strings) are rejected with an MCP error before any agent process is spawned and before any session entry is saved.
+
 **`AGENTS_SETTINGS_PATH`**
 Path to custom CLI settings directory for sub-agents.
 

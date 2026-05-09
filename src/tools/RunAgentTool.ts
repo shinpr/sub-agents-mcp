@@ -8,7 +8,15 @@
 
 import { randomUUID } from 'node:crypto'
 import type { AgentManager } from '../agents/AgentManager.js'
-import type { AgentExecutionResult, AgentExecutor } from '../execution/AgentExecutor.js'
+import {
+  AGENT_PERMISSIONS,
+  type AgentExecutionResult,
+  type AgentExecutor,
+  type AgentPermission,
+  type ExecutionOverrides,
+  isAgentPermission,
+  MAX_PER_CALL_TIMEOUT_MS,
+} from '../execution/AgentExecutor.js'
 import { formatSessionHistory } from '../session/SessionHistoryFormatter.js'
 import type { SessionManager } from '../session/SessionManager.js'
 import type { AgentDefinition } from '../types/AgentDefinition.js'
@@ -80,6 +88,17 @@ interface RunAgentInputSchema {
       type: 'string'
       description: string
     }
+    timeout_ms: {
+      type: 'integer'
+      minimum: number
+      maximum: number
+      description: string
+    }
+    permission: {
+      type: 'string'
+      enum: readonly AgentPermission[]
+      description: string
+    }
   }
   required: string[]
 }
@@ -99,6 +118,26 @@ interface RunAgentParams {
    * Must be alphanumeric with hyphens and underscores only (max 100 characters).
    */
   session_id?: string | undefined
+  /**
+   * Per-call execution timeout override in milliseconds (optional).
+   *
+   * Affects only the current run; the server-wide EXECUTION_TIMEOUT_MS default
+   * remains unchanged. Must be a positive integer ≤ MAX_PER_CALL_TIMEOUT_MS.
+   *
+   * Treated as an execution-only control: it is not persisted to the session
+   * payload and is not replayed on continuation calls.
+   */
+  timeout_ms?: number | undefined
+  /**
+   * Per-call approval/sandbox level override (optional).
+   *
+   * Affects only the current run; the server-wide AGENT_PERMISSION default
+   * remains unchanged. Must be one of the {@link AgentPermission} values.
+   *
+   * Treated as an execution-only control: it is not persisted to the session
+   * payload and is not replayed on continuation calls.
+   */
+  permission?: AgentPermission | undefined
 }
 
 /**
@@ -141,6 +180,17 @@ export class RunAgentTool {
         type: 'string',
         description:
           'Session ID for continuing previous conversation context (optional). If omitted, a new session will be auto-generated and returned in response metadata. Reuse the returned session_id in subsequent calls to maintain context continuity.',
+      },
+      timeout_ms: {
+        type: 'integer',
+        minimum: 1,
+        maximum: MAX_PER_CALL_TIMEOUT_MS,
+        description: `Per-call execution timeout override in milliseconds (optional). Must be a positive integer between 1 and ${MAX_PER_CALL_TIMEOUT_MS} (10 minutes). Applies only to this call; the server-wide EXECUTION_TIMEOUT_MS default is used when omitted. This value is execution-only and is never persisted in the session history or replayed on continuation calls.`,
+      },
+      permission: {
+        type: 'string',
+        enum: AGENT_PERMISSIONS,
+        description: `Per-call approval/sandbox level override (optional). One of: ${AGENT_PERMISSIONS.join(', ')}. Applies only to this call; the server-wide AGENT_PERMISSION default is used when omitted. This value is execution-only and is never persisted in the session history or replayed on continuation calls.`,
       },
     },
     required: ['agent', 'prompt', 'cwd'],
@@ -282,8 +332,20 @@ export class RunAgentTool {
 
         // Report progress: Executing agent
 
+        // Build per-call execution overrides. These are deliberately scoped to
+        // this call only and never written into ExecutionParams or the saved
+        // session payload, so subsequent calls (including continuation calls
+        // with the same session_id) revert to the server-wide defaults.
+        const executionOverrides: ExecutionOverrides = {}
+        if (validatedParams.timeout_ms !== undefined) {
+          executionOverrides.timeoutMs = validatedParams.timeout_ms
+        }
+        if (validatedParams.permission !== undefined) {
+          executionOverrides.permission = validatedParams.permission
+        }
+
         // Execute agent (this has its own timeout: MCP -> AI)
-        const result = await this.agentExecutor.executeAgent(executionParams)
+        const result = await this.agentExecutor.executeAgent(executionParams, executionOverrides)
 
         // Report progress: Execution completed
 
@@ -465,6 +527,38 @@ export class RunAgentTool {
       }
     }
 
+    // Validate optional timeout_ms parameter (per-call override).
+    // The intent is execution-only: positive integer milliseconds, no zero
+    // (would deadlock immediately), no negative (nonsensical), no over the
+    // documented ceiling (matches MAX_PER_CALL_TIMEOUT_MS = 10 minutes).
+    if (p['timeout_ms'] !== undefined) {
+      const timeoutMs = p['timeout_ms']
+      if (
+        typeof timeoutMs !== 'number' ||
+        !Number.isInteger(timeoutMs) ||
+        !Number.isFinite(timeoutMs) ||
+        timeoutMs <= 0
+      ) {
+        throw new Error('Invalid timeout_ms parameter: must be a positive integer (milliseconds)')
+      }
+      if (timeoutMs > MAX_PER_CALL_TIMEOUT_MS) {
+        throw new Error(
+          `Invalid timeout_ms parameter: must be ≤ ${MAX_PER_CALL_TIMEOUT_MS} (10 minutes)`
+        )
+      }
+    }
+
+    // Validate optional permission parameter (per-call override).
+    // Accepts only the documented AgentPermission values. Anything else
+    // would silently fall back to defaults and surprise the caller.
+    if (p['permission'] !== undefined) {
+      if (typeof p['permission'] !== 'string' || !isAgentPermission(p['permission'])) {
+        throw new Error(
+          `Invalid permission parameter: must be one of ${AGENT_PERMISSIONS.join(', ')}`
+        )
+      }
+    }
+
     // Validate optional session_id parameter
     if (p['session_id'] !== undefined) {
       if (typeof p['session_id'] !== 'string') {
@@ -494,6 +588,8 @@ export class RunAgentTool {
       cwd: cwd,
       extra_args: p['extra_args'] as string[] | undefined,
       session_id: p['session_id'] as string | undefined,
+      timeout_ms: p['timeout_ms'] as number | undefined,
+      permission: p['permission'] as AgentPermission | undefined,
     }
   }
 

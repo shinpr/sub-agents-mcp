@@ -663,6 +663,102 @@ describe('AgentExecutor', () => {
     })
   })
 
+  describe('per-call execution overrides', () => {
+    // These tests anchor the contract that overrides apply to the current
+    // call only. Regressions here would let a single MCP request silently
+    // mutate server-wide defaults established at startup.
+    it.each([
+      // For each agent type, swapping the permission via overrides must
+      // change the head of argv to match that permission's flags. This also
+      // covers AC: executor-mapping (cursor, claude, gemini, codex) under
+      // per-call overrides.
+      { agent: 'codex' as const, perm: 'read-only' as const, expected: ['-s', 'read-only'] },
+      {
+        agent: 'codex' as const,
+        perm: 'yolo' as const,
+        expected: ['--dangerously-bypass-approvals-and-sandbox'],
+      },
+      {
+        agent: 'claude' as const,
+        perm: 'read-only' as const,
+        expected: ['--permission-mode', 'plan'],
+      },
+      {
+        agent: 'claude' as const,
+        perm: 'yolo' as const,
+        expected: ['--dangerously-skip-permissions'],
+      },
+      {
+        agent: 'gemini' as const,
+        perm: 'read-only' as const,
+        expected: ['--approval-mode', 'plan'],
+      },
+      { agent: 'gemini' as const, perm: 'yolo' as const, expected: ['-y'] },
+      { agent: 'cursor' as const, perm: 'read-only' as const, expected: ['--mode', 'plan'] },
+      { agent: 'cursor' as const, perm: 'yolo' as const, expected: ['-f', '--trust'] },
+    ])('per-call permission override applies $expected for $agent', async ({
+      agent,
+      perm,
+      expected,
+    }) => {
+      // Server-wide config defaults to safe-edit; the override must win.
+      const executor = new AgentExecutor(createExecutionConfig(agent))
+
+      await executor.executeAgent(
+        { agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' },
+        { permission: perm }
+      )
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      expect(args.slice(0, expected.length)).toEqual(expected)
+    })
+
+    it('subsequent call without overrides reverts to server-wide permission default', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('claude'))
+
+      // Override on call 1.
+      await executor.executeAgent({ agent: 'a', prompt: 'p', cwd: '/tmp' }, { permission: 'yolo' })
+      // No override on call 2 — must revert to safe-edit (the configured default).
+      await executor.executeAgent({ agent: 'a', prompt: 'p', cwd: '/tmp' })
+
+      const firstArgs = mockSpawn.mock.calls[0][1] as string[]
+      const secondArgs = mockSpawn.mock.calls[1][1] as string[]
+      expect(firstArgs.slice(0, 1)).toEqual(['--dangerously-skip-permissions'])
+      expect(secondArgs.slice(0, 2)).toEqual(['--permission-mode', 'acceptEdits'])
+    })
+
+    it('per-call timeoutMs override drives the spawn timeout for that call only', async () => {
+      mockSpawn.mockImplementationOnce(
+        () => createMockProcess({ noClose: true }) // never closes; override timeout fires
+      )
+
+      const executor = new AgentExecutor(
+        createExecutionConfig('cursor', { executionTimeout: 60_000 })
+      )
+
+      const result = await executor.executeAgent(
+        { agent: 'a', prompt: 'p', cwd: '/tmp' },
+        { timeoutMs: 50 } // far smaller than server-wide 60s
+      )
+
+      // Override took effect: process timed out at 50ms with the override
+      // value reflected in the timeout error message.
+      expect(result.exitCode).toBe(124)
+      expect(result.stderr).toContain('Execution timeout: 50ms')
+    })
+
+    it('omitting overrides falls back to the server-wide executionTimeout', async () => {
+      mockSpawn.mockImplementationOnce(() => createMockProcess({ noClose: true }))
+
+      const executor = new AgentExecutor(createExecutionConfig('cursor', { executionTimeout: 75 }))
+
+      const result = await executor.executeAgent({ agent: 'a', prompt: 'p', cwd: '/tmp' })
+
+      expect(result.exitCode).toBe(124)
+      expect(result.stderr).toContain('Execution timeout: 75ms')
+    })
+  })
+
   describe('SIGTERM and partial results', () => {
     it('should handle SIGTERM (exit code 143) as normal when hasResult is true', async () => {
       mockSpawn.mockImplementationOnce(() =>
