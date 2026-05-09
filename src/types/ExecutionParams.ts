@@ -1,3 +1,5 @@
+import type { AgentPermission } from '../execution/AgentExecutor.js'
+
 /**
  * Parameters for executing an AI agent through the MCP server.
  * These parameters are passed to the run_agent tool to initiate agent execution.
@@ -32,6 +34,28 @@ export interface ExecutionParams {
    * Used by backends that support file-based system prompts (e.g., Gemini's GEMINI_SYSTEM_MD).
    */
   agentFilePath?: string
+
+  /**
+   * Optional per-call execution timeout override in milliseconds.
+   *
+   * When provided, this value is used in place of the executor's configured
+   * default (ExecutionConfig.executionTimeout) for this single call only. The
+   * executor never mutates its own config, so the override does not affect
+   * later calls or other concurrent calls.
+   *
+   * Validation (input bounds) is performed by the caller (e.g. RunAgentTool).
+   */
+  timeoutMs?: number
+
+  /**
+   * Optional per-call permission/approval level override.
+   *
+   * When provided, this value is used in place of the executor's configured
+   * default (ExecutionConfig.permission) for this single call only. The
+   * executor never mutates its own config, so the override does not affect
+   * later calls or other concurrent calls.
+   */
+  permission?: AgentPermission
 }
 
 /**

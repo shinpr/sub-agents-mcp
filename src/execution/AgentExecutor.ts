@@ -91,6 +91,14 @@ export interface ExecutionConfig {
 export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
 
 /**
+ * Documented upper bound for the per-call `timeout_ms` override exposed via
+ * the run_agent MCP tool. Mirrors the README's stated max for
+ * EXECUTION_TIMEOUT_MS (10 minutes); the constant lives here so the schema
+ * validator and any other consumer share a single source of truth.
+ */
+export const MAX_PER_CALL_EXECUTION_TIMEOUT = 600000 // 10 minutes
+
+/**
  * Supported agent runtimes. Single source of truth for both runtime validation
  * (ServerConfig) and static typing.
  */
@@ -241,6 +249,15 @@ export class AgentExecutor {
       extraArgs: params.extra_args?.length || 0,
     })
 
+    // Resolve per-call overrides without mutating the shared config.
+    // params.timeoutMs / params.permission are honored only for this call;
+    // any subsequent call without overrides falls back to the constructor
+    // defaults from this.config. The `??` form means an explicit `undefined`
+    // (e.g. coming from a JS caller / mock) does not silently disable the
+    // default — same rationale as createExecutionConfig's `?? DEFAULT_*`.
+    const effectiveTimeout = params.timeoutMs ?? this.config.executionTimeout
+    const effectivePermission = params.permission ?? this.config.permission
+
     try {
       // Add minimal delay to ensure execution time is measurable
       await new Promise((resolve) => setTimeout(resolve, 1))
@@ -248,7 +265,7 @@ export class AgentExecutor {
       // Use spawn method for proper TTY handling
 
       // Execute using spawn for proper TTY handling
-      const result = await this.executeWithSpawn(params)
+      const result = await this.executeWithSpawn(params, effectiveTimeout, effectivePermission)
 
       const executionTime = Date.now() - startTime
 
@@ -305,7 +322,10 @@ export class AgentExecutor {
    *
    * @private
    */
-  private buildCommandArgs(params: ExecutionParams): {
+  private buildCommandArgs(
+    params: ExecutionParams,
+    permission: AgentPermission
+  ): {
     command: string
     args: string[]
     envOverrides: Record<string, string>
@@ -314,13 +334,13 @@ export class AgentExecutor {
 
     switch (this.config.agentType) {
       case 'codex':
-        return this.buildCodexArgs(params, envOverrides)
+        return this.buildCodexArgs(params, envOverrides, permission)
       case 'claude':
-        return this.buildClaudeArgs(params, envOverrides)
+        return this.buildClaudeArgs(params, envOverrides, permission)
       case 'gemini':
-        return this.buildGeminiArgs(params, envOverrides)
+        return this.buildGeminiArgs(params, envOverrides, permission)
       case 'cursor':
-        return this.buildCursorArgs(params, envOverrides)
+        return this.buildCursorArgs(params, envOverrides, permission)
     }
   }
 
@@ -347,15 +367,16 @@ export class AgentExecutor {
     return env
   }
 
-  private permissionFlags(): readonly string[] {
-    return PERMISSION_FLAGS[this.config.agentType][this.config.permission]
+  private permissionFlags(permission: AgentPermission): readonly string[] {
+    return PERMISSION_FLAGS[this.config.agentType][permission]
   }
 
   private buildCodexArgs(
     params: ExecutionParams,
-    envOverrides: Record<string, string>
+    envOverrides: Record<string, string>,
+    permission: AgentPermission
   ): { command: string; args: string[]; envOverrides: Record<string, string> } {
-    const perm = this.permissionFlags()
+    const perm = this.permissionFlags(permission)
     // System context is concatenated into the user prompt rather than injected
     // via `-c model_instructions_file=...`: that flag fully replaces codex's
     // default system prompt, which removed the built-in tool-use guidance and
@@ -368,9 +389,10 @@ export class AgentExecutor {
 
   private buildClaudeArgs(
     params: ExecutionParams,
-    envOverrides: Record<string, string>
+    envOverrides: Record<string, string>,
+    permission: AgentPermission
   ): { command: string; args: string[]; envOverrides: Record<string, string> } {
-    const perm = this.permissionFlags()
+    const perm = this.permissionFlags(permission)
     const cwd = params.cwd || process.cwd()
     const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
     const args: string[] = [
@@ -391,9 +413,10 @@ export class AgentExecutor {
 
   private buildGeminiArgs(
     params: ExecutionParams,
-    envOverrides: Record<string, string>
+    envOverrides: Record<string, string>,
+    permission: AgentPermission
   ): { command: string; args: string[]; envOverrides: Record<string, string> } {
-    const perm = this.permissionFlags()
+    const perm = this.permissionFlags(permission)
     // --skip-trust is unconditional: headless runs in untrusted folders are
     // refused without it (Gemini downgrades to interactive prompts which
     // deadlock here since we have no stdin).
@@ -412,9 +435,10 @@ export class AgentExecutor {
 
   private buildCursorArgs(
     params: ExecutionParams,
-    envOverrides: Record<string, string>
+    envOverrides: Record<string, string>,
+    permission: AgentPermission
   ): { command: string; args: string[]; envOverrides: Record<string, string> } {
-    const perm = this.permissionFlags()
+    const perm = this.permissionFlags(permission)
     const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
     const args = [...perm, '--output-format', 'json', '-p', formattedPrompt]
     const env: Record<string, string> = { ...envOverrides }
@@ -431,7 +455,11 @@ export class AgentExecutor {
    * @param params - Execution parameters
    * @returns Promise resolving to execution result
    */
-  private async executeWithSpawn(params: ExecutionParams): Promise<{
+  private async executeWithSpawn(
+    params: ExecutionParams,
+    timeoutMs: number,
+    permission: AgentPermission
+  ): Promise<{
     stdout: string
     stderr: string
     exitCode: number
@@ -440,7 +468,7 @@ export class AgentExecutor {
   }> {
     return new Promise((resolve) => {
       // Build command, args, and env based on agent type with system prompt separation
-      const { command, args, envOverrides } = this.buildCommandArgs(params)
+      const { command, args, envOverrides } = this.buildCommandArgs(params, permission)
 
       // Build environment variables for spawn
       const spawnEnv: NodeJS.ProcessEnv = { ...process.env, ...envOverrides }
@@ -467,7 +495,7 @@ export class AgentExecutor {
       // No need to handle stdin as it's set to 'ignore'
       const executionTimeout = setTimeout(() => {
         this.logger.warn('Execution timeout reached', {
-          timeout: this.config.executionTimeout,
+          timeout: timeoutMs,
         })
         childProcess.kill('SIGTERM')
 
@@ -475,12 +503,12 @@ export class AgentExecutor {
         const result = streamProcessor.getResult()
         resolve({
           stdout: result ? JSON.stringify(result) : stdout,
-          stderr: stderr || `Execution timeout: ${this.config.executionTimeout}ms`,
+          stderr: stderr || `Execution timeout: ${timeoutMs}ms`,
           exitCode: 124, // Standard timeout exit code
           hasResult: result !== null,
           resultJson: result !== null ? result : undefined,
         })
-      }, this.config.executionTimeout)
+      }, timeoutMs)
 
       // Handle stdout stream with simplified processing
       childProcess.stdout?.on('data', (data: Buffer) => {

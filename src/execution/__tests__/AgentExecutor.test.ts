@@ -638,6 +638,150 @@ describe('AgentExecutor', () => {
     })
   })
 
+  describe('per-call permission override', () => {
+    type Case = {
+      agent: AgentType
+      perm: AgentPermission
+      expected: readonly string[]
+    }
+
+    // Same matrix as the configured-permission test, but supplied per call
+    // via ExecutionParams.permission instead of createExecutionConfig.
+    const cases: readonly Case[] = [
+      // codex
+      { agent: 'codex', perm: 'read-only', expected: ['-s', 'read-only'] },
+      {
+        agent: 'codex',
+        perm: 'safe-edit',
+        expected: ['-s', 'workspace-write', '-c', 'approval_policy=never'],
+      },
+      { agent: 'codex', perm: 'yolo', expected: ['--dangerously-bypass-approvals-and-sandbox'] },
+      // claude
+      { agent: 'claude', perm: 'read-only', expected: ['--permission-mode', 'plan'] },
+      { agent: 'claude', perm: 'safe-edit', expected: ['--permission-mode', 'acceptEdits'] },
+      { agent: 'claude', perm: 'yolo', expected: ['--dangerously-skip-permissions'] },
+      // gemini
+      { agent: 'gemini', perm: 'read-only', expected: ['--approval-mode', 'plan'] },
+      { agent: 'gemini', perm: 'safe-edit', expected: ['--approval-mode', 'auto_edit'] },
+      { agent: 'gemini', perm: 'yolo', expected: ['-y'] },
+      // cursor
+      { agent: 'cursor', perm: 'read-only', expected: ['--mode', 'plan'] },
+      { agent: 'cursor', perm: 'safe-edit', expected: ['--trust'] },
+      { agent: 'cursor', perm: 'yolo', expected: ['-f', '--trust'] },
+    ]
+
+    it.each(
+      cases
+    )('should apply per-call permission=$perm for agent=$agent without mutating config', async ({
+      agent,
+      perm,
+      expected,
+    }) => {
+      // Configure executor with a *different* default than the per-call value
+      // so a leaked override would obviously change the next call's argv.
+      const defaultPerm: AgentPermission = perm === 'read-only' ? 'safe-edit' : 'read-only'
+      const executor = new AgentExecutor(createExecutionConfig(agent, { permission: defaultPerm }))
+
+      await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+        permission: perm,
+      })
+
+      const overrideArgs = mockSpawn.mock.calls[0][1] as string[]
+      expect(overrideArgs.slice(0, expected.length)).toEqual(expected)
+    })
+
+    it('should not leak per-call permission into a later call on the same executor', async () => {
+      const executor = new AgentExecutor(
+        createExecutionConfig('claude', { permission: 'safe-edit' })
+      )
+
+      // First call overrides to read-only
+      await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'first',
+        cwd: '/tmp',
+        permission: 'read-only',
+      })
+
+      // Second call has no override — must fall back to the configured default
+      await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'second',
+        cwd: '/tmp',
+      })
+
+      const firstArgs = mockSpawn.mock.calls[0][1] as string[]
+      const secondArgs = mockSpawn.mock.calls[1][1] as string[]
+      expect(firstArgs.slice(0, 2)).toEqual(['--permission-mode', 'plan'])
+      expect(secondArgs.slice(0, 2)).toEqual(['--permission-mode', 'acceptEdits'])
+    })
+  })
+
+  describe('per-call timeout override', () => {
+    it('should use the per-call timeout instead of the configured default', async () => {
+      mockSpawn.mockImplementationOnce(() =>
+        createMockProcess({
+          noClose: true, // never finishes — only the timeout will resolve
+        })
+      )
+
+      // Configured default is large (5 minutes) — if the override leaks through
+      // as 50ms, the test would still pass; if it does NOT, the test would
+      // hang for 5 minutes. The override is the only way the test completes
+      // quickly.
+      const executor = new AgentExecutor(
+        createExecutionConfig('cursor', { executionTimeout: 300_000 })
+      )
+
+      const start = Date.now()
+      const result = await executor.executeAgent({
+        agent: 'slow-agent',
+        prompt: 'override timeout',
+        cwd: '/tmp',
+        timeoutMs: 50,
+      })
+      const elapsed = Date.now() - start
+
+      expect(result.exitCode).toBe(124)
+      expect(result.stderr).toContain('timeout')
+      expect(elapsed).toBeLessThan(5_000)
+    })
+
+    it('should fall back to the configured timeout on calls without override', async () => {
+      // First call: no-close + per-call override (50ms)
+      // Second call: no-close + no override, configured timeout 80ms
+      mockSpawn.mockImplementation(() => createMockProcess({ noClose: true }))
+
+      const executor = new AgentExecutor(createExecutionConfig('cursor', { executionTimeout: 80 }))
+
+      const overrideStart = Date.now()
+      await executor.executeAgent({
+        agent: 'slow-agent',
+        prompt: 'first',
+        cwd: '/tmp',
+        timeoutMs: 50,
+      })
+      const overrideElapsed = Date.now() - overrideStart
+
+      const defaultStart = Date.now()
+      await executor.executeAgent({
+        agent: 'slow-agent',
+        prompt: 'second',
+        cwd: '/tmp',
+      })
+      const defaultElapsed = Date.now() - defaultStart
+
+      // Both must time out, and the second call's elapsed time tracks the
+      // configured default, proving the override did not mutate config.
+      expect(overrideElapsed).toBeGreaterThanOrEqual(40)
+      expect(defaultElapsed).toBeGreaterThanOrEqual(70)
+      expect(defaultElapsed).toBeLessThan(5_000)
+    })
+  })
+
   describe('codex prompt assembly', () => {
     it('should concatenate system context into the prompt regardless of agentFilePath', async () => {
       // codex's `-c model_instructions_file` was deliberately not adopted: it

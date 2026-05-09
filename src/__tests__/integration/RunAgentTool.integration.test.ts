@@ -613,6 +613,159 @@ describe('RunAgentTool', () => {
     })
   })
 
+  describe('per-call timeout_ms and permission controls', () => {
+    beforeEach(() => {
+      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+        name: 'test-agent',
+        description: 'Test agent',
+        content: 'Test content',
+        filePath: '/test/test-agent.md',
+        lastModified: new Date(),
+      })
+    })
+
+    it('should expose timeout_ms and permission in the input schema with bounds and enum', () => {
+      const schema = runAgentTool.inputSchema as unknown as {
+        properties: Record<string, Record<string, unknown>>
+        required: string[]
+      }
+
+      expect(schema.properties['timeout_ms']).toBeDefined()
+      expect(schema.properties['timeout_ms']?.['type']).toBe('integer')
+      expect(schema.properties['timeout_ms']?.['minimum']).toBe(1)
+      expect(schema.properties['timeout_ms']?.['maximum']).toBe(600000)
+
+      expect(schema.properties['permission']).toBeDefined()
+      expect(schema.properties['permission']?.['type']).toBe('string')
+      expect(schema.properties['permission']?.['enum']).toEqual(
+        expect.arrayContaining(['read-only', 'safe-edit', 'yolo'])
+      )
+
+      // Backwards-compatible: only the original three are required.
+      expect(schema.required).toEqual(['agent', 'prompt', 'cwd'])
+
+      // Existing properties remain.
+      expect(schema.properties['agent']).toBeDefined()
+      expect(schema.properties['prompt']).toBeDefined()
+      expect(schema.properties['cwd']).toBeDefined()
+      expect(schema.properties['extra_args']).toBeDefined()
+      expect(schema.properties['session_id']).toBeDefined()
+    })
+
+    it('should accept a minimal valid call without timeout_ms or permission (backwards compatible)', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: process.cwd(),
+      }
+
+      const executeSpy = vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: 'ok',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 10,
+        hasResult: false,
+        resultJson: undefined,
+      })
+
+      const result = await runAgentTool.execute(params)
+
+      expect(result.isError).not.toBe(true)
+      const forwarded = executeSpy.mock.calls[0][0]
+      expect(forwarded.timeoutMs).toBeUndefined()
+      expect(forwarded.permission).toBeUndefined()
+    })
+
+    it('should forward valid timeout_ms and permission to executeAgent', async () => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: process.cwd(),
+        timeout_ms: 60000,
+        permission: 'read-only',
+      }
+
+      const executeSpy = vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: 'ok',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 10,
+        hasResult: false,
+        resultJson: undefined,
+      })
+
+      const result = await runAgentTool.execute(params)
+      expect(result.isError).not.toBe(true)
+
+      const forwarded = executeSpy.mock.calls[0][0]
+      expect(forwarded.timeoutMs).toBe(60000)
+      expect(forwarded.permission).toBe('read-only')
+    })
+
+    it.each([
+      [{ timeout_ms: 0 }, /timeout_ms.*positive/i],
+      [{ timeout_ms: -100 }, /timeout_ms.*positive/i],
+      [{ timeout_ms: 1.5 }, /timeout_ms.*integer/i],
+      [{ timeout_ms: '60000' }, /timeout_ms.*integer/i],
+      [{ timeout_ms: 600001 }, /timeout_ms.*maximum|exceeds/i],
+      [{ permission: 'admin' }, /permission.*one of/i],
+      [{ permission: '' }, /permission.*one of/i],
+      [{ permission: 123 }, /permission.*one of/i],
+    ] as const)('should reject invalid input %j with an MCP error and never spawn an agent', async (override, expectedMessage) => {
+      const params = {
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: process.cwd(),
+        ...override,
+      }
+
+      const executeSpy = vi.spyOn(mockAgentExecutor, 'executeAgent')
+
+      const result = (await runAgentTool.execute(params)) as any
+      expect(result.isError).toBe(true)
+      const textContent = result.content.find((c: any) => c.type === 'text')
+      expect(textContent?.text).toMatch(expectedMessage)
+      expect(executeSpy).not.toHaveBeenCalled()
+    })
+
+    it('should not leak per-call timeout_ms / permission into a later call on the same tool', async () => {
+      // Two sequential executions on the same RunAgentTool / AgentExecutor
+      // setup. The first overrides; the second omits the overrides, and we
+      // assert the forwarded ExecutionParams reflects "no override" — the
+      // executor's `??` fallback path then uses its configured default.
+      const executeSpy = vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: 'ok',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 10,
+        hasResult: false,
+        resultJson: undefined,
+      })
+
+      await runAgentTool.execute({
+        agent: 'test-agent',
+        prompt: 'first',
+        cwd: process.cwd(),
+        timeout_ms: 5000,
+        permission: 'yolo',
+      })
+
+      await runAgentTool.execute({
+        agent: 'test-agent',
+        prompt: 'second',
+        cwd: process.cwd(),
+      })
+
+      expect(executeSpy).toHaveBeenCalledTimes(2)
+      const firstParams = executeSpy.mock.calls[0][0]
+      const secondParams = executeSpy.mock.calls[1][0]
+      expect(firstParams.timeoutMs).toBe(5000)
+      expect(firstParams.permission).toBe('yolo')
+      expect(secondParams.timeoutMs).toBeUndefined()
+      expect(secondParams.permission).toBeUndefined()
+    })
+  })
+
   describe('session ID auto-generation', () => {
     it('should auto-generate session_id when not provided and SessionManager is available', async () => {
       const mockSessionManager = {
