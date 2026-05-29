@@ -5,7 +5,7 @@
 
 Bring Claude Code–style sub-agents to any MCP-compatible tool.
 
-This MCP server lets you define task-specific AI agents (like "test-writer" or "code-reviewer") in markdown files, and execute them via Cursor CLI, Claude Code, Gemini CLI, or Codex backends.
+This MCP server lets you define task-specific AI agents (like "test-writer" or "code-reviewer") in markdown files, and execute them via Cursor CLI, Claude Code, Codex, or Gemini CLI backends.
 
 ## Why?
 
@@ -14,7 +14,7 @@ Claude Code offers powerful sub-agent workflows—but they're limited to its own
 **Concrete benefits:**
 - Define reusable agents once, use them across multiple tools
 - Share agent definitions within teams regardless of IDE choice
-- Leverage Cursor CLI, Claude Code, Gemini CLI, or Codex capabilities from any MCP client
+- Leverage Cursor CLI, Claude Code, Codex, or Gemini CLI capabilities from any MCP client
 
 → [Read the full story](https://dev.to/shinpr/bringing-claude-codes-sub-agents-to-any-mcp-compatible-tool-1hb9)
 
@@ -49,8 +49,8 @@ Choose **sub-agents-mcp** for production use with reliability features. Choose *
 - One of these execution engines (they actually run the sub-agents):
   - `cursor-agent` CLI (from Cursor)
   - `claude` CLI (from Claude Code)
-  - `gemini` CLI (from Gemini CLI)
   - `codex` CLI (from Codex)
+  - `gemini` CLI (from Gemini CLI — requires `GEMINI_API_KEY`)
 - An MCP-compatible tool (Cursor IDE, Claude Desktop, Windsurf, etc.)
 
 ## Quick Start
@@ -100,22 +100,22 @@ npm install -g @anthropic-ai/claude-code
 
 Note: Claude Code installs the `claude` CLI command.
 
-**For Gemini CLI users:**
-```bash
-# Install Gemini CLI
-npm install -g @google/gemini-cli
-
-# Authenticate via browser (required before first use)
-gemini
-```
-
-Note: Gemini CLI uses OAuth authentication. Run `gemini` once to authenticate via browser.
-
 **For Codex users:**
 ```bash
 # Install Codex
 npm install -g @openai/codex
 ```
+
+**For Gemini CLI users:**
+```bash
+# Install Gemini CLI
+npm install -g @google/gemini-cli
+
+# Set a Gemini API key in the MCP server environment
+export GEMINI_API_KEY="your-key"
+```
+
+Note: Set `GEMINI_API_KEY` — without it the `gemini` backend won't run (Google is retiring the free OAuth tier on June 18, 2026).
 
 ### 3. Configure MCP
 
@@ -132,7 +132,7 @@ Add this to your MCP configuration file:
       "args": ["-y", "sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/absolute/path/to/your/agents-folder",
-        "AGENT_TYPE": "cursor"  // or "claude", "gemini", or "codex"
+        "AGENT_TYPE": "cursor"  // or "claude", "codex", or "gemini"
       }
     }
   }
@@ -160,11 +160,11 @@ Sub-agents may fail to execute shell commands with permission errors. This happe
    # For Claude Code users
    claude
 
-   # For Gemini CLI users
-   gemini
-
    # For Codex CLI users
    codex
+
+   # For Gemini CLI users
+   gemini
    ```
 
 2. When prompted to allow commands (e.g., "Add Shell(cd), Shell(make) to allowlist?"), approve them
