@@ -5,7 +5,7 @@ import { StreamProcessor } from './StreamProcessor.js'
 
 /**
  * Detailed execution result that includes performance metrics and method information.
- * Extends the basic ExecutionResult with additional monitoring capabilities.
+ * Captures the agent execution outcome with additional monitoring capabilities.
  */
 export interface AgentExecutionResult {
   /**

@@ -33,7 +33,7 @@ export interface SessionEntry {
     extra_args?: string[]
   }
 
-  /** Has a structure compatible with ExecutionResult. */
+  /** Captures the sub-agent execution outcome. */
   response: {
     stdout: string
     stderr: string
@@ -56,19 +56,4 @@ export interface SessionConfig {
 
   /** Controlled by the SESSION_RETENTION_DAYS environment variable. */
   retentionDays: number
-}
-
-/**
- * Session save result
- *
- * Due to error isolation design, main flow processing continues even if save fails.
- */
-export interface SessionSaveResult {
-  success: boolean
-  sessionId: string
-
-  /** File naming convention: [session_id]_[agent_type]_[timestamp].json */
-  filePath?: string
-
-  error?: string
 }
