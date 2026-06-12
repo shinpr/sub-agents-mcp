@@ -95,8 +95,8 @@ jobs:
         fi
         echo "Build successful"
 
-    - name: Check production dependencies
-      run: npx report-missing-dependencies
+    - name: Check dependencies, exports, and dead files
+      run: npm run check:knip
 
   quality-check:
     name: Quality Check

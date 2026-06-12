@@ -33,27 +33,3 @@ export interface ExecutionParams {
    */
   agentFilePath?: string
 }
-
-/**
- * Result returned from agent execution.
- * Contains the execution status and output/error information.
- */
-export interface ExecutionResult {
-  /**
-   * Whether the agent execution was successful.
-   * True indicates successful completion, false indicates failure.
-   */
-  success: boolean
-
-  /**
-   * Output content from the agent execution.
-   * Contains the agent's response or execution result.
-   */
-  output: string
-
-  /**
-   * Error message if execution failed.
-   * Only present when success is false.
-   */
-  error?: string
-}
