@@ -41,7 +41,7 @@
   },
   "homepage": "https://github.com/shinpr/sub-agents-mcp#readme",
   "bin": {
-    "sub-agents-mcp": "./dist/index.js"
+    "sub-agents-mcp": "dist/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
