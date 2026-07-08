@@ -57,7 +57,7 @@ export interface ExecutionConfig {
 
   /**
    * Type of agent to use for execution.
-   * 'cursor', 'claude', 'gemini', or 'codex'
+   * 'cursor', 'claude', 'gemini', 'codex', or 'glm'
    */
   agentType: AgentType
 
@@ -86,15 +86,31 @@ export interface ExecutionConfig {
    * Passed to cursor-agent via CURSOR_API_KEY environment variable.
    */
   cursorApiKey?: string
+
+  /**
+   * API key for GLM (Z.ai) authentication.
+   * Passed to the claude binary via ANTHROPIC_AUTH_TOKEN environment variable.
+   */
+  glmApiKey?: string
 }
 
 export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
+
+type EnvOverrides = Record<string, string | null>
+
+const GLM_BASE_URL = 'https://api.z.ai/api/anthropic'
+
+const GLM_MISSING_API_KEY_ERROR =
+  'GLM backend needs a Z.ai API token in the CLI_API_KEY environment variable. ' +
+  'Add CLI_API_KEY to this MCP server environment in your MCP client configuration, ' +
+  'then restart or reconnect the MCP server so the running process receives it. ' +
+  'This run will keep failing until the MCP process is restarted with CLI_API_KEY set.'
 
 /**
  * Supported agent runtimes. Single source of truth for both runtime validation
  * (ServerConfig) and static typing.
  */
-export const AGENT_TYPES = ['cursor', 'claude', 'gemini', 'codex'] as const
+export const AGENT_TYPES = ['cursor', 'claude', 'gemini', 'codex', 'glm'] as const
 
 export type AgentType = (typeof AGENT_TYPES)[number]
 
@@ -138,6 +154,11 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     yolo: ['--dangerously-bypass-approvals-and-sandbox'],
   },
   claude: {
+    'read-only': ['--permission-mode', 'plan'],
+    'safe-edit': ['--permission-mode', 'acceptEdits'],
+    yolo: ['--dangerously-skip-permissions'],
+  },
+  glm: {
     'read-only': ['--permission-mode', 'plan'],
     'safe-edit': ['--permission-mode', 'acceptEdits'],
     yolo: ['--dangerously-skip-permissions'],
@@ -308,7 +329,7 @@ export class AgentExecutor {
   private buildCommandArgs(params: ExecutionParams): {
     command: string
     args: string[]
-    envOverrides: Record<string, string>
+    envOverrides: EnvOverrides
   } {
     const envOverrides = this.buildSettingsPathEnv()
 
@@ -317,6 +338,8 @@ export class AgentExecutor {
         return this.buildCodexArgs(params, envOverrides)
       case 'claude':
         return this.buildClaudeArgs(params, envOverrides)
+      case 'glm':
+        return this.buildGlmArgs(params, envOverrides)
       case 'gemini':
         return this.buildGeminiArgs(params, envOverrides)
       case 'cursor':
@@ -331,8 +354,8 @@ export class AgentExecutor {
    *
    * @private
    */
-  private buildSettingsPathEnv(): Record<string, string> {
-    const env: Record<string, string> = {}
+  private buildSettingsPathEnv(): EnvOverrides {
+    const env: EnvOverrides = {}
     if (!this.config.agentsSettingsPath) return env
     switch (this.config.agentType) {
       case 'cursor':
@@ -342,6 +365,7 @@ export class AgentExecutor {
         env['CODEX_HOME'] = this.config.agentsSettingsPath
         break
       // claude: handled via --settings argv below
+      // glm: uses the claude binary, but intentionally avoids Claude settings.
       // gemini: not supported (upstream limitation)
     }
     return env
@@ -353,8 +377,8 @@ export class AgentExecutor {
 
   private buildCodexArgs(
     params: ExecutionParams,
-    envOverrides: Record<string, string>
-  ): { command: string; args: string[]; envOverrides: Record<string, string> } {
+    envOverrides: EnvOverrides
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
     const perm = this.permissionFlags()
     // System context is concatenated into the user prompt rather than injected
     // via `-c model_instructions_file=...`: that flag fully replaces codex's
@@ -368,8 +392,8 @@ export class AgentExecutor {
 
   private buildClaudeArgs(
     params: ExecutionParams,
-    envOverrides: Record<string, string>
-  ): { command: string; args: string[]; envOverrides: Record<string, string> } {
+    envOverrides: EnvOverrides
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
     const perm = this.permissionFlags()
     const cwd = params.cwd || process.cwd()
     const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
@@ -389,10 +413,45 @@ export class AgentExecutor {
     return { command: 'claude', args, envOverrides }
   }
 
+  private buildGlmArgs(
+    params: ExecutionParams,
+    envOverrides: EnvOverrides
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+    const apiKey = this.config.glmApiKey
+    if (!apiKey?.trim()) {
+      throw new Error(GLM_MISSING_API_KEY_ERROR)
+    }
+
+    const perm = this.permissionFlags()
+    const cwd = params.cwd || process.cwd()
+    const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
+    const args: string[] = [
+      ...perm,
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--system-prompt',
+      systemPrompt,
+      '-p',
+      params.prompt,
+    ]
+
+    return {
+      command: 'claude',
+      args,
+      envOverrides: {
+        ...envOverrides,
+        ANTHROPIC_BASE_URL: GLM_BASE_URL,
+        ANTHROPIC_AUTH_TOKEN: apiKey,
+        ANTHROPIC_API_KEY: null,
+      },
+    }
+  }
+
   private buildGeminiArgs(
     params: ExecutionParams,
-    envOverrides: Record<string, string>
-  ): { command: string; args: string[]; envOverrides: Record<string, string> } {
+    envOverrides: EnvOverrides
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
     const perm = this.permissionFlags()
     // --skip-trust is unconditional: headless runs in untrusted folders are
     // refused without it (Gemini downgrades to interactive prompts which
@@ -412,16 +471,28 @@ export class AgentExecutor {
 
   private buildCursorArgs(
     params: ExecutionParams,
-    envOverrides: Record<string, string>
-  ): { command: string; args: string[]; envOverrides: Record<string, string> } {
+    envOverrides: EnvOverrides
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
     const perm = this.permissionFlags()
     const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
     const args = [...perm, '--output-format', 'json', '-p', formattedPrompt]
-    const env: Record<string, string> = { ...envOverrides }
+    const env: EnvOverrides = { ...envOverrides }
     if (this.config.cursorApiKey) {
       env['CURSOR_API_KEY'] = this.config.cursorApiKey
     }
     return { command: 'cursor-agent', args, envOverrides: env }
+  }
+
+  private buildSpawnEnv(envOverrides: EnvOverrides): NodeJS.ProcessEnv {
+    const spawnEnv: NodeJS.ProcessEnv = { ...process.env }
+    for (const [key, value] of Object.entries(envOverrides)) {
+      if (value === null) {
+        delete spawnEnv[key]
+      } else {
+        spawnEnv[key] = value
+      }
+    }
+    return spawnEnv
   }
 
   /**
@@ -443,7 +514,7 @@ export class AgentExecutor {
       const { command, args, envOverrides } = this.buildCommandArgs(params)
 
       // Build environment variables for spawn
-      const spawnEnv: NodeJS.ProcessEnv = { ...process.env, ...envOverrides }
+      const spawnEnv = this.buildSpawnEnv(envOverrides)
 
       this.logger.debug('Executing with spawn', {
         command,

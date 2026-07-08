@@ -1,8 +1,8 @@
 {
   "name": "sub-agents-mcp",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "mcpName": "io.github.shinpr/sub-agents-mcp",
-  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor and other tools",
+  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude Code, Codex, Gemini, and GLM",
   "type": "module",
   "main": "dist/index.js",
   "files": [
@@ -24,6 +24,8 @@
     "cursor",
     "gemini",
     "codex",
+    "glm",
+    "z.ai",
     "llm",
     "cli",
     "agent-orchestration"
@@ -71,17 +73,17 @@
     "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.14",
-    "@types/node": "^25.6.0",
-    "@vitest/coverage-v8": "^4.1.5",
-    "@vitest/ui": "^4.1.5",
-    "dpdm": "^4.0.1",
+    "@biomejs/biome": "^2.5.2",
+    "@types/node": "^26.1.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/ui": "^4.1.10",
+    "dpdm": "^4.2.0",
     "husky": "^9.1.7",
-    "knip": "6.16.1",
-    "lint-staged": "^17.0.2",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.5"
+    "knip": "^6.25.0",
+    "lint-staged": "^17.0.8",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   },
   "engines": {
     "node": ">=22.22.2"

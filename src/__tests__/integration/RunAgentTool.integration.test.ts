@@ -31,6 +31,7 @@ describe('RunAgentTool', () => {
       sessionRetentionDays: 1,
       agentsSettingsPath: undefined,
       cursorApiKey: undefined,
+      glmApiKey: undefined,
     }
 
     const executionConfig = createExecutionConfig('cursor')

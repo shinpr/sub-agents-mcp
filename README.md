@@ -51,6 +51,7 @@ Choose **sub-agents-mcp** for production use with reliability features. Choose *
   - `claude` CLI (from Claude Code)
   - `codex` CLI (from Codex)
   - `gemini` CLI (from Gemini CLI — requires `GEMINI_API_KEY`)
+  - `glm` backend (uses the Claude Code `claude` CLI with a Z.ai token)
 - An MCP-compatible tool (Cursor IDE, Claude Desktop, Windsurf, etc.)
 
 ## Quick Start
@@ -117,6 +118,14 @@ export GEMINI_API_KEY="your-key"
 
 Note: Set `GEMINI_API_KEY` — without it the `gemini` backend won't run (Google is retiring the free OAuth tier on June 18, 2026).
 
+**For GLM (Z.ai) users:**
+```bash
+# Install Claude Code; GLM uses the claude binary against Z.ai's endpoint
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+Set `AGENT_TYPE` to `glm` and add `CLI_API_KEY` to the MCP server environment in your MCP client configuration. Because MCP servers are long-running processes, restart or reconnect the MCP server after changing `CLI_API_KEY`.
+
 ### 3. Configure MCP
 
 Add this to your MCP configuration file:
@@ -132,7 +141,7 @@ Add this to your MCP configuration file:
       "args": ["-y", "sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/absolute/path/to/your/agents-folder",
-        "AGENT_TYPE": "cursor"  // or "claude", "codex", or "gemini"
+        "AGENT_TYPE": "cursor"  // or "claude", "codex", "gemini", or "glm"
       }
     }
   }
@@ -300,17 +309,21 @@ Which execution engine to use:
 - `"claude"` - uses `claude` CLI
 - `"gemini"` - uses `gemini` CLI
 - `"codex"` - uses `codex` CLI (OpenAI Codex)
+- `"glm"` - uses the Claude Code `claude` CLI against GLM's Z.ai endpoint
 
 ### Optional Settings
 
 **`AGENT_PERMISSION`**
 Approval/sandbox level the sub-agent runs with. Default: `"safe-edit"`.
 
-- `"read-only"` — investigation/review only, no edits or shell writes (codex `-s read-only` / claude `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan`)
-- `"safe-edit"` — auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust`)
+- `"read-only"` — investigation/review only, no edits or shell writes (codex `-s read-only` / claude+glm `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan`)
+- `"safe-edit"` — auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude+glm `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust`)
 - `"yolo"` — bypass all approvals and sandboxing. Use with care.
 
-Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts; the depth of sandboxing depends on the CLI — codex enforces a `workspace-write` sandbox, while claude / gemini / cursor only auto-approve and do not jail edits to the workspace. If you need strict containment, use `read-only` and run privileged steps separately.
+Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts; the depth of sandboxing depends on the CLI — codex enforces a `workspace-write` sandbox, while claude / glm / gemini / cursor only auto-approve and do not jail edits to the workspace. If you need strict containment, use `read-only` and run privileged steps separately.
+
+**`CLI_API_KEY`**
+Z.ai API token for `AGENT_TYPE=glm`. It is forwarded to the Claude Code binary as `ANTHROPIC_AUTH_TOKEN` and never passed as a CLI argument. If you add or change it in your MCP client configuration, restart or reconnect the MCP server so the running process receives the new environment.
 
 **`EXECUTION_TIMEOUT_MS`**
 How long agents can run before timing out (default: 5 minutes, max: 10 minutes)
@@ -320,9 +333,9 @@ Path to custom CLI settings directory for sub-agents.
 
 Each CLI normally reads settings from project-level directories (`.claude/`, `.cursor/`, `.codex/`) or user-level directories (`~/.claude/`, `~/.cursor/`, `~/.codex/`). If you want sub-agents to run with different settings (e.g., different permissions or model), specify a separate settings directory here.
 
-Supported CLI types: `claude`, `cursor`, `codex`
+Applied to: `claude`, `cursor`, `codex`.
 
-Note: Gemini CLI does not support custom settings paths, so this option has no effect when `AGENT_TYPE` is `gemini`.
+Note: Gemini CLI does not support custom settings paths, so this option has no effect when `AGENT_TYPE` is `gemini`. The `glm` backend also ignores this setting to avoid mixing Claude settings into the Z.ai-backed subprocess.
 
 Example with custom settings:
 ```json
@@ -433,6 +446,9 @@ which cursor-agent
 **If using Claude Code:**
 Make sure the CLI is properly installed and accessible.
 
+**If using GLM (Z.ai):**
+Make sure the Claude Code `claude` CLI is installed, then set `CLI_API_KEY` to your Z.ai token in the MCP server environment. Restart or reconnect the MCP server after changing MCP environment variables.
+
 ### Agent not found
 
 Check that:
@@ -442,7 +458,7 @@ Check that:
 
 ### Other execution errors
 
-1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, `gemini`, or `codex`)
+1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, `gemini`, `codex`, or `glm`)
 2. Ensure your chosen CLI tool is installed and accessible
 3. Double-check that all environment variables are set in the MCP config
 
@@ -494,14 +510,14 @@ The startup overhead is an intentional trade-off: the system favors clarity and 
 
 ## How It Works
 
-This MCP server acts as a bridge between your AI tool and a supported execution engine (Cursor CLI, Claude Code, Gemini CLI, or Codex).
+This MCP server acts as a bridge between your AI tool and a supported execution engine (Cursor CLI, Claude Code, Gemini CLI, Codex, or GLM via Z.ai).
 
 **The flow:**
 
 1. You configure the MCP server in your client (Cursor, Claude Desktop, etc.)
 2. The client automatically launches `sub-agents-mcp` as a background process when it starts
 3. When your main AI assistant needs a sub-agent, it makes an MCP tool call
-4. The MCP server reads the agent definition (markdown file) and invokes the selected CLI (`cursor-agent`, `claude`, `gemini`, or `codex`)
+4. The MCP server reads the agent definition (markdown file) and invokes the selected CLI (`cursor-agent`, `claude`, `gemini`, `codex`, or `glm` via the `claude` binary)
 5. The execution engine runs the agent and streams results back through the MCP server
 6. Your main assistant receives the results and continues working
 
