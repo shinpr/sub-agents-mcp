@@ -1,20 +1,20 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.shinpr/sub-agents-mcp",
-  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude, and Gemini",
+  "description": "MCP server for AI sub-agent delegation across Cursor, Claude, Codex, Gemini, and GLM",
   "vendor": "Shinsuke Kagawa",
   "license": "MIT",
   "repository": {
     "url": "https://github.com/shinpr/sub-agents-mcp",
     "source": "github"
   },
-  "version": "0.8.0",
+  "version": "0.9.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sub-agents-mcp",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "transport": {
         "type": "stdio"
       },
@@ -28,7 +28,7 @@
         },
         {
           "name": "AGENT_TYPE",
-          "description": "Type of AI CLI to use: 'cursor', 'claude', 'gemini', or 'codex'",
+          "description": "Type of AI CLI to use: 'cursor', 'claude', 'gemini', 'codex', or 'glm'",
           "isRequired": true,
           "format": "string",
           "isSecret": false
@@ -43,6 +43,13 @@
         {
           "name": "CURSOR_API_KEY",
           "description": "API key for cursor-agent authentication (used only when AGENT_TYPE=cursor; passed via env, never via CLI args)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "CLI_API_KEY",
+          "description": "Z.ai API token for AGENT_TYPE=glm (passed to the claude binary via env, never via CLI args). Restart/reconnect the MCP server after changing it.",
           "isRequired": false,
           "format": "string",
           "isSecret": true
@@ -109,6 +116,8 @@
     "cursor",
     "gemini",
     "codex",
+    "glm",
+    "z.ai",
     "llm",
     "cli",
     "agent-orchestration"

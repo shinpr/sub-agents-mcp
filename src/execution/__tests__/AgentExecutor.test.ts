@@ -83,6 +83,7 @@ describe('AgentExecutor', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
   })
 
   describe('createExecutionConfig', () => {
@@ -104,10 +105,14 @@ describe('AgentExecutor', () => {
       const cursorConfig = createExecutionConfig('cursor')
       const claudeConfig = createExecutionConfig('claude')
       const geminiConfig = createExecutionConfig('gemini')
+      const codexConfig = createExecutionConfig('codex')
+      const glmConfig = createExecutionConfig('glm')
 
       expect(cursorConfig.agentType).toBe('cursor')
       expect(claudeConfig.agentType).toBe('claude')
       expect(geminiConfig.agentType).toBe('gemini')
+      expect(codexConfig.agentType).toBe('codex')
+      expect(glmConfig.agentType).toBe('glm')
     })
 
     it('should allow setting agentsSettingsPath', () => {
@@ -164,6 +169,14 @@ describe('AgentExecutor', () => {
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
       expect(mockSpawn).toHaveBeenCalledWith('codex', expect.any(Array), expect.any(Object))
+    })
+
+    it('should use claude command for glm type', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('glm', { glmApiKey: 'zai-secret' }))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(mockSpawn).toHaveBeenCalledWith('claude', expect.any(Array), expect.any(Object))
     })
   })
 
@@ -300,6 +313,60 @@ describe('AgentExecutor', () => {
     })
   })
 
+  describe('glm API key handling', () => {
+    it('should route glm to Z.ai via env without exposing the API key in argv', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('glm', { glmApiKey: 'zai-secret' }))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      const spawnEnv = mockSpawn.mock.calls[0][2].env
+      expect(spawnEnv['ANTHROPIC_BASE_URL']).toBe('https://api.z.ai/api/anthropic')
+      expect(spawnEnv['ANTHROPIC_AUTH_TOKEN']).toBe('zai-secret')
+      expect(args).not.toContain('zai-secret')
+    })
+
+    it('should remove inherited ANTHROPIC_API_KEY for glm subprocesses', async () => {
+      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-real')
+      const executor = new AgentExecutor(createExecutionConfig('glm', { glmApiKey: 'zai-secret' }))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const spawnEnv = mockSpawn.mock.calls[0][2].env
+      expect(spawnEnv['ANTHROPIC_API_KEY']).toBeUndefined()
+      expect(spawnEnv['ANTHROPIC_AUTH_TOKEN']).toBe('zai-secret')
+    })
+
+    it('should fail before spawn when glm API key is missing', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('glm'))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      })
+
+      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('CLI_API_KEY')
+      expect(result.stderr).toContain('restart or reconnect the MCP server')
+    })
+
+    it('should fail before spawn when glm API key is blank', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('glm', { glmApiKey: '   ' }))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      })
+
+      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('CLI_API_KEY')
+    })
+  })
+
   describe('system prompt separation', () => {
     it('should use --append-system-prompt for claude instead of concatenation', async () => {
       const executor = new AgentExecutor(createExecutionConfig('claude'))
@@ -331,6 +398,24 @@ describe('AgentExecutor', () => {
       const spIdx = args.indexOf('--append-system-prompt')
       const systemPrompt = args[spIdx + 1]
       expect(systemPrompt).toContain(`cwd: ${expectedCwd}`)
+    })
+
+    it('should use --system-prompt for glm instead of appending Claude defaults', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('glm', { glmApiKey: 'zai-secret' }))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/test/cwd' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+
+      expect(args).toContain('--system-prompt')
+      expect(args).not.toContain('--append-system-prompt')
+      const spIdx = args.indexOf('--system-prompt')
+      const systemPrompt = args[spIdx + 1]
+      expect(systemPrompt).toContain('cwd: /test/cwd')
+      expect(systemPrompt).toContain('test-agent')
+
+      const pIdx = args.indexOf('-p')
+      expect(args[pIdx + 1]).toBe('Test prompt')
     })
 
     it('should set GEMINI_SYSTEM_MD env for gemini when agentFilePath is provided', async () => {
@@ -546,6 +631,10 @@ describe('AgentExecutor', () => {
       { agent: 'claude', perm: 'read-only', expected: ['--permission-mode', 'plan'] },
       { agent: 'claude', perm: 'safe-edit', expected: ['--permission-mode', 'acceptEdits'] },
       { agent: 'claude', perm: 'yolo', expected: ['--dangerously-skip-permissions'] },
+      // glm
+      { agent: 'glm', perm: 'read-only', expected: ['--permission-mode', 'plan'] },
+      { agent: 'glm', perm: 'safe-edit', expected: ['--permission-mode', 'acceptEdits'] },
+      { agent: 'glm', perm: 'yolo', expected: ['--dangerously-skip-permissions'] },
       // gemini
       { agent: 'gemini', perm: 'read-only', expected: ['--approval-mode', 'plan'] },
       { agent: 'gemini', perm: 'safe-edit', expected: ['--approval-mode', 'auto_edit'] },
@@ -561,7 +650,9 @@ describe('AgentExecutor', () => {
       perm,
       expected,
     }) => {
-      const executor = new AgentExecutor(createExecutionConfig(agent, { permission: perm }))
+      const executor = new AgentExecutor(
+        createExecutionConfig(agent, { permission: perm, glmApiKey: 'zai-secret' })
+      )
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
@@ -628,9 +719,11 @@ describe('AgentExecutor', () => {
     })
 
     it('should not leak codex-specific flags into other CLIs', async () => {
-      for (const agent of ['claude', 'gemini', 'cursor'] as const) {
+      for (const agent of ['claude', 'gemini', 'cursor', 'glm'] as const) {
         mockSpawn.mockClear()
-        const executor = new AgentExecutor(createExecutionConfig(agent))
+        const executor = new AgentExecutor(
+          createExecutionConfig(agent, { glmApiKey: 'zai-secret' })
+        )
         await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
         const args = mockSpawn.mock.calls[0][1] as string[]
         expect(args).not.toContain('--skip-git-repo-check')

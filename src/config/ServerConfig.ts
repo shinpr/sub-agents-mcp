@@ -19,7 +19,7 @@ import { isLogLevel, LOG_LEVELS, type LogLevel } from '../utils/Logger.js'
  * - SERVER_NAME: Name identifier for the MCP server (default: 'sub-agents-mcp-server')
  * - SERVER_VERSION: Version of the MCP server (default: '1.0.0')
  * - AGENTS_DIR: Directory containing agent definition files (REQUIRED - must be absolute path)
- * - AGENT_TYPE: Type of agent to use ('cursor' | 'claude' | 'gemini' | 'codex') (default: 'cursor')
+ * - AGENT_TYPE: Type of agent to use ('cursor' | 'claude' | 'gemini' | 'codex' | 'glm') (default: 'cursor')
  * - AGENT_PERMISSION: Approval/sandbox level for sub-agents ('read-only' | 'safe-edit' | 'yolo') (default: 'safe-edit')
  * - LOG_LEVEL: Log level for server operations (default: 'info')
  * - SESSION_ENABLED: Enable session management functionality (default: false)
@@ -63,6 +63,9 @@ export class ServerConfig {
 
   /** API key for cursor-agent authentication (from CURSOR_API_KEY or CLI_API_KEY env var) */
   public readonly cursorApiKey: string | undefined
+
+  /** API key for GLM/Z.ai authentication (from CLI_API_KEY env var) */
+  public readonly glmApiKey: string | undefined
 
   /**
    * Creates a new ServerConfig instance by loading values from environment variables
@@ -156,6 +159,10 @@ export class ServerConfig {
     this.agentsSettingsPath = process.env['AGENTS_SETTINGS_PATH'] || undefined
 
     // Cursor API key: prefer CURSOR_API_KEY, fall back to CLI_API_KEY for backward compatibility
-    this.cursorApiKey = process.env['CURSOR_API_KEY'] || process.env['CLI_API_KEY'] || undefined
+    const cursorApiKeyEnv = process.env['CURSOR_API_KEY'] || process.env['CLI_API_KEY']
+    this.cursorApiKey = cursorApiKeyEnv?.trim() ? cursorApiKeyEnv : undefined
+
+    const glmApiKeyEnv = process.env['CLI_API_KEY']
+    this.glmApiKey = glmApiKeyEnv?.trim() ? glmApiKeyEnv : undefined
   }
 }

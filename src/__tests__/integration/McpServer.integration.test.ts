@@ -27,6 +27,7 @@ describe('McpServer Integration', () => {
       sessionRetentionDays: 1,
       agentsSettingsPath: undefined,
       cursorApiKey: undefined,
+      glmApiKey: undefined,
     }
   })
 

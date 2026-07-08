@@ -48,6 +48,7 @@ describe('ServerConfig', () => {
     'claude',
     'gemini',
     'codex',
+    'glm',
   ] as const)('should accept AGENT_TYPE=%s', (agentType) => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('AGENT_TYPE', agentType)
@@ -55,6 +56,43 @@ describe('ServerConfig', () => {
     const config = new ServerConfig()
 
     expect(config.agentType).toBe(agentType)
+  })
+
+  it('should load CLI_API_KEY as glmApiKey when set', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('CLI_API_KEY', 'zai-secret')
+
+    const config = new ServerConfig()
+
+    expect(config.glmApiKey).toBe('zai-secret')
+  })
+
+  it('should treat blank CLI_API_KEY as missing for glmApiKey', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('CLI_API_KEY', '   ')
+
+    const config = new ServerConfig()
+
+    expect(config.glmApiKey).toBeUndefined()
+  })
+
+  it('should treat blank CURSOR_API_KEY as missing for cursorApiKey', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('CURSOR_API_KEY', '   ')
+
+    const config = new ServerConfig()
+
+    expect(config.cursorApiKey).toBeUndefined()
+  })
+
+  it('should treat blank CLI_API_KEY fallback as missing for cursorApiKey', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('CURSOR_API_KEY', undefined)
+    vi.stubEnv('CLI_API_KEY', '   ')
+
+    const config = new ServerConfig()
+
+    expect(config.cursorApiKey).toBeUndefined()
   })
 
   it('should throw error when AGENT_TYPE is an unsupported value', () => {

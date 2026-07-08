@@ -78,6 +78,7 @@ export class McpServer {
       permission: config.agentPermission,
       ...(config.agentsSettingsPath && { agentsSettingsPath: config.agentsSettingsPath }),
       ...(config.cursorApiKey && { cursorApiKey: config.cursorApiKey }),
+      ...(config.glmApiKey && { glmApiKey: config.glmApiKey }),
     })
 
     // Create logger with log level from config
