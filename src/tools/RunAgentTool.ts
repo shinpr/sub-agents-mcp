@@ -582,6 +582,10 @@ export class RunAgentTool {
     return exitCode !== 0 && exitCode !== 143 && exitCode !== 124
   }
 
+  private isPartialResult(resultJson: unknown): boolean {
+    return this.isRecord(resultJson) && resultJson['status'] === 'partial'
+  }
+
   /**
    * Format agent execution response (ADR-0003)
    *
@@ -615,11 +619,13 @@ export class RunAgentTool {
     )
 
     // Determine detailed status
-    const isSuccess =
-      result.exitCode === 0 || // Normal completion
-      (result.exitCode === 143 && result.hasResult === true) // SIGTERM with result
+    const isPartialSuccess =
+      this.isPartialResult(result.resultJson) ||
+      (result.exitCode === 124 && result.hasResult === true) // Timeout with partial result
 
-    const isPartialSuccess = result.exitCode === 124 && result.hasResult === true // Timeout with partial result
+    const isSuccess =
+      (!isPartialSuccess && result.exitCode === 0) || // Normal completion
+      (!isPartialSuccess && result.exitCode === 143 && result.hasResult === true) // SIGTERM with result
 
     // Build response data structure (ADR-0003)
     // This object is used in both content[0].text and structuredContent

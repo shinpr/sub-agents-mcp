@@ -19,7 +19,7 @@ import { isLogLevel, LOG_LEVELS, type LogLevel } from '../utils/Logger.js'
  * - SERVER_NAME: Name identifier for the MCP server (default: 'sub-agents-mcp-server')
  * - SERVER_VERSION: Version of the MCP server (default: '1.0.0')
  * - AGENTS_DIR: Directory containing agent definition files (REQUIRED - must be absolute path)
- * - AGENT_TYPE: Type of agent to use ('cursor' | 'claude' | 'gemini' | 'codex' | 'glm') (default: 'cursor')
+ * - AGENT_TYPE: Type of agent to use ('cursor' | 'claude' | 'gemini' | 'codex' | 'glm' | 'grok') (default: 'cursor')
  * - AGENT_PERMISSION: Approval/sandbox level for sub-agents ('read-only' | 'safe-edit' | 'yolo') (default: 'safe-edit')
  * - LOG_LEVEL: Log level for server operations (default: 'info')
  * - SESSION_ENABLED: Enable session management functionality (default: false)
@@ -155,7 +155,7 @@ export class ServerConfig {
     // - Claude: passed as --settings argument
     // - Cursor: set as CURSOR_CONFIG_DIR environment variable
     // - Codex: set as CODEX_HOME environment variable
-    // - Gemini: not supported (upstream limitation)
+    // - Gemini/Grok: not supported (upstream limitation)
     this.agentsSettingsPath = process.env['AGENTS_SETTINGS_PATH'] || undefined
 
     // Cursor API key: prefer CURSOR_API_KEY, fall back to CLI_API_KEY for backward compatibility

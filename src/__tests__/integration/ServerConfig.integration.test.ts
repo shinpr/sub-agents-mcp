@@ -49,6 +49,7 @@ describe('ServerConfig', () => {
     'gemini',
     'codex',
     'glm',
+    'grok',
   ] as const)('should accept AGENT_TYPE=%s', (agentType) => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('AGENT_TYPE', agentType)

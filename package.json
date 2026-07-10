@@ -1,8 +1,8 @@
 {
   "name": "sub-agents-mcp",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "mcpName": "io.github.shinpr/sub-agents-mcp",
-  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude Code, Codex, Gemini, and GLM",
+  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude Code, Codex, Gemini, GLM, and Grok",
   "type": "module",
   "main": "dist/index.js",
   "files": [
@@ -26,6 +26,7 @@
     "codex",
     "glm",
     "z.ai",
+    "grok",
     "llm",
     "cli",
     "agent-orchestration"

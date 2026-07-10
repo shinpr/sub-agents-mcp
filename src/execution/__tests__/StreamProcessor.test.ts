@@ -127,6 +127,21 @@ describe('StreamProcessor', () => {
       })
     })
 
+    it('should normalize single-line grok JSON output', () => {
+      const grokJson =
+        '{"text":"Grok output","stopReason":"EndTurn","sessionId":"session-123","requestId":"request-123"}'
+
+      expect(processor.processLine(grokJson)).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Grok output',
+        status: 'success',
+        stop_reason: 'EndTurn',
+        session_id: 'session-123',
+        request_id: 'request-123',
+      })
+    })
+
     it('should extract agent_message text from codex output stream', () => {
       // Given: A complete Codex output stream with reasoning and agent_message
       const codexOutputStream = [
@@ -220,6 +235,49 @@ describe('StreamProcessor', () => {
       expect(processor.processLine('{"incomplete": ')).toBe(false)
       // null is valid JSON but not an object with type field, so it's ignored
       expect(processor.processLine('null')).toBe(false)
+      expect(processor.getResult()).toBeNull()
+    })
+  })
+
+  describe('Complete output handling', () => {
+    it('should normalize pretty-printed grok JSON output after process exit', () => {
+      expect(
+        processor.processCompleteOutput(
+          '{\n' +
+            '  "text": "Grok output",\n' +
+            '  "stopReason": "EndTurn",\n' +
+            '  "sessionId": "session-123",\n' +
+            '  "requestId": "request-123"\n' +
+            '}'
+        )
+      ).toBe(true)
+
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Grok output',
+        status: 'success',
+        stop_reason: 'EndTurn',
+        session_id: 'session-123',
+        request_id: 'request-123',
+      })
+    })
+
+    it('should mark grok non-EndTurn output as partial', () => {
+      expect(
+        processor.processCompleteOutput('{"text":"Progress only","stopReason":"Cancelled"}')
+      ).toBe(true)
+
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Progress only',
+        status: 'partial',
+        stop_reason: 'Cancelled',
+      })
+    })
+
+    it('should ignore complete output when it is not grok JSON', () => {
+      expect(processor.processCompleteOutput('plain text output')).toBe(false)
+      expect(processor.processCompleteOutput('{"response":"legacy"}')).toBe(false)
       expect(processor.getResult()).toBeNull()
     })
   })

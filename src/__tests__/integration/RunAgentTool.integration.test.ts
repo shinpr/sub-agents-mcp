@@ -612,6 +612,47 @@ describe('RunAgentTool', () => {
         exit_code: 0,
       })
     })
+
+    it('should preserve partial status from agent result JSON even with exit code 0', async () => {
+      const params = {
+        agent: 'partial-agent',
+        prompt: 'Test partial completion',
+        cwd: process.cwd(),
+      }
+
+      const mockResult = {
+        stdout: JSON.stringify({
+          type: 'result',
+          result: 'Progress only',
+          status: 'partial',
+          stop_reason: 'Cancelled',
+        }),
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100,
+        hasResult: true,
+        resultJson: {
+          type: 'result',
+          result: 'Progress only',
+          status: 'partial',
+          stop_reason: 'Cancelled',
+        },
+      }
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
+
+      const result = await runAgentTool.execute(params)
+      const textContent = result.content.find((c) => c.type === 'text')
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+
+      expect(parsedContent.result).toBe('Progress only')
+      expect(parsedContent.exit_code).toBe(0)
+      expect(parsedContent.status).toBe('partial')
+      expect(result.structuredContent).toMatchObject({
+        status: 'partial',
+        exit_code: 0,
+      })
+    })
   })
 
   describe('session ID auto-generation', () => {
