@@ -57,7 +57,7 @@ export interface ExecutionConfig {
 
   /**
    * Type of agent to use for execution.
-   * 'cursor', 'claude', 'gemini', 'codex', or 'glm'
+   * 'cursor', 'claude', 'gemini', 'codex', 'glm', or 'grok'
    */
   agentType: AgentType
 
@@ -110,7 +110,7 @@ const GLM_MISSING_API_KEY_ERROR =
  * Supported agent runtimes. Single source of truth for both runtime validation
  * (ServerConfig) and static typing.
  */
-export const AGENT_TYPES = ['cursor', 'claude', 'gemini', 'codex', 'glm'] as const
+export const AGENT_TYPES = ['cursor', 'claude', 'gemini', 'codex', 'glm', 'grok'] as const
 
 export type AgentType = (typeof AGENT_TYPES)[number]
 
@@ -172,6 +172,11 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     'read-only': ['--mode', 'plan'],
     'safe-edit': ['--trust'],
     yolo: ['-f', '--trust'],
+  },
+  grok: {
+    'read-only': ['--permission-mode', 'dontAsk'],
+    'safe-edit': ['--permission-mode', 'auto'],
+    yolo: ['--permission-mode', 'bypassPermissions'],
   },
 }
 
@@ -344,6 +349,8 @@ export class AgentExecutor {
         return this.buildGeminiArgs(params, envOverrides)
       case 'cursor':
         return this.buildCursorArgs(params, envOverrides)
+      case 'grok':
+        return this.buildGrokArgs(params, envOverrides)
     }
   }
 
@@ -366,6 +373,7 @@ export class AgentExecutor {
         break
       // claude: handled via --settings argv below
       // glm: uses the claude binary, but intentionally avoids Claude settings.
+      // grok: not supported (upstream limitation)
       // gemini: not supported (upstream limitation)
     }
     return env
@@ -373,6 +381,10 @@ export class AgentExecutor {
 
   private permissionFlags(): readonly string[] {
     return PERMISSION_FLAGS[this.config.agentType][this.config.permission]
+  }
+
+  private formatSystemUserPrompt(params: ExecutionParams): string {
+    return `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
   }
 
   private buildCodexArgs(
@@ -385,7 +397,7 @@ export class AgentExecutor {
     // default system prompt, which removed the built-in tool-use guidance and
     // measurably increased exploration overhead and token usage in our tests.
     // Concatenation keeps codex's defaults intact and matches the cursor path.
-    const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
+    const formattedPrompt = this.formatSystemUserPrompt(params)
     const args = [...perm, 'exec', '--json', '--skip-git-repo-check', formattedPrompt]
     return { command: 'codex', args, envOverrides }
   }
@@ -464,7 +476,7 @@ export class AgentExecutor {
         envOverrides: { ...envOverrides, GEMINI_SYSTEM_MD: params.agentFilePath },
       }
     }
-    const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
+    const formattedPrompt = this.formatSystemUserPrompt(params)
     const args = [...perm, '--skip-trust', '--output-format', 'stream-json', '-p', formattedPrompt]
     return { command: 'gemini', args, envOverrides }
   }
@@ -474,13 +486,34 @@ export class AgentExecutor {
     envOverrides: EnvOverrides
   ): { command: string; args: string[]; envOverrides: EnvOverrides } {
     const perm = this.permissionFlags()
-    const formattedPrompt = `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
+    const formattedPrompt = this.formatSystemUserPrompt(params)
     const args = [...perm, '--output-format', 'json', '-p', formattedPrompt]
     const env: EnvOverrides = { ...envOverrides }
     if (this.config.cursorApiKey) {
       env['CURSOR_API_KEY'] = this.config.cursorApiKey
     }
     return { command: 'cursor-agent', args, envOverrides: env }
+  }
+
+  private buildGrokArgs(
+    params: ExecutionParams,
+    envOverrides: EnvOverrides
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+    const perm = this.permissionFlags()
+    const cwd = params.cwd || process.cwd()
+    const formattedPrompt = this.formatSystemUserPrompt(params)
+    const args = [
+      ...perm,
+      '--cwd',
+      cwd,
+      '--output-format',
+      'json',
+      '--always-approve',
+      '--verbatim',
+      '-p',
+      formattedPrompt,
+    ]
+    return { command: 'grok', args, envOverrides }
   }
 
   private buildSpawnEnv(envOverrides: EnvOverrides): NodeJS.ProcessEnv {
@@ -589,7 +622,11 @@ export class AgentExecutor {
         clearTimeout(executionTimeout)
 
         // Get the final result JSON
-        const result = streamProcessor.getResult()
+        let result = streamProcessor.getResult()
+        if (result === null) {
+          streamProcessor.processCompleteOutput(stdout)
+          result = streamProcessor.getResult()
+        }
 
         resolve({
           stdout: result ? JSON.stringify(result) : stdout,

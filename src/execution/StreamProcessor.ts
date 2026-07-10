@@ -1,12 +1,13 @@
 /**
  * StreamProcessor - Simplified stream processing for agent output
  *
- * Handles cursor, claude, gemini, and codex output in JSON format.
+ * Handles cursor, claude, gemini, codex, and grok output in JSON format.
  * - Cursor/Claude: Use --output-format json, return a single JSON with type: "result"
  * - Gemini: Uses --output-format stream-json, returns multiple JSON lines,
  *           assistant messages contain the response, type: "result" signals completion
  * - Codex: Uses --json flag with exec subcommand, returns stream of JSON events,
  *          agent_message items contain the response, turn.completed signals completion
+ * - Grok: Uses --output-format json, returns a complete JSON object after exit
  */
 export class StreamProcessor {
   private resultJson: unknown = null
@@ -109,6 +110,12 @@ export class StreamProcessor {
         return true // Processing complete
       }
 
+      const normalizedCompleteOutput = this.normalizeCompleteOutput(json)
+      if (normalizedCompleteOutput) {
+        this.resultJson = normalizedCompleteOutput
+        return true
+      }
+
       // For backwards compatibility: store first valid JSON if no type field
       // This handles any CLI that doesn't use the type field
       if (!('type' in json)) {
@@ -124,12 +131,72 @@ export class StreamProcessor {
   }
 
   /**
+   * Process a complete non-NDJSON payload after process exit.
+   *
+   * Grok's `--output-format json` can emit a pretty-printed JSON object, which
+   * cannot be parsed by the line-oriented stream path.
+   *
+   * @param output - Complete stdout captured from the agent process
+   * @returns true if processing is complete, false otherwise
+   */
+  processCompleteOutput(output: string): boolean {
+    if (this.resultJson !== null) {
+      return false
+    }
+
+    try {
+      const json = JSON.parse(output.trim()) as unknown
+      if (!this.isRecord(json)) {
+        return false
+      }
+
+      const normalizedCompleteOutput = this.normalizeCompleteOutput(json)
+      if (!normalizedCompleteOutput) {
+        return false
+      }
+
+      this.resultJson = normalizedCompleteOutput
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private normalizeCompleteOutput(json: Record<string, unknown>): Record<string, unknown> | null {
+    if (typeof json['text'] !== 'string' || !('stopReason' in json)) {
+      return null
+    }
+
+    const result: Record<string, unknown> = {
+      type: 'result',
+      result: json['text'],
+      status: json['stopReason'] === 'EndTurn' ? 'success' : 'partial',
+    }
+
+    if (typeof json['stopReason'] === 'string') {
+      result['stop_reason'] = json['stopReason']
+    }
+    if (typeof json['sessionId'] === 'string') {
+      result['session_id'] = json['sessionId']
+    }
+    if (typeof json['requestId'] === 'string') {
+      result['request_id'] = json['requestId']
+    }
+
+    return result
+  }
+
+  /**
    * Type guard for Codex item structure
    * @param item - The item to check
    * @returns true if item is a valid Codex item object
    */
   private isCodexItem(item: unknown): item is Record<string, unknown> {
-    return typeof item === 'object' && item !== null
+    return this.isRecord(item)
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
   }
 
   /**

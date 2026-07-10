@@ -1,20 +1,20 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.shinpr/sub-agents-mcp",
-  "description": "MCP server for AI sub-agent delegation across Cursor, Claude, Codex, Gemini, and GLM",
+  "description": "MCP server for AI sub-agent delegation across Cursor, Claude, Codex, Gemini, GLM, and Grok",
   "vendor": "Shinsuke Kagawa",
   "license": "MIT",
   "repository": {
     "url": "https://github.com/shinpr/sub-agents-mcp",
     "source": "github"
   },
-  "version": "0.9.0",
+  "version": "0.10.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sub-agents-mcp",
-      "version": "0.9.0",
+      "version": "0.10.0",
       "transport": {
         "type": "stdio"
       },
@@ -28,7 +28,7 @@
         },
         {
           "name": "AGENT_TYPE",
-          "description": "Type of AI CLI to use: 'cursor', 'claude', 'gemini', 'codex', or 'glm'",
+          "description": "Type of AI CLI to use: 'cursor', 'claude', 'gemini', 'codex', 'glm', or 'grok'",
           "isRequired": true,
           "format": "string",
           "isSecret": false
@@ -84,7 +84,7 @@
         },
         {
           "name": "AGENTS_SETTINGS_PATH",
-          "description": "Path to CLI settings file/directory. Claude: --settings arg, Cursor: CURSOR_CONFIG_DIR, Codex: CODEX_HOME. Gemini not supported.",
+          "description": "Path to CLI settings file/directory. Claude: --settings arg, Cursor: CURSOR_CONFIG_DIR, Codex: CODEX_HOME. Gemini/Grok not supported.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -118,6 +118,7 @@
     "codex",
     "glm",
     "z.ai",
+    "grok",
     "llm",
     "cli",
     "agent-orchestration"

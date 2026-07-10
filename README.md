@@ -5,7 +5,7 @@
 
 Bring Claude Code–style sub-agents to any MCP-compatible tool.
 
-This MCP server lets you define task-specific AI agents (like "test-writer" or "code-reviewer") in markdown files, and execute them via Cursor CLI, Claude Code, Codex, or Gemini CLI backends.
+This MCP server lets you define task-specific AI agents (like "test-writer" or "code-reviewer") in markdown files, and execute them via Cursor CLI, Claude Code, Codex, Gemini CLI, GLM, or Grok Build backends.
 
 ## Why?
 
@@ -14,7 +14,7 @@ Claude Code offers powerful sub-agent workflows—but they're limited to its own
 **Concrete benefits:**
 - Define reusable agents once, use them across multiple tools
 - Share agent definitions within teams regardless of IDE choice
-- Leverage Cursor CLI, Claude Code, Codex, or Gemini CLI capabilities from any MCP client
+- Leverage Cursor CLI, Claude Code, Codex, Gemini CLI, GLM, or Grok Build capabilities from any MCP client
 
 → [Read the full story](https://dev.to/shinpr/bringing-claude-codes-sub-agents-to-any-mcp-compatible-tool-1hb9)
 
@@ -52,6 +52,7 @@ Choose **sub-agents-mcp** for production use with reliability features. Choose *
   - `codex` CLI (from Codex)
   - `gemini` CLI (from Gemini CLI — requires `GEMINI_API_KEY`)
   - `glm` backend (uses the Claude Code `claude` CLI with a Z.ai token)
+  - `grok` CLI (from Grok Build)
 - An MCP-compatible tool (Cursor IDE, Claude Desktop, Windsurf, etc.)
 
 ## Quick Start
@@ -126,6 +127,12 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 Set `AGENT_TYPE` to `glm` and add `CLI_API_KEY` to the MCP server environment in your MCP client configuration. Because MCP servers are long-running processes, restart or reconnect the MCP server after changing `CLI_API_KEY`.
 
+**For Grok Build users:**
+```bash
+# Install Grok Build
+curl -fsSL https://x.ai/cli/install.sh | bash
+```
+
 ### 3. Configure MCP
 
 Add this to your MCP configuration file:
@@ -141,7 +148,7 @@ Add this to your MCP configuration file:
       "args": ["-y", "sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/absolute/path/to/your/agents-folder",
-        "AGENT_TYPE": "cursor"  // or "claude", "codex", "gemini", or "glm"
+        "AGENT_TYPE": "cursor"  // or "claude", "codex", "gemini", "glm", or "grok"
       }
     }
   }
@@ -174,6 +181,9 @@ Sub-agents may fail to execute shell commands with permission errors. This happe
 
    # For Gemini CLI users
    gemini
+
+   # For Grok Build users
+   grok
    ```
 
 2. When prompted to allow commands (e.g., "Add Shell(cd), Shell(make) to allowlist?"), approve them
@@ -310,17 +320,18 @@ Which execution engine to use:
 - `"gemini"` - uses `gemini` CLI
 - `"codex"` - uses `codex` CLI (OpenAI Codex)
 - `"glm"` - uses the Claude Code `claude` CLI against GLM's Z.ai endpoint
+- `"grok"` - uses `grok` CLI (Grok Build)
 
 ### Optional Settings
 
 **`AGENT_PERMISSION`**
 Approval/sandbox level the sub-agent runs with. Default: `"safe-edit"`.
 
-- `"read-only"` — investigation/review only, no edits or shell writes (codex `-s read-only` / claude+glm `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan`)
-- `"safe-edit"` — auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude+glm `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust`)
+- `"read-only"` — investigation/review only, no edits or shell writes (codex `-s read-only` / claude+glm `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan` / grok `--permission-mode dontAsk`)
+- `"safe-edit"` — auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude+glm `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust` / grok `--permission-mode auto`)
 - `"yolo"` — bypass all approvals and sandboxing. Use with care.
 
-Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts; the depth of sandboxing depends on the CLI — codex enforces a `workspace-write` sandbox, while claude / glm / gemini / cursor only auto-approve and do not jail edits to the workspace. If you need strict containment, use `read-only` and run privileged steps separately.
+Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts; the depth of sandboxing depends on the CLI — codex enforces a `workspace-write` sandbox, while claude / glm / gemini / cursor / grok only auto-approve and do not jail edits to the workspace. Grok runs also pass `--always-approve` so headless runs do not cancel while waiting for user approval; `AGENT_PERMISSION` still selects Grok's permission mode. If you need strict containment, use `read-only` and run privileged steps separately.
 
 **`CLI_API_KEY`**
 Z.ai API token for `AGENT_TYPE=glm`. It is forwarded to the Claude Code binary as `ANTHROPIC_AUTH_TOKEN` and never passed as a CLI argument. If you add or change it in your MCP client configuration, restart or reconnect the MCP server so the running process receives the new environment.
@@ -335,7 +346,7 @@ Each CLI normally reads settings from project-level directories (`.claude/`, `.c
 
 Applied to: `claude`, `cursor`, `codex`.
 
-Note: Gemini CLI does not support custom settings paths, so this option has no effect when `AGENT_TYPE` is `gemini`. The `glm` backend also ignores this setting to avoid mixing Claude settings into the Z.ai-backed subprocess.
+Note: Gemini CLI and Grok Build do not support custom settings paths, so this option has no effect when `AGENT_TYPE` is `gemini` or `grok`. The `glm` backend also ignores this setting to avoid mixing Claude settings into the Z.ai-backed subprocess.
 
 Example with custom settings:
 ```json
@@ -449,6 +460,9 @@ Make sure the CLI is properly installed and accessible.
 **If using GLM (Z.ai):**
 Make sure the Claude Code `claude` CLI is installed, then set `CLI_API_KEY` to your Z.ai token in the MCP server environment. Restart or reconnect the MCP server after changing MCP environment variables.
 
+**If using Grok Build:**
+Make sure the `grok` CLI is installed and accessible.
+
 ### Agent not found
 
 Check that:
@@ -458,7 +472,7 @@ Check that:
 
 ### Other execution errors
 
-1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, `gemini`, `codex`, or `glm`)
+1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, `gemini`, `codex`, `glm`, or `grok`)
 2. Ensure your chosen CLI tool is installed and accessible
 3. Double-check that all environment variables are set in the MCP config
 
@@ -510,14 +524,14 @@ The startup overhead is an intentional trade-off: the system favors clarity and 
 
 ## How It Works
 
-This MCP server acts as a bridge between your AI tool and a supported execution engine (Cursor CLI, Claude Code, Gemini CLI, Codex, or GLM via Z.ai).
+This MCP server acts as a bridge between your AI tool and a supported execution engine (Cursor CLI, Claude Code, Gemini CLI, Codex, GLM via Z.ai, or Grok Build).
 
 **The flow:**
 
 1. You configure the MCP server in your client (Cursor, Claude Desktop, etc.)
 2. The client automatically launches `sub-agents-mcp` as a background process when it starts
 3. When your main AI assistant needs a sub-agent, it makes an MCP tool call
-4. The MCP server reads the agent definition (markdown file) and invokes the selected CLI (`cursor-agent`, `claude`, `gemini`, `codex`, or `glm` via the `claude` binary)
+4. The MCP server reads the agent definition (markdown file) and invokes the selected CLI (`cursor-agent`, `claude`, `gemini`, `codex`, `glm` via the `claude` binary, or `grok`)
 5. The execution engine runs the agent and streams results back through the MCP server
 6. Your main assistant receives the results and continues working
 

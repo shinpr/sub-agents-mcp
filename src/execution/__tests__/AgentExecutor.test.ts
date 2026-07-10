@@ -107,12 +107,14 @@ describe('AgentExecutor', () => {
       const geminiConfig = createExecutionConfig('gemini')
       const codexConfig = createExecutionConfig('codex')
       const glmConfig = createExecutionConfig('glm')
+      const grokConfig = createExecutionConfig('grok')
 
       expect(cursorConfig.agentType).toBe('cursor')
       expect(claudeConfig.agentType).toBe('claude')
       expect(geminiConfig.agentType).toBe('gemini')
       expect(codexConfig.agentType).toBe('codex')
       expect(glmConfig.agentType).toBe('glm')
+      expect(grokConfig.agentType).toBe('grok')
     })
 
     it('should allow setting agentsSettingsPath', () => {
@@ -177,6 +179,14 @@ describe('AgentExecutor', () => {
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
       expect(mockSpawn).toHaveBeenCalledWith('claude', expect.any(Array), expect.any(Object))
+    })
+
+    it('should use grok command for grok type', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('grok'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(mockSpawn).toHaveBeenCalledWith('grok', expect.any(Array), expect.any(Object))
     })
   })
 
@@ -249,6 +259,22 @@ describe('AgentExecutor', () => {
       const spawnEnv = mockSpawn.mock.calls[0][2].env
       expect(spawnEnv['GEMINI_CONFIG_DIR']).toBeUndefined()
       expect(spawnEnv['GEMINI_HOME']).toBeUndefined()
+    })
+
+    it('should not modify env for grok when agentsSettingsPath is set', async () => {
+      const settingsPath = '/path/to/grok/settings'
+      const executor = new AgentExecutor(
+        createExecutionConfig('grok', {
+          agentsSettingsPath: settingsPath,
+        })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      const spawnEnv = mockSpawn.mock.calls[0][2].env
+      expect(args).not.toContain(settingsPath)
+      expect(Object.values(spawnEnv)).not.toContain(settingsPath)
     })
 
     it('should not pass --settings for claude when agentsSettingsPath is not set', async () => {
@@ -501,6 +527,20 @@ describe('AgentExecutor', () => {
       expect(promptArg).toContain('[User Prompt]')
       expect(promptArg).toContain('Test prompt')
     })
+
+    it('should concatenate for grok with both system context and user prompt', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('grok'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      const pIdx = args.indexOf('-p')
+      const promptArg = args[pIdx + 1]
+      expect(promptArg).toContain('[System Context]')
+      expect(promptArg).toContain('test-agent')
+      expect(promptArg).toContain('[User Prompt]')
+      expect(promptArg).toContain('Test prompt')
+    })
   })
 
   describe('executeAgent', () => {
@@ -562,6 +602,39 @@ describe('AgentExecutor', () => {
         expect.arrayContaining(['-p', expect.stringContaining('Generate detailed documentation')]),
         expect.any(Object)
       )
+    })
+
+    it('should parse grok pretty JSON output after process exit', async () => {
+      mockSpawn.mockImplementationOnce(() =>
+        createMockProcess({
+          stdoutData:
+            '{\n' +
+            '  "text": "Grok execution successful",\n' +
+            '  "stopReason": "EndTurn",\n' +
+            '  "sessionId": "session-123",\n' +
+            '  "requestId": "request-123"\n' +
+            '}\n',
+        })
+      )
+
+      const executor = new AgentExecutor(createExecutionConfig('grok'))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Help me',
+        cwd: '/tmp',
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(result.hasResult).toBe(true)
+      expect(result.resultJson).toEqual({
+        type: 'result',
+        result: 'Grok execution successful',
+        status: 'success',
+        stop_reason: 'EndTurn',
+        session_id: 'session-123',
+        request_id: 'request-123',
+      })
     })
   })
 
@@ -643,6 +716,10 @@ describe('AgentExecutor', () => {
       { agent: 'cursor', perm: 'read-only', expected: ['--mode', 'plan'] },
       { agent: 'cursor', perm: 'safe-edit', expected: ['--trust'] },
       { agent: 'cursor', perm: 'yolo', expected: ['-f', '--trust'] },
+      // grok
+      { agent: 'grok', perm: 'read-only', expected: ['--permission-mode', 'dontAsk'] },
+      { agent: 'grok', perm: 'safe-edit', expected: ['--permission-mode', 'auto'] },
+      { agent: 'grok', perm: 'yolo', expected: ['--permission-mode', 'bypassPermissions'] },
     ]
 
     it.each(cases)('should prepend $expected for agent=$agent permission=$perm', async ({
@@ -718,8 +795,28 @@ describe('AgentExecutor', () => {
       expect(args).toContain('--skip-trust')
     })
 
+    it('should include required headless flags for grok read-only', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('grok', { permission: 'read-only' }))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      expect(args).toEqual(
+        expect.arrayContaining([
+          '--permission-mode',
+          'dontAsk',
+          '--cwd',
+          '/tmp',
+          '--output-format',
+          'json',
+          '--always-approve',
+          '--verbatim',
+        ])
+      )
+    })
+
     it('should not leak codex-specific flags into other CLIs', async () => {
-      for (const agent of ['claude', 'gemini', 'cursor', 'glm'] as const) {
+      for (const agent of ['claude', 'gemini', 'cursor', 'glm', 'grok'] as const) {
         mockSpawn.mockClear()
         const executor = new AgentExecutor(
           createExecutionConfig(agent, { glmApiKey: 'zai-secret' })
