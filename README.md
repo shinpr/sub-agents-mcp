@@ -327,11 +327,11 @@ Which execution engine to use:
 **`AGENT_PERMISSION`**
 Approval/sandbox level the sub-agent runs with. Default: `"safe-edit"`.
 
-- `"read-only"` — investigation/review only, no edits or shell writes (codex `-s read-only` / claude+glm `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan` / grok `--permission-mode dontAsk`)
-- `"safe-edit"` — auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude+glm `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust` / grok `--permission-mode auto`)
+- `"read-only"` — investigation/review only, no edits or shell writes (codex `-s read-only` / claude+glm `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan` / grok `--sandbox read-only`)
+- `"safe-edit"` — auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude+glm `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust` / grok `--sandbox workspace`)
 - `"yolo"` — bypass all approvals and sandboxing. Use with care.
 
-Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts; the depth of sandboxing depends on the CLI — codex enforces a `workspace-write` sandbox, while claude / glm / gemini / cursor / grok only auto-approve and do not jail edits to the workspace. Grok runs also pass `--always-approve` so headless runs do not cancel while waiting for user approval; `AGENT_PERMISSION` still selects Grok's permission mode. If you need strict containment, use `read-only` and run privileged steps separately.
+Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts; the depth of sandboxing depends on the CLI — codex and grok enforce a workspace-level sandbox (codex `workspace-write`, grok `--sandbox workspace`), while claude / glm / gemini / cursor only auto-approve and do not jail edits to the workspace. Grok fixes `--permission-mode bypassPermissions` (its `--permission-mode` only enforces that value via the flag) and uses the kernel-enforced `--sandbox` profile to confine writes per `AGENT_PERMISSION`. If you need strict containment, use `read-only` and run privileged steps separately.
 
 **`CLI_API_KEY`**
 Z.ai API token for `AGENT_TYPE=glm`. It is forwarded to the Claude Code binary as `ANTHROPIC_AUTH_TOKEN` and never passed as a CLI argument. If you add or change it in your MCP client configuration, restart or reconnect the MCP server so the running process receives the new environment.
