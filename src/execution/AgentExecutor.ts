@@ -173,10 +173,12 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     'safe-edit': ['--trust'],
     yolo: ['-f', '--trust'],
   },
+  // Grok's --permission-mode enforces only bypassPermissions via the flag, so
+  // the level is enforced by the kernel --sandbox profile (always explicit).
   grok: {
-    'read-only': ['--permission-mode', 'dontAsk'],
-    'safe-edit': ['--permission-mode', 'auto'],
-    yolo: ['--permission-mode', 'bypassPermissions'],
+    'read-only': ['--permission-mode', 'bypassPermissions', '--sandbox', 'read-only'],
+    'safe-edit': ['--permission-mode', 'bypassPermissions', '--sandbox', 'workspace'],
+    yolo: ['--permission-mode', 'bypassPermissions', '--sandbox', 'off'],
   },
 }
 
@@ -502,13 +504,13 @@ export class AgentExecutor {
     const perm = this.permissionFlags()
     const cwd = params.cwd || process.cwd()
     const formattedPrompt = this.formatSystemUserPrompt(params)
+    // Approval mode + sandbox live in PERMISSION_FLAGS.grok (via perm).
     const args = [
       ...perm,
       '--cwd',
       cwd,
       '--output-format',
       'json',
-      '--always-approve',
       '--verbatim',
       '-p',
       formattedPrompt,

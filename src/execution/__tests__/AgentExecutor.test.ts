@@ -717,9 +717,21 @@ describe('AgentExecutor', () => {
       { agent: 'cursor', perm: 'safe-edit', expected: ['--trust'] },
       { agent: 'cursor', perm: 'yolo', expected: ['-f', '--trust'] },
       // grok
-      { agent: 'grok', perm: 'read-only', expected: ['--permission-mode', 'dontAsk'] },
-      { agent: 'grok', perm: 'safe-edit', expected: ['--permission-mode', 'auto'] },
-      { agent: 'grok', perm: 'yolo', expected: ['--permission-mode', 'bypassPermissions'] },
+      {
+        agent: 'grok',
+        perm: 'read-only',
+        expected: ['--permission-mode', 'bypassPermissions', '--sandbox', 'read-only'],
+      },
+      {
+        agent: 'grok',
+        perm: 'safe-edit',
+        expected: ['--permission-mode', 'bypassPermissions', '--sandbox', 'workspace'],
+      },
+      {
+        agent: 'grok',
+        perm: 'yolo',
+        expected: ['--permission-mode', 'bypassPermissions', '--sandbox', 'off'],
+      },
     ]
 
     it.each(cases)('should prepend $expected for agent=$agent permission=$perm', async ({
@@ -804,12 +816,13 @@ describe('AgentExecutor', () => {
       expect(args).toEqual(
         expect.arrayContaining([
           '--permission-mode',
-          'dontAsk',
+          'bypassPermissions',
+          '--sandbox',
+          'read-only',
           '--cwd',
           '/tmp',
           '--output-format',
           'json',
-          '--always-approve',
           '--verbatim',
         ])
       )
