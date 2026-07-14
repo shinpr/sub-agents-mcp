@@ -68,6 +68,12 @@ export class StreamProcessor {
         this.isOpenCodeFormat = true
       }
 
+      const normalizedError = this.normalizeFatalError(json)
+      if (normalizedError) {
+        this.resultJson = normalizedError
+        return true
+      }
+
       if (this.isOpenCodeFormat && json['type'] === 'text' && this.isRecord(part)) {
         if (typeof part['text'] === 'string') {
           this.openCodeResponseParts.push(part['text'])
@@ -179,6 +185,12 @@ export class StreamProcessor {
     try {
       const json = JSON.parse(output.trim()) as unknown
       if (this.isRecord(json)) {
+        const normalizedError = this.normalizeFatalError(json)
+        if (normalizedError) {
+          this.resultJson = normalizedError
+          return true
+        }
+
         const normalizedCompleteOutput = this.normalizeCompleteOutput(json)
         if (normalizedCompleteOutput) {
           this.resultJson = normalizedCompleteOutput
@@ -200,6 +212,54 @@ export class StreamProcessor {
     }
 
     return false
+  }
+
+  private normalizeFatalError(json: Record<string, unknown>): Record<string, unknown> | null {
+    const isFatalEvent =
+      json['type'] === 'error' ||
+      json['type'] === 'turn.failed' ||
+      (json['type'] === 'result' && json['status'] === 'error')
+
+    if (!isFatalEvent) {
+      return null
+    }
+
+    const error = this.isRecord(json['error']) ? json['error'] : undefined
+    const errorData = error && this.isRecord(error['data']) ? error['data'] : undefined
+    const message =
+      (typeof json['message'] === 'string' && json['message']) ||
+      (error && typeof error['message'] === 'string' && error['message']) ||
+      (errorData && typeof errorData['message'] === 'string' && errorData['message']) ||
+      (typeof json['error'] === 'string' && json['error']) ||
+      'Agent execution failed'
+    const errorType =
+      (error && typeof error['name'] === 'string' && error['name']) ||
+      (error && typeof error['type'] === 'string' && error['type'])
+    const errorRef =
+      (errorData && typeof errorData['ref'] === 'string' && errorData['ref']) ||
+      (error && typeof error['ref'] === 'string' && error['ref']) ||
+      (typeof json['ref'] === 'string' && json['ref'])
+    const sessionId =
+      (typeof json['sessionID'] === 'string' && json['sessionID']) ||
+      (typeof json['session_id'] === 'string' && json['session_id'])
+
+    const context: string[] = []
+    if (errorRef) context.push(`ref: ${errorRef}`)
+    if (sessionId) context.push(`sessionID: ${sessionId}`)
+    const formattedMessage = `${errorType ? `${errorType}: ` : ''}${message}${
+      context.length > 0 ? ` (${context.join(', ')})` : ''
+    }`
+
+    return {
+      type: 'result',
+      subtype: 'error',
+      is_error: true,
+      error: formattedMessage,
+      ...(errorType && { error_type: errorType }),
+      ...(errorRef && { error_ref: errorRef }),
+      ...(sessionId && { session_id: sessionId }),
+      ...(json['stats'] !== undefined && { stats: json['stats'] }),
+    }
   }
 
   private normalizeCompleteOutput(json: Record<string, unknown>): Record<string, unknown> | null {

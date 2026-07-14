@@ -808,6 +808,35 @@ describe('AgentExecutor', () => {
         stop_reason: 'process-exit',
       })
     })
+
+    it('should return a structured result for OpenCode error events', async () => {
+      mockSpawn.mockImplementationOnce(() =>
+        createMockProcess({
+          stdoutData:
+            '{"type":"error","sessionID":"session-123","error":{"name":"UnknownError","data":{"message":"Provider failed","ref":"error-ref"}}}\n',
+          exitCode: 1,
+        })
+      )
+      const executor = new AgentExecutor(createExecutionConfig('opencode'))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      })
+
+      expect(result.exitCode).toBe(1)
+      expect(result.hasResult).toBe(true)
+      expect(result.resultJson).toEqual({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        error: 'UnknownError: Provider failed (ref: error-ref, sessionID: session-123)',
+        error_type: 'UnknownError',
+        error_ref: 'error-ref',
+        session_id: 'session-123',
+      })
+    })
   })
 
   describe('execution performance monitoring', () => {

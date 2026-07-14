@@ -211,6 +211,88 @@ describe('StreamProcessor', () => {
       })
     })
 
+    it('should normalize OpenCode error events with diagnostic context', () => {
+      const openCodeError =
+        '{"type":"error","timestamp":1784020603139,"sessionID":"ses_0a015ef55ffePMBqnSUUKOWwRG","error":{"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_c481aeec"}}}'
+
+      expect(processor.processLine(openCodeError)).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        error:
+          'UnknownError: Unexpected server error. Check server logs for details. (ref: err_c481aeec, sessionID: ses_0a015ef55ffePMBqnSUUKOWwRG)',
+        error_type: 'UnknownError',
+        error_ref: 'err_c481aeec',
+        session_id: 'ses_0a015ef55ffePMBqnSUUKOWwRG',
+      })
+    })
+
+    it('should normalize Codex turn.failed events', () => {
+      expect(
+        processor.processLine(
+          '{"type":"turn.failed","error":{"message":"The model is unavailable"}}'
+        )
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        error: 'The model is unavailable',
+      })
+    })
+
+    it('should normalize top-level Codex and Grok error events', () => {
+      expect(processor.processLine('{"type":"error","message":"Unknown model id"}')).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        error: 'Unknown model id',
+      })
+    })
+
+    it('should normalize Gemini result errors', () => {
+      expect(
+        processor.processLine(
+          '{"type":"result","status":"error","error":{"type":"unknown","message":"Model not found"},"stats":{"total_tokens":0}}'
+        )
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        error: 'unknown: Model not found',
+        error_type: 'unknown',
+        stats: { total_tokens: 0 },
+      })
+    })
+
+    it('should ignore non-fatal Codex error items and allow the turn to complete', () => {
+      expect(processor.processLine('{"type":"thread.started","thread_id":"thread-1"}')).toBe(false)
+      expect(
+        processor.processLine(
+          '{"type":"item.completed","item":{"id":"item-1","type":"error","message":"stream lagged"}}'
+        )
+      ).toBe(false)
+      expect(
+        processor.processLine(
+          '{"type":"item.completed","item":{"id":"item-2","type":"agent_message","text":"Done"}}'
+        )
+      ).toBe(false)
+      expect(
+        processor.processLine(
+          '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
+        )
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Done',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        status: 'success',
+      })
+    })
+
     it('should concatenate multiple agent_messages with newlines', () => {
       // Given: Codex output with multiple agent_message items
       const codexOutputStream = [
