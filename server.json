@@ -1,20 +1,20 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.shinpr/sub-agents-mcp",
-  "description": "MCP server for AI sub-agent delegation across Cursor, Claude, Codex, Gemini, GLM, and Grok",
+  "description": "MCP server for AI sub-agent delegation across Cursor, Claude, Codex, Gemini, GLM, Grok, and OpenCode",
   "vendor": "Shinsuke Kagawa",
   "license": "MIT",
   "repository": {
     "url": "https://github.com/shinpr/sub-agents-mcp",
     "source": "github"
   },
-  "version": "0.10.1",
+  "version": "0.11.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sub-agents-mcp",
-      "version": "0.10.1",
+      "version": "0.11.0",
       "transport": {
         "type": "stdio"
       },
@@ -28,7 +28,7 @@
         },
         {
           "name": "AGENT_TYPE",
-          "description": "Type of AI CLI to use: 'cursor', 'claude', 'gemini', 'codex', 'glm', or 'grok'",
+          "description": "Type of AI CLI to use: 'cursor', 'claude', 'gemini', 'codex', 'glm', 'grok', or 'opencode'",
           "isRequired": true,
           "format": "string",
           "isSecret": false
@@ -36,6 +36,20 @@
         {
           "name": "AGENT_PERMISSION",
           "description": "Approval/sandbox level for sub-agents: 'read-only', 'safe-edit' (default), or 'yolo'",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "AGENT_MODEL",
+          "description": "Optional model override applied to every sub-agent execution by this MCP server",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "AGENT_EFFORT",
+          "description": "Optional backend-specific reasoning effort or model variant. Supported by codex, claude, glm, grok, and opencode.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -84,7 +98,7 @@
         },
         {
           "name": "AGENTS_SETTINGS_PATH",
-          "description": "Path to CLI settings file/directory. Claude: --settings arg, Cursor: CURSOR_CONFIG_DIR, Codex: CODEX_HOME. Gemini/Grok not supported.",
+          "description": "Path to CLI settings file/directory. Claude: --settings arg, Cursor: CURSOR_CONFIG_DIR, Codex: CODEX_HOME. Gemini/Grok/OpenCode not supported.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -119,6 +133,7 @@
     "glm",
     "z.ai",
     "grok",
+    "opencode",
     "llm",
     "cli",
     "agent-orchestration"

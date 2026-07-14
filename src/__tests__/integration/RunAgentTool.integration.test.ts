@@ -613,6 +613,30 @@ describe('RunAgentTool', () => {
       })
     })
 
+    it('should treat exit code 137 as success when a structured result was received', async () => {
+      const params = {
+        agent: 'normal-agent',
+        prompt: 'Test forced process cleanup',
+        cwd: process.cwd(),
+      }
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: '{"type":"result","result":"Completed"}',
+        stderr: '',
+        exitCode: 137,
+        executionTime: 100,
+        hasResult: true,
+        resultJson: { type: 'result', result: 'Completed' },
+      })
+
+      const result = await runAgentTool.execute(params)
+
+      expect(result.structuredContent).toMatchObject({
+        result: 'Completed',
+        status: 'success',
+        exit_code: 137,
+      })
+    })
+
     it('should preserve partial status from agent result JSON even with exit code 0', async () => {
       const params = {
         agent: 'partial-agent',

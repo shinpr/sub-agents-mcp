@@ -166,6 +166,51 @@ describe('StreamProcessor', () => {
       })
     })
 
+    it('should collect OpenCode text across tool steps until stop', () => {
+      expect(processor.processLine('{"type":"step_start","part":{}}')).toBe(false)
+      expect(processor.processLine('{"type":"text","part":{"text":"part 1"}}')).toBe(false)
+      expect(processor.processLine('{"type":"step_finish","part":{"reason":"tool-calls"}}')).toBe(
+        false
+      )
+      expect(processor.processLine('{"type":"text","part":{"text":"part 2"}}')).toBe(false)
+      expect(processor.processLine('{"type":"step_finish","part":{"reason":"stop"}}')).toBe(true)
+
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'part 1part 2',
+        status: 'success',
+        stop_reason: 'stop',
+      })
+    })
+
+    it('should mark a non-stop OpenCode finish as partial', () => {
+      expect(processor.processLine('{"type":"text","part":{"text":"truncated"}}')).toBe(false)
+      expect(processor.processLine('{"type":"step_finish","part":{"reason":"length"}}')).toBe(true)
+
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'truncated',
+        status: 'partial',
+        stop_reason: 'length',
+      })
+    })
+
+    it('should preserve OpenCode text as partial when the process exits without a finish event', () => {
+      expect(processor.processLine('{"type":"text","part":{"text":"work in progress"}}')).toBe(
+        false
+      )
+
+      expect(
+        processor.processCompleteOutput('{"type":"text","part":{"text":"work in progress"}}\n')
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'work in progress',
+        status: 'partial',
+        stop_reason: 'process-exit',
+      })
+    })
+
     it('should concatenate multiple agent_messages with newlines', () => {
       // Given: Codex output with multiple agent_message items
       const codexOutputStream = [

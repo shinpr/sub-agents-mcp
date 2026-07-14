@@ -1,13 +1,14 @@
 /**
  * StreamProcessor - Simplified stream processing for agent output
  *
- * Handles cursor, claude, gemini, codex, and grok output in JSON format.
+ * Handles cursor, claude, gemini, codex, grok, and OpenCode output in JSON format.
  * - Cursor/Claude: Use --output-format json, return a single JSON with type: "result"
  * - Gemini: Uses --output-format stream-json, returns multiple JSON lines,
  *           assistant messages contain the response, type: "result" signals completion
  * - Codex: Uses --json flag with exec subcommand, returns stream of JSON events,
  *          agent_message items contain the response, turn.completed signals completion
  * - Grok: Uses --output-format json, returns a complete JSON object after exit
+ * - OpenCode: Uses --format json, returns step and text events as NDJSON
  */
 export class StreamProcessor {
   private resultJson: unknown = null
@@ -16,6 +17,8 @@ export class StreamProcessor {
   private isCodexFormat = false
   private codexAgentMessages: string[] = []
   private codexUsage: unknown = null
+  private isOpenCodeFormat = false
+  private openCodeResponseParts: string[] = []
 
   /**
    * Process a single line from the agent output stream.
@@ -55,6 +58,35 @@ export class StreamProcessor {
       if (json['type'] === 'thread.started') {
         this.isCodexFormat = true
         return false
+      }
+
+      const part = json['part']
+      if (
+        ['step_start', 'tool_use', 'text', 'step_finish'].includes(String(json['type'])) &&
+        this.isRecord(part)
+      ) {
+        this.isOpenCodeFormat = true
+      }
+
+      if (this.isOpenCodeFormat && json['type'] === 'text' && this.isRecord(part)) {
+        if (typeof part['text'] === 'string') {
+          this.openCodeResponseParts.push(part['text'])
+        }
+        return false
+      }
+
+      if (this.isOpenCodeFormat && json['type'] === 'step_finish' && this.isRecord(part)) {
+        const reason = part['reason']
+        if (reason === 'tool-calls' || reason === undefined || reason === null) {
+          return false
+        }
+        this.resultJson = {
+          type: 'result',
+          result: this.openCodeResponseParts.join(''),
+          status: reason === 'stop' ? 'success' : 'partial',
+          stop_reason: reason,
+        }
+        return true
       }
 
       // For Gemini: accumulate assistant message content
@@ -146,20 +178,28 @@ export class StreamProcessor {
 
     try {
       const json = JSON.parse(output.trim()) as unknown
-      if (!this.isRecord(json)) {
-        return false
+      if (this.isRecord(json)) {
+        const normalizedCompleteOutput = this.normalizeCompleteOutput(json)
+        if (normalizedCompleteOutput) {
+          this.resultJson = normalizedCompleteOutput
+          return true
+        }
       }
-
-      const normalizedCompleteOutput = this.normalizeCompleteOutput(json)
-      if (!normalizedCompleteOutput) {
-        return false
-      }
-
-      this.resultJson = normalizedCompleteOutput
-      return true
     } catch {
-      return false
+      // NDJSON streams are expected to fail whole-output JSON parsing.
     }
+
+    if (this.isOpenCodeFormat && this.openCodeResponseParts.length > 0) {
+      this.resultJson = {
+        type: 'result',
+        result: this.openCodeResponseParts.join(''),
+        status: 'partial',
+        stop_reason: 'process-exit',
+      }
+      return true
+    }
+
+    return false
   }
 
   private normalizeCompleteOutput(json: Record<string, unknown>): Record<string, unknown> | null {

@@ -9,6 +9,7 @@ vi.mock('node:fs', () => ({
       readdir: vi.fn(),
       readFile: vi.fn(),
       stat: vi.fn(),
+      realpath: vi.fn(),
     },
   },
 }))
@@ -19,10 +20,16 @@ vi.mock('node:path', () => ({
     resolve: vi.fn(),
     join: vi.fn(),
     basename: vi.fn(),
+    relative: vi.fn(),
+    isAbsolute: vi.fn(),
+    sep: '/',
   },
   resolve: vi.fn(),
   join: vi.fn(),
   basename: vi.fn(),
+  relative: vi.fn(),
+  isAbsolute: vi.fn(),
+  sep: '/',
 }))
 
 // Import mocked modules
@@ -33,9 +40,12 @@ import path from 'node:path'
 const mockReaddir = vi.mocked(fs.promises.readdir)
 const mockReadFile = vi.mocked(fs.promises.readFile)
 const mockStat = vi.mocked(fs.promises.stat)
+const mockRealpath = vi.mocked(fs.promises.realpath)
 const mockResolve = vi.mocked(path.resolve)
 const mockJoin = vi.mocked(path.join)
 const mockBasename = vi.mocked(path.basename)
+const mockRelative = vi.mocked(path.relative)
+const mockIsAbsolute = vi.mocked(path.isAbsolute)
 
 describe('AgentManager', () => {
   let agentManager: AgentManager
@@ -46,9 +56,19 @@ describe('AgentManager', () => {
     mockReaddir.mockClear()
     mockReadFile.mockClear()
     mockStat.mockClear()
+    mockRealpath.mockClear()
     mockResolve.mockClear()
     mockJoin.mockClear()
     mockBasename.mockClear()
+    mockRelative.mockClear()
+    mockIsAbsolute.mockClear()
+
+    mockRealpath.mockImplementation(async (filePath) => filePath)
+    mockRelative.mockImplementation((from, to) => {
+      const prefix = `${from}/`
+      return to.startsWith(prefix) ? to.slice(prefix.length) : `../${to}`
+    })
+    mockIsAbsolute.mockImplementation((filePath) => filePath.startsWith('/'))
 
     // Create mock config
     mockConfig = {
@@ -68,9 +88,12 @@ describe('AgentManager', () => {
     mockReaddir.mockClear()
     mockReadFile.mockClear()
     mockStat.mockClear()
+    mockRealpath.mockClear()
     mockResolve.mockClear()
     mockJoin.mockClear()
     mockBasename.mockClear()
+    mockRelative.mockClear()
+    mockIsAbsolute.mockClear()
   })
 
   describe('File Discovery', () => {
@@ -111,6 +134,76 @@ describe('AgentManager', () => {
       // Assert
       expect(agents).toHaveLength(0)
       expect(mockReaddir).toHaveBeenCalledWith('/test/agents')
+    })
+
+    it('should prefer markdown when .md and .txt definitions share a name', async () => {
+      mockReaddir.mockResolvedValue(['reviewer.txt', 'reviewer.md'] as unknown as fs.Dirent[])
+      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') } as fs.Stats)
+      mockReadFile.mockResolvedValue('# Markdown Reviewer')
+      mockResolve.mockReturnValue('/test/agents')
+      mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
+      mockBasename.mockImplementation((filePath) => filePath.split('/').at(-1) || '')
+
+      const agents = await agentManager.listAgents()
+
+      expect(agents).toHaveLength(1)
+      expect(agents[0]?.filePath).toBe('/test/agents/reviewer.md')
+      expect(mockReadFile).toHaveBeenCalledTimes(1)
+    })
+
+    it('should reject an agent definition symlink that resolves outside AGENTS_DIR', async () => {
+      mockReaddir.mockResolvedValue(['outside.md'] as unknown as fs.Dirent[])
+      mockResolve.mockReturnValue('/test/agents')
+      mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
+      mockRealpath
+        .mockResolvedValueOnce('/test/agents')
+        .mockResolvedValueOnce('/outside/outside.md')
+      mockRelative.mockReturnValue('../../outside/outside.md')
+
+      await expect(agentManager.getAgent('outside')).rejects.toThrow(/resolves outside/)
+      expect(mockReadFile).not.toHaveBeenCalled()
+    })
+
+    it('should preserve the discovered name for a symlink within AGENTS_DIR', async () => {
+      mockReaddir.mockResolvedValue(['alias.md'] as unknown as fs.Dirent[])
+      mockResolve.mockReturnValue('/test/agents')
+      mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
+      mockRealpath
+        .mockResolvedValueOnce('/test/agents')
+        .mockResolvedValueOnce('/test/agents/reviewer.md')
+      mockRelative.mockReturnValue('reviewer.md')
+      mockReadFile.mockResolvedValue('# Reviewer')
+      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') } as fs.Stats)
+
+      const agents = await agentManager.listAgents()
+
+      expect(agents).toHaveLength(1)
+      expect(agents[0]).toMatchObject({
+        name: 'alias',
+        filePath: '/test/agents/reviewer.md',
+      })
+      expect(mockReadFile).toHaveBeenCalledWith('/test/agents/reviewer.md', 'utf-8')
+    })
+
+    it('should skip a broken symlink and continue loading other agents', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const missing = Object.assign(new Error('Missing symlink target'), { code: 'ENOENT' })
+      mockReaddir.mockResolvedValue(['broken.md', 'healthy.md'] as unknown as fs.Dirent[])
+      mockResolve.mockReturnValue('/test/agents')
+      mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
+      mockRealpath
+        .mockResolvedValueOnce('/test/agents')
+        .mockRejectedValueOnce(missing)
+        .mockResolvedValueOnce('/test/agents/healthy.md')
+      mockRelative.mockReturnValue('healthy.md')
+      mockReadFile.mockResolvedValue('# Healthy Agent')
+      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') } as fs.Stats)
+
+      const agents = await agentManager.listAgents()
+
+      expect(agents).toHaveLength(1)
+      expect(agents[0]?.name).toBe('healthy')
+      expect(consoleSpy).toHaveBeenCalled()
     })
 
     it('should handle directory read errors', async () => {
@@ -319,7 +412,8 @@ This agent does amazing things.`
 
       mockReaddir.mockResolvedValue(mockFiles as unknown as fs.Dirent[])
       mockStat.mockResolvedValue(mockStats as fs.Stats)
-      mockReadFile.mockResolvedValueOnce(targetContent).mockResolvedValueOnce(otherContent)
+      // Discovery is sorted by agent name, so other-agent is loaded first.
+      mockReadFile.mockResolvedValueOnce(otherContent).mockResolvedValueOnce(targetContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
       mockBasename.mockImplementation((filePath) => {

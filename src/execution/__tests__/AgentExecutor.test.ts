@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExecutionParams } from '../../types/ExecutionParams.js'
 import {
@@ -22,6 +23,7 @@ import { spawn as mockSpawn } from 'node:child_process'
  */
 function createMockProcess(options: {
   stdoutData?: string
+  stdoutChunks?: Buffer[]
   stdoutDelay?: number
   stderrData?: string
   exitCode?: number
@@ -31,6 +33,7 @@ function createMockProcess(options: {
 }) {
   const {
     stdoutData,
+    stdoutChunks,
     stdoutDelay = 10,
     stderrData,
     exitCode = 0,
@@ -39,12 +42,17 @@ function createMockProcess(options: {
     triggerError,
   } = options
 
+  let closeCallback: ((code: number | null, signal?: NodeJS.Signals | null) => void) | undefined
+
   return {
     stdin: { end: vi.fn() },
     stdout: {
       on: vi.fn((event: string, callback: (data: Buffer) => void) => {
-        if (event === 'data' && stdoutData) {
-          setTimeout(() => callback(Buffer.from(stdoutData)), stdoutDelay)
+        if (event === 'data') {
+          const chunks = stdoutChunks ?? (stdoutData ? [Buffer.from(stdoutData)] : [])
+          chunks.forEach((chunk, index) => {
+            setTimeout(() => callback(chunk), stdoutDelay * (index + 1))
+          })
         }
       }),
     },
@@ -56,14 +64,22 @@ function createMockProcess(options: {
       }),
     },
     on: vi.fn((event: string, callback: (...args: unknown[]) => void) => {
-      if (event === 'close' && !noClose) {
-        setTimeout(() => callback(exitCode), closeDelay)
+      if (event === 'close') {
+        closeCallback = callback
+        if (!noClose) {
+          setTimeout(() => callback(exitCode), closeDelay)
+        }
       }
       if (event === 'error' && triggerError) {
         setTimeout(() => callback(triggerError), stdoutDelay)
       }
     }),
-    kill: vi.fn(),
+    kill: vi.fn((signal?: NodeJS.Signals) => {
+      if (noClose && signal === 'SIGKILL') {
+        setTimeout(() => closeCallback?.(null, 'SIGKILL'), 0)
+      }
+      return true
+    }),
   } as any
 }
 
@@ -92,6 +108,7 @@ describe('AgentExecutor', () => {
 
       expect(config.agentType).toBe('cursor')
       expect(config.executionTimeout).toBe(DEFAULT_EXECUTION_TIMEOUT)
+      expect(config.maxOutputBytes).toBeGreaterThan(0)
     })
 
     it('should allow overriding execution timeout', () => {
@@ -108,6 +125,7 @@ describe('AgentExecutor', () => {
       const codexConfig = createExecutionConfig('codex')
       const glmConfig = createExecutionConfig('glm')
       const grokConfig = createExecutionConfig('grok')
+      const openCodeConfig = createExecutionConfig('opencode')
 
       expect(cursorConfig.agentType).toBe('cursor')
       expect(claudeConfig.agentType).toBe('claude')
@@ -115,6 +133,7 @@ describe('AgentExecutor', () => {
       expect(codexConfig.agentType).toBe('codex')
       expect(glmConfig.agentType).toBe('glm')
       expect(grokConfig.agentType).toBe('grok')
+      expect(openCodeConfig.agentType).toBe('opencode')
     })
 
     it('should allow setting agentsSettingsPath', () => {
@@ -187,6 +206,136 @@ describe('AgentExecutor', () => {
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
       expect(mockSpawn).toHaveBeenCalledWith('grok', expect.any(Array), expect.any(Object))
+    })
+
+    it('should use opencode run with non-interactive JSON output', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('opencode'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'opencode',
+        expect.arrayContaining(['run', '--format', 'json', '--auto']),
+        expect.any(Object)
+      )
+    })
+  })
+
+  describe('global model and effort options', () => {
+    it('should pass AGENT_MODEL as --model', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('codex', { model: 'gpt-5.6-luna' }))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(mockSpawn.mock.calls[0][1]).toEqual(
+        expect.arrayContaining(['--model', 'gpt-5.6-luna'])
+      )
+    })
+
+    it.each([
+      { agentType: 'codex', expected: ['-c', 'model_reasoning_effort="high"'] },
+      { agentType: 'claude', expected: ['--effort', 'high'] },
+      { agentType: 'glm', expected: ['--effort', 'high'] },
+      { agentType: 'grok', expected: ['--reasoning-effort', 'high'] },
+      { agentType: 'opencode', expected: ['--variant', 'high'] },
+    ] as const)('should map effort for $agentType', async ({ agentType, expected }) => {
+      const executor = new AgentExecutor(
+        createExecutionConfig(agentType, {
+          effort: 'high',
+          ...(agentType === 'glm' && { glmApiKey: 'zai-secret' }),
+        })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(mockSpawn.mock.calls[0][1]).toEqual(expect.arrayContaining(expected))
+    })
+
+    it.each([
+      'cursor',
+      'gemini',
+    ] as const)('should reject effort for %s when construction bypasses ServerConfig', async (agentType) => {
+      const executor = new AgentExecutor(createExecutionConfig(agentType, { effort: 'high' }))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      })
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toMatch(/AGENT_EFFORT is not supported/)
+      expect(mockSpawn).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('OpenCode isolation and permissions', () => {
+    it.each([
+      { permission: 'read-only', edit: 'deny', externalDirectory: 'deny' },
+      { permission: 'safe-edit', edit: 'allow', externalDirectory: 'deny' },
+    ] as const)('should map $permission permissions without changing the global backend model', async ({
+      permission,
+      edit,
+      externalDirectory,
+    }) => {
+      const executor = new AgentExecutor(
+        createExecutionConfig('opencode', { permission, model: 'provider/model' })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const options = mockSpawn.mock.calls[0][2]
+      const permissionConfig = JSON.parse(options.env.OPENCODE_PERMISSION)
+      expect(permissionConfig.edit).toBe(edit)
+      expect(permissionConfig.external_directory).toBe(externalDirectory)
+      expect(mockSpawn.mock.calls[0][1]).toEqual(
+        expect.arrayContaining(['--model', 'provider/model'])
+      )
+    })
+
+    it('should isolate and clean OpenCode data and state directories per run', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('opencode'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const options = mockSpawn.mock.calls[0][2]
+      expect(options.env.XDG_DATA_HOME).toContain('subagent-opencode-')
+      expect(options.env.XDG_STATE_HOME).toContain('subagent-opencode-')
+      expect(fs.existsSync(options.env.XDG_DATA_HOME)).toBe(false)
+      expect(fs.existsSync(options.env.XDG_STATE_HOME)).toBe(false)
+    })
+
+    it('should copy existing OpenCode authentication into the isolated data home', async () => {
+      vi.stubEnv('XDG_DATA_HOME', '/user/data')
+      const copySpy = vi.spyOn(fs.promises, 'copyFile').mockResolvedValue()
+      const executor = new AgentExecutor(createExecutionConfig('opencode'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(copySpy).toHaveBeenCalledWith(
+        '/user/data/opencode/auth.json',
+        expect.stringMatching(/subagent-opencode-.*\/data\/opencode\/auth\.json$/)
+      )
+    })
+
+    it('should warn and continue when OpenCode authentication cannot be copied', async () => {
+      const copyError = Object.assign(new Error('Permission denied'), { code: 'EACCES' })
+      vi.spyOn(fs.promises, 'copyFile').mockRejectedValue(copyError)
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const executor = new AgentExecutor(createExecutionConfig('opencode'))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(
+        consoleSpy.mock.calls.some(([message]) =>
+          String(message).includes('Could not copy OpenCode authentication')
+        )
+      ).toBe(true)
     })
   })
 
@@ -636,6 +785,29 @@ describe('AgentExecutor', () => {
         request_id: 'request-123',
       })
     })
+
+    it('should return partial OpenCode text when the finish event is missing', async () => {
+      mockSpawn.mockImplementationOnce(() =>
+        createMockProcess({
+          stdoutData: '{"type":"text","part":{"text":"partial answer"}}',
+        })
+      )
+      const executor = new AgentExecutor(createExecutionConfig('opencode'))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      })
+
+      expect(result.hasResult).toBe(true)
+      expect(result.resultJson).toEqual({
+        type: 'result',
+        result: 'partial answer',
+        status: 'partial',
+        stop_reason: 'process-exit',
+      })
+    })
   })
 
   describe('execution performance monitoring', () => {
@@ -888,6 +1060,27 @@ describe('AgentExecutor', () => {
       expect(result.resultJson).toBeDefined()
     })
 
+    it('should preserve a result when SIGTERM escalates to SIGKILL', async () => {
+      mockSpawn.mockImplementationOnce(() =>
+        createMockProcess({
+          stdoutData: '{"type": "result", "data": "Success"}\n',
+          noClose: true,
+        })
+      )
+      const executor = new AgentExecutor(
+        createExecutionConfig('cursor', { executionTimeout: 5000 })
+      )
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Stream JSON data',
+        cwd: '/tmp',
+      })
+
+      expect(result.exitCode).toBe(137)
+      expect(result.hasResult).toBe(true)
+    })
+
     it('should distinguish timeout with partial result from complete timeout', async () => {
       mockSpawn.mockImplementationOnce(() =>
         createMockProcess({
@@ -908,6 +1101,77 @@ describe('AgentExecutor', () => {
       expect(result.exitCode).toBe(124)
       expect(result.hasResult).toBe(true)
       expect(result.resultJson).toEqual({ type: 'result', partial: true })
+    })
+  })
+
+  describe('process resource limits', () => {
+    it('should stop and report an error when combined output exceeds the capture limit', async () => {
+      mockSpawn.mockImplementationOnce(() =>
+        createMockProcess({
+          stdoutData: 'output larger than the configured limit',
+        })
+      )
+      const executor = new AgentExecutor(createExecutionConfig('cursor', { maxOutputBytes: 8 }))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Produce output',
+        cwd: '/tmp',
+      })
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('exceeded 8 bytes')
+      expect(result.stdout).toBe('output l')
+      expect(mockSpawn.mock.results[0]?.value.kill).toHaveBeenCalledWith('SIGTERM')
+    })
+
+    it('should decode UTF-8 characters split across stdout chunks', async () => {
+      const output = Buffer.from('{"type":"result","data":"日本語"}\n')
+      const splitAt = output.indexOf(Buffer.from('日')) + 1
+      mockSpawn.mockImplementationOnce(() =>
+        createMockProcess({
+          stdoutChunks: [output.subarray(0, splitAt), output.subarray(splitAt)],
+        })
+      )
+      const executor = new AgentExecutor(createExecutionConfig('cursor'))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Produce output',
+        cwd: '/tmp',
+      })
+
+      expect(result.resultJson).toEqual({ type: 'result', data: '日本語' })
+    })
+
+    it('should not emit a replacement character when the byte cap splits UTF-8', async () => {
+      mockSpawn.mockImplementationOnce(() => createMockProcess({ stdoutData: 'abc日' }))
+      const executor = new AgentExecutor(createExecutionConfig('cursor', { maxOutputBytes: 4 }))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Produce output',
+        cwd: '/tmp',
+      })
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('abc')
+      expect(result.stdout).not.toContain('�')
+    })
+
+    it('should return exit code 127 when the CLI cannot be spawned', async () => {
+      const unavailable = Object.assign(new Error('spawn cursor-agent ENOENT'), { code: 'ENOENT' })
+      mockSpawn.mockImplementationOnce(() => createMockProcess({ triggerError: unavailable }))
+      const executor = new AgentExecutor(createExecutionConfig('cursor'))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Run',
+        cwd: '/tmp',
+      })
+
+      expect(result.exitCode).toBe(127)
+      expect(result.stderr).toContain('ENOENT')
     })
   })
 })
