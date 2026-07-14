@@ -90,12 +90,22 @@ export class AgentManager {
    */
   private async loadAgentsFromDirectory(): Promise<Map<string, AgentDefinition>> {
     try {
-      const agentsDir = path.resolve(this.config.agentsDir)
+      const agentsDir = await fs.promises.realpath(path.resolve(this.config.agentsDir))
       this.logger.info('Starting agent discovery', { directory: agentsDir })
 
       const files = await fs.promises.readdir(agentsDir)
 
-      const agentFiles = files.filter((file) => file.endsWith('.md') || file.endsWith('.txt'))
+      const agentFiles = files
+        .filter((file) => file.endsWith('.md') || file.endsWith('.txt'))
+        .sort((left, right) => {
+          const leftName = left.replace(/\.(md|txt)$/, '')
+          const rightName = right.replace(/\.(md|txt)$/, '')
+          const nameOrder = leftName.localeCompare(rightName)
+          if (nameOrder !== 0) return nameOrder
+          if (left.endsWith('.md') && right.endsWith('.txt')) return -1
+          if (left.endsWith('.txt') && right.endsWith('.md')) return 1
+          return left.localeCompare(right)
+        })
 
       this.logger.info('Agent definition files discovered', {
         totalFiles: files.length,
@@ -107,22 +117,42 @@ export class AgentManager {
 
       for (const file of agentFiles) {
         const filePath = path.join(agentsDir, file)
+        const agentName = file.replace(/\.(md|txt)$/, '')
+        if (agents.has(agentName)) {
+          this.logger.warn('Duplicate agent definition ignored', {
+            name: agentName,
+            filePath,
+            selectedFilePath: agents.get(agentName)?.filePath,
+          })
+          continue
+        }
+
+        let resolvedFilePath: string
         try {
-          const agent = await this.loadAgentFromFile(filePath)
-          if (agent) {
-            agents.set(agent.name, agent)
-            this.logger.debug('Agent definition loaded successfully', {
-              name: agent.name,
-              filePath: agent.filePath,
-              description: agent.description,
-            })
-          }
+          resolvedFilePath = await fs.promises.realpath(filePath)
         } catch (error) {
           this.logger.error(
-            'Failed to load agent definition from file',
+            'Failed to resolve agent definition file',
             error instanceof Error ? error : undefined,
             { filePath }
           )
+          continue
+        }
+
+        if (!this.isWithinDirectory(agentsDir, resolvedFilePath)) {
+          throw new Error(
+            `Agent definition resolves outside the configured agents directory: ${file}`
+          )
+        }
+
+        const agent = await this.loadAgentFromFile(resolvedFilePath, agentName)
+        if (agent) {
+          agents.set(agentName, agent)
+          this.logger.debug('Agent definition loaded successfully', {
+            name: agent.name,
+            filePath: agent.filePath,
+            description: agent.description,
+          })
         }
       }
 
@@ -138,6 +168,9 @@ export class AgentManager {
         error instanceof Error ? error : undefined,
         { directory: this.config.agentsDir }
       )
+      if (error instanceof Error && error.message.startsWith('Agent definition resolves outside')) {
+        throw error
+      }
       throw new Error(`Failed to load agents from directory: ${this.config.agentsDir}`)
     }
   }
@@ -145,19 +178,19 @@ export class AgentManager {
   /**
    * Loads and parses a single agent definition from a file.
    *
-   * @param filePath - Absolute path to the agent definition file
+   * @param resolvedFilePath - Validated real path used for reading the definition
+   * @param agentName - Agent name derived from the discovered directory entry
    * @returns Promise resolving to the parsed agent definition or undefined
    */
-  private async loadAgentFromFile(filePath: string): Promise<AgentDefinition | undefined> {
+  private async loadAgentFromFile(
+    resolvedFilePath: string,
+    agentName: string
+  ): Promise<AgentDefinition | undefined> {
     try {
-      this.logger.debug('Loading agent definition from file', { filePath })
+      this.logger.debug('Loading agent definition from file', { filePath: resolvedFilePath })
 
-      const content = await fs.promises.readFile(filePath, 'utf-8')
-      const stats = await fs.promises.stat(filePath)
-
-      // Extract agent name from filename (without extension)
-      const fileName = path.basename(filePath)
-      const agentName = fileName.replace(/\.(md|txt)$/, '')
+      const content = await fs.promises.readFile(resolvedFilePath, 'utf-8')
+      const stats = await fs.promises.stat(resolvedFilePath)
 
       // Parse description from content (first line or first heading)
       const description = this.extractDescription(content)
@@ -166,7 +199,7 @@ export class AgentManager {
         name: agentName,
         description,
         content,
-        filePath,
+        filePath: resolvedFilePath,
         lastModified: stats.mtime,
       }
 
@@ -182,10 +215,18 @@ export class AgentManager {
       this.logger.error(
         'Error reading agent definition file',
         error instanceof Error ? error : undefined,
-        { filePath }
+        { filePath: resolvedFilePath }
       )
       return undefined
     }
+  }
+
+  private isWithinDirectory(root: string, candidate: string): boolean {
+    const relative = path.relative(root, candidate)
+    return (
+      relative === '' ||
+      (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+    )
   }
 
   /**

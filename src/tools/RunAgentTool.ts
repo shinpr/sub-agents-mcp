@@ -579,7 +579,14 @@ export class RunAgentTool {
     // Priority 2: Check process exit code (excluding special cases)
     // 143: SIGTERM (normal termination)
     // 124: Timeout (may have partial result)
-    return exitCode !== 0 && exitCode !== 143 && exitCode !== 124
+    // 137: SIGKILL after a complete result when the CLI ignores our SIGTERM
+    const hasStructuredResult = resultJson !== null && resultJson !== undefined
+    return (
+      exitCode !== 0 &&
+      exitCode !== 143 &&
+      exitCode !== 124 &&
+      !(exitCode === 137 && hasStructuredResult)
+    )
   }
 
   private isPartialResult(resultJson: unknown): boolean {
@@ -625,7 +632,9 @@ export class RunAgentTool {
 
     const isSuccess =
       (!isPartialSuccess && result.exitCode === 0) || // Normal completion
-      (!isPartialSuccess && result.exitCode === 143 && result.hasResult === true) // SIGTERM with result
+      (!isPartialSuccess &&
+        (result.exitCode === 143 || result.exitCode === 137) &&
+        result.hasResult === true) // Terminated after receiving a result
 
     // Build response data structure (ADR-0003)
     // This object is used in both content[0].text and structuredContent

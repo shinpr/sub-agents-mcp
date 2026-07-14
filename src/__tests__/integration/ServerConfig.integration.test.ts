@@ -50,6 +50,7 @@ describe('ServerConfig', () => {
     'codex',
     'glm',
     'grok',
+    'opencode',
   ] as const)('should accept AGENT_TYPE=%s', (agentType) => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('AGENT_TYPE', agentType)
@@ -139,6 +140,42 @@ describe('ServerConfig', () => {
     vi.stubEnv('AGENT_PERMISSION', 'godmode')
 
     expect(() => new ServerConfig()).toThrow(/Invalid AGENT_PERMISSION/)
+  })
+
+  describe('model and effort configuration', () => {
+    it('should load global AGENT_MODEL and AGENT_EFFORT values', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('AGENT_TYPE', 'codex')
+      vi.stubEnv('AGENT_MODEL', 'gpt-5.6-luna')
+      vi.stubEnv('AGENT_EFFORT', 'high')
+
+      const config = new ServerConfig()
+
+      expect(config.agentModel).toBe('gpt-5.6-luna')
+      expect(config.agentEffort).toBe('high')
+    })
+
+    it('should treat blank model and effort values as unset', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('AGENT_MODEL', '   ')
+      vi.stubEnv('AGENT_EFFORT', '')
+
+      const config = new ServerConfig()
+
+      expect(config.agentModel).toBeUndefined()
+      expect(config.agentEffort).toBeUndefined()
+    })
+
+    it.each([
+      'cursor',
+      'gemini',
+    ] as const)('should reject AGENT_EFFORT for AGENT_TYPE=%s', (agentType) => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('AGENT_TYPE', agentType)
+      vi.stubEnv('AGENT_EFFORT', 'high')
+
+      expect(() => new ServerConfig()).toThrow(/AGENT_EFFORT is not supported/)
+    })
   })
 
   it('should throw error when LOG_LEVEL is an unsupported value', () => {

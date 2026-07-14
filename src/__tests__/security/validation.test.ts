@@ -276,9 +276,9 @@ describe('Security Validation Tests', () => {
 
       // Verify the loaded agent file path is within the allowed directory
       expect(agent.filePath).toContain(testAgentsDir)
-      const resolvedAgentPath = path.resolve(agent.filePath)
-      const resolvedTestDir = path.resolve(testAgentsDir)
-      expect(resolvedAgentPath.startsWith(resolvedTestDir)).toBe(true)
+      const resolvedAgentPath = await fs.realpath(agent.filePath)
+      const resolvedTestDir = await fs.realpath(testAgentsDir)
+      expect(path.relative(resolvedTestDir, resolvedAgentPath).startsWith('..')).toBe(false)
     })
   })
 

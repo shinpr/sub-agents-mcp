@@ -325,6 +325,44 @@ describe('RunAgentTool', () => {
       expect(result.structuredContent).toHaveProperty('exit_code', 1)
     })
 
+    it('should return normalized agent errors without nested raw JSON', async () => {
+      const params = {
+        agent: 'failing-agent',
+        prompt: 'Test prompt',
+        cwd: process.cwd(),
+      }
+      const errorMessage = 'UnknownError: Provider failed (ref: error-ref, sessionID: session-123)'
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: '{"type":"error"}',
+        stderr: '',
+        exitCode: 1,
+        executionTime: 50,
+        hasResult: true,
+        resultJson: {
+          type: 'result',
+          subtype: 'error',
+          is_error: true,
+          error: errorMessage,
+          error_type: 'UnknownError',
+          error_ref: 'error-ref',
+          session_id: 'session-123',
+        },
+      })
+
+      const result = await runAgentTool.execute(params)
+      const textContent = result.content.find((content) => content.type === 'text')
+      const parsedContent = JSON.parse(textContent?.text || '{}')
+
+      expect(result.isError).toBe(true)
+      expect(parsedContent).toMatchObject({
+        result: errorMessage,
+        exit_code: 1,
+        status: 'error',
+      })
+      expect(parsedContent.result).not.toContain('{"type":"error"}')
+    })
+
     it('should include execution metadata in response', async () => {
       const params = {
         agent: 'test-agent',
@@ -610,6 +648,30 @@ describe('RunAgentTool', () => {
       expect(result.structuredContent).toMatchObject({
         status: 'success',
         exit_code: 0,
+      })
+    })
+
+    it('should treat exit code 137 as success when a structured result was received', async () => {
+      const params = {
+        agent: 'normal-agent',
+        prompt: 'Test forced process cleanup',
+        cwd: process.cwd(),
+      }
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: '{"type":"result","result":"Completed"}',
+        stderr: '',
+        exitCode: 137,
+        executionTime: 100,
+        hasResult: true,
+        resultJson: { type: 'result', result: 'Completed' },
+      })
+
+      const result = await runAgentTool.execute(params)
+
+      expect(result.structuredContent).toMatchObject({
+        result: 'Completed',
+        status: 'success',
+        exit_code: 137,
       })
     })
 

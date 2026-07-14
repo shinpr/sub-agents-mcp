@@ -76,6 +76,8 @@ export class McpServer {
     const executionConfig = createExecutionConfig(config.agentType, {
       executionTimeout: config.executionTimeoutMs,
       permission: config.agentPermission,
+      ...(config.agentModel && { model: config.agentModel }),
+      ...(config.agentEffort && { effort: config.agentEffort }),
       ...(config.agentsSettingsPath && { agentsSettingsPath: config.agentsSettingsPath }),
       ...(config.cursorApiKey && { cursorApiKey: config.cursorApiKey }),
       ...(config.glmApiKey && { glmApiKey: config.glmApiKey }),

@@ -6,6 +6,7 @@ import {
   DEFAULT_AGENT_PERMISSION,
   isAgentPermission,
   isAgentType,
+  supportsAgentEffort,
 } from '../execution/AgentExecutor.js'
 import { isLogLevel, LOG_LEVELS, type LogLevel } from '../utils/Logger.js'
 
@@ -19,8 +20,10 @@ import { isLogLevel, LOG_LEVELS, type LogLevel } from '../utils/Logger.js'
  * - SERVER_NAME: Name identifier for the MCP server (default: 'sub-agents-mcp-server')
  * - SERVER_VERSION: Version of the MCP server (default: '1.0.0')
  * - AGENTS_DIR: Directory containing agent definition files (REQUIRED - must be absolute path)
- * - AGENT_TYPE: Type of agent to use ('cursor' | 'claude' | 'gemini' | 'codex' | 'glm' | 'grok') (default: 'cursor')
+ * - AGENT_TYPE: Type of agent to use (default: 'cursor')
  * - AGENT_PERMISSION: Approval/sandbox level for sub-agents ('read-only' | 'safe-edit' | 'yolo') (default: 'safe-edit')
+ * - AGENT_MODEL: Optional model override for every agent execution
+ * - AGENT_EFFORT: Optional backend-specific reasoning effort/model variant
  * - LOG_LEVEL: Log level for server operations (default: 'info')
  * - SESSION_ENABLED: Enable session management functionality (default: false)
  * - SESSION_DIR: Directory for storing session files (default: '.mcp-sessions')
@@ -42,6 +45,12 @@ export class ServerConfig {
 
   /** Approval/sandbox level for sub-agent execution */
   public readonly agentPermission: AgentPermission
+
+  /** Optional model override applied to every execution */
+  public readonly agentModel: string | undefined
+
+  /** Optional backend-specific reasoning effort or model variant */
+  public readonly agentEffort: string | undefined
 
   /** Log level for server operations */
   public readonly logLevel: LogLevel
@@ -116,6 +125,18 @@ export class ServerConfig {
       )
     }
 
+    const agentModelEnv = process.env['AGENT_MODEL']?.trim()
+    this.agentModel = agentModelEnv || undefined
+
+    const agentEffortEnv = process.env['AGENT_EFFORT']?.trim()
+    this.agentEffort = agentEffortEnv || undefined
+    if (this.agentEffort && !supportsAgentEffort(this.agentType)) {
+      throw new Error(
+        `AGENT_EFFORT is not supported for AGENT_TYPE="${this.agentType}". ` +
+          'Supported types: codex, claude, glm, grok, opencode.'
+      )
+    }
+
     const logLevelEnv = process.env['LOG_LEVEL']?.trim()
     if (!logLevelEnv) {
       this.logLevel = 'info'
@@ -155,7 +176,7 @@ export class ServerConfig {
     // - Claude: passed as --settings argument
     // - Cursor: set as CURSOR_CONFIG_DIR environment variable
     // - Codex: set as CODEX_HOME environment variable
-    // - Gemini/Grok: not supported (upstream limitation)
+    // - Gemini/Grok/OpenCode: not supported (upstream limitation or normal config discovery)
     this.agentsSettingsPath = process.env['AGENTS_SETTINGS_PATH'] || undefined
 
     // Cursor API key: prefer CURSOR_API_KEY, fall back to CLI_API_KEY for backward compatibility
