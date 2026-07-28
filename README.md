@@ -1,5 +1,7 @@
 # Sub-Agents MCP Server
 
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.shinpr%2Fsub-agents-mcp.svg)](https://mcptoplist.com/server/io.github.shinpr%2Fsub-agents-mcp)
+
 [![npm version](https://img.shields.io/npm/v/sub-agents-mcp.svg)](https://www.npmjs.com/package/sub-agents-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
