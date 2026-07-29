@@ -81,6 +81,7 @@ export class McpServer {
       ...(config.agentsSettingsPath && { agentsSettingsPath: config.agentsSettingsPath }),
       ...(config.cursorApiKey && { cursorApiKey: config.cursorApiKey }),
       ...(config.glmApiKey && { glmApiKey: config.glmApiKey }),
+      ...(config.kimiApiKey && { kimiApiKey: config.kimiApiKey }),
     })
 
     // Create logger with log level from config
@@ -383,7 +384,9 @@ export class McpServer {
    * List available tools (for testing)
    * @returns Promise resolving to array of tool definitions
    */
-  async listTools(): Promise<Array<{ name: string; description: string; inputSchema: unknown }>> {
+  async listTools(): Promise<
+    Array<{ name: string; description: string; inputSchema: RunAgentTool['inputSchema'] }>
+  > {
     return [
       {
         name: this.runAgentTool.name,
@@ -412,7 +415,10 @@ export class McpServer {
    * @param params - Tool parameters
    * @returns Promise resolving to tool response
    */
-  async callTool(toolName: string, params: unknown): Promise<unknown> {
+  async callTool(
+    toolName: string,
+    params: unknown
+  ): Promise<Awaited<ReturnType<RunAgentTool['execute']>>> {
     if (toolName === 'run_agent') {
       return await this.runAgentTool.execute(params)
     }
@@ -424,7 +430,7 @@ export class McpServer {
    * @param uri - Resource URI to read
    * @returns Promise resolving to resource content
    */
-  async readResource(uri: string): Promise<unknown> {
+  async readResource(uri: string): Promise<Awaited<ReturnType<AgentResources['readResource']>>> {
     if (!this.agentResources.isValidResourceUri(uri)) {
       throw new ValidationError(`Invalid resource URI: ${uri}`, 'INVALID_RESOURCE_URI')
     }

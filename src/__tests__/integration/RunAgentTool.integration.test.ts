@@ -24,6 +24,8 @@ describe('RunAgentTool', () => {
       agentsDir: './test-agents',
       agentType: 'cursor',
       agentPermission: 'safe-edit',
+      agentModel: undefined,
+      agentEffort: undefined,
       logLevel: 'info',
       executionTimeoutMs: 300000,
       sessionEnabled: false,
@@ -32,6 +34,7 @@ describe('RunAgentTool', () => {
       agentsSettingsPath: undefined,
       cursorApiKey: undefined,
       glmApiKey: undefined,
+      kimiApiKey: undefined,
     }
 
     const executionConfig = createExecutionConfig('cursor')
@@ -107,7 +110,6 @@ describe('RunAgentTool', () => {
         executionTime: 100,
         hasResult: false,
         resultJson: undefined,
-        estimatedOutputSize: 1024,
       })
 
       const result = await runAgentTool.execute(params)
@@ -139,7 +141,6 @@ describe('RunAgentTool', () => {
         executionTime: 100,
         hasResult: false,
         resultJson: undefined,
-        estimatedOutputSize: 1024,
       })
 
       const result = await runAgentTool.execute(params)
@@ -214,7 +215,6 @@ describe('RunAgentTool', () => {
         executionTime: 100,
         hasResult: false,
         resultJson: undefined,
-        estimatedOutputSize: 1024,
       })
 
       const result = await runAgentTool.execute(params)

@@ -1,12 +1,12 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "types": ["node", "vitest/globals"],
     // Test files don't need super strict type checking
     "noUncheckedIndexedAccess": false,
     "exactOptionalPropertyTypes": false,
     "noPropertyAccessFromIndexSignature": false,
     "noUnusedLocals": false,
-    "noUnusedParameters": false,
     "noUnusedParameters": false
   },
   "include": ["src/**/*.test.ts", "src/**/*.spec.ts"],

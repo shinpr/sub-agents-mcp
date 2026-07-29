@@ -8,7 +8,9 @@ vi.mock('node:child_process', () => ({
 }))
 
 // Import the mocked module to get references
-import { spawn as mockSpawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
+
+const mockSpawn = vi.mocked(spawn)
 
 describe('AgentExecutor Integration', () => {
   let executor: AgentExecutor
@@ -19,7 +21,7 @@ describe('AgentExecutor Integration', () => {
     executor = new AgentExecutor(testConfig)
 
     // Setup spawn mock for integration tests
-    mockSpawn.mockImplementation((_cmd: string, args: string[], _options: any) => {
+    mockSpawn.mockImplementation((_cmd: string, args: readonly string[], _options: any) => {
       // Extract the prompt which should be the last argument after -p flag
       const promptIndex = args.indexOf('-p')
       const prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''

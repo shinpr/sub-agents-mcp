@@ -21,6 +21,8 @@ describe('McpServer Integration', () => {
       logLevel: 'info',
       agentType: 'cursor',
       agentPermission: 'safe-edit',
+      agentModel: undefined,
+      agentEffort: undefined,
       executionTimeoutMs: 300000,
       sessionEnabled: false,
       sessionDir: '.mcp-sessions',
@@ -28,6 +30,7 @@ describe('McpServer Integration', () => {
       agentsSettingsPath: undefined,
       cursorApiKey: undefined,
       glmApiKey: undefined,
+      kimiApiKey: undefined,
     }
   })
 

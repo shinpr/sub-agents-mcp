@@ -1,5 +1,6 @@
+import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import fs from 'node:fs'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import type { ExecutionParams } from '../../types/ExecutionParams.js'
 import {
   AgentExecutor,
@@ -15,7 +16,12 @@ vi.mock('node:child_process', () => ({
 }))
 
 // Import the mocked module to get references
-import { spawn as mockSpawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
+
+type SpawnMockOptions = SpawnOptions & { env: NodeJS.ProcessEnv }
+const mockSpawn = spawn as unknown as Mock<
+  (command: string, args: string[], options: SpawnMockOptions) => ChildProcess
+>
 
 /**
  * Creates a minimal mock process for spawn.
@@ -124,6 +130,7 @@ describe('AgentExecutor', () => {
       const geminiConfig = createExecutionConfig('gemini')
       const codexConfig = createExecutionConfig('codex')
       const glmConfig = createExecutionConfig('glm')
+      const kimiConfig = createExecutionConfig('kimi')
       const grokConfig = createExecutionConfig('grok')
       const openCodeConfig = createExecutionConfig('opencode')
 
@@ -132,6 +139,7 @@ describe('AgentExecutor', () => {
       expect(geminiConfig.agentType).toBe('gemini')
       expect(codexConfig.agentType).toBe('codex')
       expect(glmConfig.agentType).toBe('glm')
+      expect(kimiConfig.agentType).toBe('kimi')
       expect(grokConfig.agentType).toBe('grok')
       expect(openCodeConfig.agentType).toBe('opencode')
     })
@@ -200,6 +208,16 @@ describe('AgentExecutor', () => {
       expect(mockSpawn).toHaveBeenCalledWith('claude', expect.any(Array), expect.any(Object))
     })
 
+    it('should use claude command for kimi type', async () => {
+      const executor = new AgentExecutor(
+        createExecutionConfig('kimi', { kimiApiKey: 'kimi-secret' })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(mockSpawn).toHaveBeenCalledWith('claude', expect.any(Array), expect.any(Object))
+    })
+
     it('should use grok command for grok type', async () => {
       const executor = new AgentExecutor(createExecutionConfig('grok'))
 
@@ -232,10 +250,26 @@ describe('AgentExecutor', () => {
       )
     })
 
+    it('should pass AGENT_MODEL to kimi through the claude CLI', async () => {
+      const executor = new AgentExecutor(
+        createExecutionConfig('kimi', {
+          kimiApiKey: 'kimi-secret',
+          model: 'kimi-for-coding',
+        })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(mockSpawn.mock.calls[0][1]).toEqual(
+        expect.arrayContaining(['--model', 'kimi-for-coding'])
+      )
+    })
+
     it.each([
       { agentType: 'codex', expected: ['-c', 'model_reasoning_effort="high"'] },
       { agentType: 'claude', expected: ['--effort', 'high'] },
       { agentType: 'glm', expected: ['--effort', 'high'] },
+      { agentType: 'kimi', expected: ['--effort', 'high'] },
       { agentType: 'grok', expected: ['--reasoning-effort', 'high'] },
       { agentType: 'opencode', expected: ['--variant', 'high'] },
     ] as const)('should map effort for $agentType', async ({ agentType, expected }) => {
@@ -243,12 +277,13 @@ describe('AgentExecutor', () => {
         createExecutionConfig(agentType, {
           effort: 'high',
           ...(agentType === 'glm' && { glmApiKey: 'zai-secret' }),
+          ...(agentType === 'kimi' && { kimiApiKey: 'kimi-secret' }),
         })
       )
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      expect(mockSpawn.mock.calls[0][1]).toEqual(expect.arrayContaining(expected))
+      expect(mockSpawn.mock.calls[0][1]).toEqual(expect.arrayContaining([...expected]))
     })
 
     it.each([
@@ -285,7 +320,11 @@ describe('AgentExecutor', () => {
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
       const options = mockSpawn.mock.calls[0][2]
-      const permissionConfig = JSON.parse(options.env.OPENCODE_PERMISSION)
+      const permissionJson = options.env.OPENCODE_PERMISSION
+      if (!permissionJson) {
+        throw new Error('Expected OpenCode permission configuration')
+      }
+      const permissionConfig = JSON.parse(permissionJson)
       expect(permissionConfig.edit).toBe(edit)
       expect(permissionConfig.external_directory).toBe(externalDirectory)
       expect(mockSpawn.mock.calls[0][1]).toEqual(
@@ -299,10 +338,15 @@ describe('AgentExecutor', () => {
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
       const options = mockSpawn.mock.calls[0][2]
-      expect(options.env.XDG_DATA_HOME).toContain('subagent-opencode-')
-      expect(options.env.XDG_STATE_HOME).toContain('subagent-opencode-')
-      expect(fs.existsSync(options.env.XDG_DATA_HOME)).toBe(false)
-      expect(fs.existsSync(options.env.XDG_STATE_HOME)).toBe(false)
+      const dataHome = options.env.XDG_DATA_HOME
+      const stateHome = options.env.XDG_STATE_HOME
+      if (!dataHome || !stateHome) {
+        throw new Error('Expected isolated OpenCode data and state directories')
+      }
+      expect(dataHome).toContain('subagent-opencode-')
+      expect(stateHome).toContain('subagent-opencode-')
+      expect(fs.existsSync(dataHome)).toBe(false)
+      expect(fs.existsSync(stateHome)).toBe(false)
     })
 
     it('should copy existing OpenCode authentication into the isolated data home', async () => {
@@ -415,6 +459,23 @@ describe('AgentExecutor', () => {
       const executor = new AgentExecutor(
         createExecutionConfig('grok', {
           agentsSettingsPath: settingsPath,
+        })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      const spawnEnv = mockSpawn.mock.calls[0][2].env
+      expect(args).not.toContain(settingsPath)
+      expect(Object.values(spawnEnv)).not.toContain(settingsPath)
+    })
+
+    it('should ignore Claude settings for kimi redirected subprocesses', async () => {
+      const settingsPath = '/path/to/claude/settings.json'
+      const executor = new AgentExecutor(
+        createExecutionConfig('kimi', {
+          agentsSettingsPath: settingsPath,
+          kimiApiKey: 'kimi-secret',
         })
       )
 
@@ -542,6 +603,64 @@ describe('AgentExecutor', () => {
     })
   })
 
+  describe('kimi API key handling', () => {
+    it('should route kimi to its Anthropic-compatible endpoint without exposing the key in argv', async () => {
+      const executor = new AgentExecutor(
+        createExecutionConfig('kimi', { kimiApiKey: 'kimi-secret' })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      const spawnEnv = mockSpawn.mock.calls[0][2].env
+      expect(spawnEnv['ANTHROPIC_BASE_URL']).toBe('https://api.kimi.com/coding/')
+      expect(spawnEnv['ANTHROPIC_API_KEY']).toBe('kimi-secret')
+      expect(args).not.toContain('kimi-secret')
+    })
+
+    it('should remove inherited ANTHROPIC_AUTH_TOKEN for kimi subprocesses', async () => {
+      vi.stubEnv('ANTHROPIC_AUTH_TOKEN', 'anthropic-secret')
+      const executor = new AgentExecutor(
+        createExecutionConfig('kimi', { kimiApiKey: 'kimi-secret' })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const spawnEnv = mockSpawn.mock.calls[0][2].env
+      expect(spawnEnv['ANTHROPIC_API_KEY']).toBe('kimi-secret')
+      expect(spawnEnv['ANTHROPIC_AUTH_TOKEN']).toBeUndefined()
+    })
+
+    it('should fail before spawn when kimi API key is missing', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('kimi'))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      })
+
+      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('CLI_API_KEY')
+      expect(result.stderr).toContain('restart or reconnect the MCP server')
+    })
+
+    it('should fail before spawn when kimi API key is blank', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('kimi', { kimiApiKey: '   ' }))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      })
+
+      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('CLI_API_KEY')
+    })
+  })
+
   describe('system prompt separation', () => {
     it('should use --append-system-prompt for claude instead of concatenation', async () => {
       const executor = new AgentExecutor(createExecutionConfig('claude'))
@@ -577,6 +696,26 @@ describe('AgentExecutor', () => {
 
     it('should use --system-prompt for glm instead of appending Claude defaults', async () => {
       const executor = new AgentExecutor(createExecutionConfig('glm', { glmApiKey: 'zai-secret' }))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/test/cwd' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+
+      expect(args).toContain('--system-prompt')
+      expect(args).not.toContain('--append-system-prompt')
+      const spIdx = args.indexOf('--system-prompt')
+      const systemPrompt = args[spIdx + 1]
+      expect(systemPrompt).toContain('cwd: /test/cwd')
+      expect(systemPrompt).toContain('test-agent')
+
+      const pIdx = args.indexOf('-p')
+      expect(args[pIdx + 1]).toBe('Test prompt')
+    })
+
+    it('should use --system-prompt for kimi instead of appending Claude defaults', async () => {
+      const executor = new AgentExecutor(
+        createExecutionConfig('kimi', { kimiApiKey: 'kimi-secret' })
+      )
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/test/cwd' })
 
@@ -909,6 +1048,10 @@ describe('AgentExecutor', () => {
       { agent: 'glm', perm: 'read-only', expected: ['--permission-mode', 'plan'] },
       { agent: 'glm', perm: 'safe-edit', expected: ['--permission-mode', 'acceptEdits'] },
       { agent: 'glm', perm: 'yolo', expected: ['--dangerously-skip-permissions'] },
+      // kimi
+      { agent: 'kimi', perm: 'read-only', expected: ['--permission-mode', 'plan'] },
+      { agent: 'kimi', perm: 'safe-edit', expected: ['--permission-mode', 'acceptEdits'] },
+      { agent: 'kimi', perm: 'yolo', expected: ['--dangerously-skip-permissions'] },
       // gemini
       { agent: 'gemini', perm: 'read-only', expected: ['--approval-mode', 'plan'] },
       { agent: 'gemini', perm: 'safe-edit', expected: ['--approval-mode', 'auto_edit'] },
@@ -941,7 +1084,11 @@ describe('AgentExecutor', () => {
       expected,
     }) => {
       const executor = new AgentExecutor(
-        createExecutionConfig(agent, { permission: perm, glmApiKey: 'zai-secret' })
+        createExecutionConfig(agent, {
+          permission: perm,
+          glmApiKey: 'zai-secret',
+          kimiApiKey: 'kimi-secret',
+        })
       )
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
@@ -1030,10 +1177,13 @@ describe('AgentExecutor', () => {
     })
 
     it('should not leak codex-specific flags into other CLIs', async () => {
-      for (const agent of ['claude', 'gemini', 'cursor', 'glm', 'grok'] as const) {
+      for (const agent of ['claude', 'gemini', 'cursor', 'glm', 'kimi', 'grok'] as const) {
         mockSpawn.mockClear()
         const executor = new AgentExecutor(
-          createExecutionConfig(agent, { glmApiKey: 'zai-secret' })
+          createExecutionConfig(agent, {
+            glmApiKey: 'zai-secret',
+            kimiApiKey: 'kimi-secret',
+          })
         )
         await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
         const args = mockSpawn.mock.calls[0][1] as string[]

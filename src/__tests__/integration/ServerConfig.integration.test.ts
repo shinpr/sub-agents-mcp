@@ -49,6 +49,7 @@ describe('ServerConfig', () => {
     'gemini',
     'codex',
     'glm',
+    'kimi',
     'grok',
     'opencode',
   ] as const)('should accept AGENT_TYPE=%s', (agentType) => {
@@ -76,6 +77,24 @@ describe('ServerConfig', () => {
     const config = new ServerConfig()
 
     expect(config.glmApiKey).toBeUndefined()
+  })
+
+  it('should load CLI_API_KEY as kimiApiKey when set', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('CLI_API_KEY', 'kimi-secret')
+
+    const config = new ServerConfig()
+
+    expect(config.kimiApiKey).toBe('kimi-secret')
+  })
+
+  it('should treat blank CLI_API_KEY as missing for kimiApiKey', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('CLI_API_KEY', '   ')
+
+    const config = new ServerConfig()
+
+    expect(config.kimiApiKey).toBeUndefined()
   })
 
   it('should treat blank CURSOR_API_KEY as missing for cursorApiKey', () => {

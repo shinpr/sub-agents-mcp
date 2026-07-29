@@ -1,4 +1,5 @@
 import {
+  AGENT_EFFORT_SUPPORTED_TYPES,
   AGENT_PERMISSIONS,
   AGENT_TYPES,
   type AgentPermission,
@@ -76,6 +77,9 @@ export class ServerConfig {
   /** API key for GLM/Z.ai authentication (from CLI_API_KEY env var) */
   public readonly glmApiKey: string | undefined
 
+  /** API key for Kimi authentication (from CLI_API_KEY env var) */
+  public readonly kimiApiKey: string | undefined
+
   /**
    * Creates a new ServerConfig instance by loading values from environment variables
    * or using default values.
@@ -133,7 +137,7 @@ export class ServerConfig {
     if (this.agentEffort && !supportsAgentEffort(this.agentType)) {
       throw new Error(
         `AGENT_EFFORT is not supported for AGENT_TYPE="${this.agentType}". ` +
-          'Supported types: codex, claude, glm, grok, opencode.'
+          `Supported types: ${AGENT_EFFORT_SUPPORTED_TYPES.join(', ')}.`
       )
     }
 
@@ -183,7 +187,9 @@ export class ServerConfig {
     const cursorApiKeyEnv = process.env['CURSOR_API_KEY'] || process.env['CLI_API_KEY']
     this.cursorApiKey = cursorApiKeyEnv?.trim() ? cursorApiKeyEnv : undefined
 
-    const glmApiKeyEnv = process.env['CLI_API_KEY']
-    this.glmApiKey = glmApiKeyEnv?.trim() ? glmApiKeyEnv : undefined
+    const cliApiKeyEnv = process.env['CLI_API_KEY']
+    const cliApiKey = cliApiKeyEnv?.trim() ? cliApiKeyEnv : undefined
+    this.glmApiKey = cliApiKey
+    this.kimiApiKey = cliApiKey
   }
 }

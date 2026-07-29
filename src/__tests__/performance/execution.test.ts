@@ -116,7 +116,7 @@ describe('Execution Performance Tests', () => {
     const mockedSpawn = vi.mocked(spawn)
 
     // Mock spawn to behave consistently for performance tests - override the vi.mock definition
-    mockedSpawn.mockImplementation((_cmd: string, args: string[], _options: any) => {
+    mockedSpawn.mockImplementation((_cmd: string, args: readonly string[], _options: any) => {
       // Return the same mock ChildProcess that was defined in the vi.mock
       const mockChildProcess = {
         stdin: { end: vi.fn() },
@@ -333,6 +333,9 @@ describe('Execution Performance Tests', () => {
     const warmStartTime = Date.now()
     const agent2 = await agentManager.getAgent('medium-agent')
     const warmLoadTime = Date.now() - warmStartTime
+    if (!agent1 || !agent2) {
+      throw new Error('Expected medium-agent to be available for cache performance testing')
+    }
 
     // Cold loading should be fast
     expect(coldLoadTime).toBeLessThan(100) // 100ms max for file reading

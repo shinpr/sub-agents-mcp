@@ -20,7 +20,9 @@ vi.mock('node:child_process', () => ({
 }))
 
 // Import the mocked module to get references
-import { spawn as mockSpawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
+
+const mockSpawn = vi.mocked(spawn)
 
 describe('Security Validation Tests', () => {
   let testAgentsDir: string
@@ -34,7 +36,7 @@ describe('Security Validation Tests', () => {
     vi.clearAllMocks()
 
     // Setup spawn mock for security tests
-    mockSpawn.mockImplementation((_cmd: string, args: string[], options: any) => {
+    mockSpawn.mockImplementation((_cmd: string, args: readonly string[], options: any) => {
       // Extract the prompt which should be the last argument after -p flag
       const promptIndex = args.indexOf('-p')
       const _prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''
@@ -273,6 +275,9 @@ describe('Security Validation Tests', () => {
 
     test('ensures agent files are within allowed directory', async () => {
       const agent = await agentManager.getAgent('valid-agent')
+      if (!agent) {
+        throw new Error('Expected valid-agent to be available for path validation')
+      }
 
       // Verify the loaded agent file path is within the allowed directory
       expect(agent.filePath).toContain(testAgentsDir)

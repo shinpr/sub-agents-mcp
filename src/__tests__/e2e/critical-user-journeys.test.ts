@@ -25,7 +25,9 @@ vi.mock('node:child_process', () => ({
 }))
 
 // Import the mocked module to get references
-import { spawn as mockSpawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
+
+const mockSpawn = vi.mocked(spawn)
 
 describe('Critical User Journeys - E2E Tests', () => {
   let server: McpServer
@@ -37,7 +39,7 @@ describe('Critical User Journeys - E2E Tests', () => {
     vi.clearAllMocks()
 
     // Setup spawn mock for E2E testing
-    mockSpawn.mockImplementation((_cmd: string, args: string[], _options: any) => {
+    mockSpawn.mockImplementation((_cmd: string, args: readonly string[], _options: any) => {
       const prompt = args.includes('-p') ? args[args.indexOf('-p') + 1] : ''
       const isTestAgent = prompt.includes('test-agent') || args.includes('test-agent')
       const isPerformanceAgent =
@@ -87,8 +89,11 @@ describe('Critical User Journeys - E2E Tests', () => {
 
     // Create server configuration
     // Set test environment variables
-    process.env['SERVER_NAME'] = 'e2e-test-server'
-    process.env['AGENTS_DIR'] = testAgentsDir
+    vi.stubEnv('SERVER_NAME', 'e2e-test-server')
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('AGENT_TYPE', 'kimi')
+    vi.stubEnv('CLI_API_KEY', 'kimi-e2e-secret')
+    vi.stubEnv('ANTHROPIC_AUTH_TOKEN', 'inherited-anthropic-token')
 
     config = new ServerConfig()
 
@@ -104,6 +109,7 @@ describe('Critical User Journeys - E2E Tests', () => {
     }
     // Clean up test agents directory
     await fs.rm(testAgentsDir, { recursive: true, force: true })
+    vi.unstubAllEnvs()
   })
 
   test('User Journey 1: Server starts and is ready to accept requests', async () => {
@@ -147,6 +153,22 @@ describe('Critical User Journeys - E2E Tests', () => {
     const textContent = result.content.find((c) => c.type === 'text')
     expect(textContent).toBeDefined()
     expect(textContent?.text).toBeTruthy()
+
+    const spawnCall = mockSpawn.mock.calls.at(-1)
+    expect(spawnCall).toBeDefined()
+    if (!spawnCall) {
+      throw new Error('Expected Kimi execution to spawn a child process')
+    }
+    const [command, args, options] = spawnCall
+    expect(options.env).toBeDefined()
+    if (!options.env) {
+      throw new Error('Expected Kimi execution to provide a child environment')
+    }
+    expect(command).toBe('claude')
+    expect(args).not.toContain('kimi-e2e-secret')
+    expect(options.env['ANTHROPIC_BASE_URL']).toBe('https://api.kimi.com/coding/')
+    expect(options.env['ANTHROPIC_API_KEY']).toBe('kimi-e2e-secret')
+    expect(options.env['ANTHROPIC_AUTH_TOKEN']).toBeUndefined()
   })
 
   test('User Journey 4: Retrieve execution results', async () => {

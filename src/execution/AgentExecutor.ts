@@ -64,7 +64,7 @@ export interface ExecutionConfig {
 
   /**
    * Type of agent to use for execution.
-   * 'cursor', 'claude', 'gemini', 'codex', 'glm', 'grok', or 'opencode'
+   * 'cursor', 'claude', 'gemini', 'codex', 'glm', 'kimi', 'grok', or 'opencode'
    */
   agentType: AgentType
 
@@ -100,6 +100,12 @@ export interface ExecutionConfig {
    */
   glmApiKey?: string
 
+  /**
+   * API key for Kimi authentication.
+   * Passed to the claude binary via ANTHROPIC_API_KEY environment variable.
+   */
+  kimiApiKey?: string
+
   /** Optional model override applied to every execution by this MCP server. */
   model?: string
 
@@ -115,9 +121,16 @@ const TERMINATION_GRACE_MS = 1000
 type EnvOverrides = Record<string, string | null>
 
 const GLM_BASE_URL = 'https://api.z.ai/api/anthropic'
+const KIMI_BASE_URL = 'https://api.kimi.com/coding/'
 
 const GLM_MISSING_API_KEY_ERROR =
   'GLM backend needs a Z.ai API token in the CLI_API_KEY environment variable. ' +
+  'Add CLI_API_KEY to this MCP server environment in your MCP client configuration, ' +
+  'then restart or reconnect the MCP server so the running process receives it. ' +
+  'This run will keep failing until the MCP process is restarted with CLI_API_KEY set.'
+
+const KIMI_MISSING_API_KEY_ERROR =
+  'Kimi backend needs an API key in the CLI_API_KEY environment variable. ' +
   'Add CLI_API_KEY to this MCP server environment in your MCP client configuration, ' +
   'then restart or reconnect the MCP server so the running process receives it. ' +
   'This run will keep failing until the MCP process is restarted with CLI_API_KEY set.'
@@ -132,6 +145,7 @@ export const AGENT_TYPES = [
   'gemini',
   'codex',
   'glm',
+  'kimi',
   'grok',
   'opencode',
 ] as const
@@ -142,7 +156,14 @@ export function isAgentType(value: unknown): value is AgentType {
   return typeof value === 'string' && (AGENT_TYPES as readonly string[]).includes(value)
 }
 
-export const AGENT_EFFORT_SUPPORTED_TYPES = ['codex', 'claude', 'glm', 'grok', 'opencode'] as const
+export const AGENT_EFFORT_SUPPORTED_TYPES = [
+  'codex',
+  'claude',
+  'glm',
+  'kimi',
+  'grok',
+  'opencode',
+] as const
 
 export function supportsAgentEffort(
   agentType: AgentType
@@ -191,6 +212,11 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     yolo: ['--dangerously-skip-permissions'],
   },
   glm: {
+    'read-only': ['--permission-mode', 'plan'],
+    'safe-edit': ['--permission-mode', 'acceptEdits'],
+    yolo: ['--dangerously-skip-permissions'],
+  },
+  kimi: {
     'read-only': ['--permission-mode', 'plan'],
     'safe-edit': ['--permission-mode', 'acceptEdits'],
     yolo: ['--dangerously-skip-permissions'],
@@ -404,6 +430,8 @@ export class AgentExecutor {
         return this.buildClaudeArgs(params, envOverrides)
       case 'glm':
         return this.buildGlmArgs(params, envOverrides)
+      case 'kimi':
+        return this.buildKimiArgs(params, envOverrides)
       case 'gemini':
         return this.buildGeminiArgs(params, envOverrides)
       case 'cursor':
@@ -433,7 +461,7 @@ export class AgentExecutor {
         env['CODEX_HOME'] = this.config.agentsSettingsPath
         break
       // claude: handled via --settings argv below
-      // glm: uses the claude binary, but intentionally avoids Claude settings.
+      // glm/kimi: use the claude binary, but intentionally avoid Claude settings.
       // grok: not supported (upstream limitation)
       // opencode: uses its normal XDG/project configuration discovery.
       // gemini: not supported (upstream limitation)
@@ -462,6 +490,7 @@ export class AgentExecutor {
         break
       case 'claude':
       case 'glm':
+      case 'kimi':
         flags.push('--effort', this.config.effort)
         break
       case 'grok':
@@ -532,6 +561,40 @@ export class AgentExecutor {
       throw new Error(GLM_MISSING_API_KEY_ERROR)
     }
 
+    return this.buildRedirectedClaudeArgs(
+      params,
+      envOverrides,
+      GLM_BASE_URL,
+      apiKey,
+      'ANTHROPIC_AUTH_TOKEN'
+    )
+  }
+
+  private buildKimiArgs(
+    params: ExecutionParams,
+    envOverrides: EnvOverrides
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+    const apiKey = this.config.kimiApiKey
+    if (!apiKey?.trim()) {
+      throw new Error(KIMI_MISSING_API_KEY_ERROR)
+    }
+
+    return this.buildRedirectedClaudeArgs(
+      params,
+      envOverrides,
+      KIMI_BASE_URL,
+      apiKey,
+      'ANTHROPIC_API_KEY'
+    )
+  }
+
+  private buildRedirectedClaudeArgs(
+    params: ExecutionParams,
+    envOverrides: EnvOverrides,
+    baseUrl: string,
+    apiKey: string,
+    credentialEnv: 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN'
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
     const flags = this.invocationFlags()
     const cwd = params.cwd || process.cwd()
     const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
@@ -546,15 +609,18 @@ export class AgentExecutor {
       params.prompt,
     ]
 
+    const redirectedEnv: EnvOverrides = {
+      ...envOverrides,
+      ANTHROPIC_BASE_URL: baseUrl,
+      ANTHROPIC_API_KEY: null,
+      ANTHROPIC_AUTH_TOKEN: null,
+    }
+    redirectedEnv[credentialEnv] = apiKey
+
     return {
       command: 'claude',
       args,
-      envOverrides: {
-        ...envOverrides,
-        ANTHROPIC_BASE_URL: GLM_BASE_URL,
-        ANTHROPIC_AUTH_TOKEN: apiKey,
-        ANTHROPIC_API_KEY: null,
-      },
+      envOverrides: redirectedEnv,
     }
   }
 
