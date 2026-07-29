@@ -1,8 +1,8 @@
 /**
  * StreamProcessor - Simplified stream processing for agent output
  *
- * Handles cursor, claude, gemini, codex, grok, and OpenCode output in JSON format.
- * - Cursor/Claude: Use --output-format json, return a single JSON with type: "result"
+ * Handles cursor, Claude-compatible, gemini, codex, grok, and OpenCode output in JSON format.
+ * - Cursor/Claude-compatible: Return JSON events ending with type: "result"
  * - Gemini: Uses --output-format stream-json, returns multiple JSON lines,
  *           assistant messages contain the response, type: "result" signals completion
  * - Codex: Uses --json flag with exec subcommand, returns stream of JSON events,
@@ -24,7 +24,7 @@ export class StreamProcessor {
    * Process a single line from the agent output stream.
    * Returns true when a valid result JSON is detected, false otherwise.
    *
-   * For Cursor/Claude: The first JSON line with type: "result" is the result.
+   * For Cursor/Claude-compatible: The first JSON line with type: "result" is the result.
    * For Gemini stream-json: Accumulate assistant messages, return when type: "result" is seen.
    * For Codex: Accumulate agent_message items, return when turn.completed is seen.
    *
@@ -142,7 +142,7 @@ export class StreamProcessor {
             status: json['status'],
           }
         } else {
-          // Cursor/Claude: use as-is
+          // Cursor/Claude-compatible: use as-is
           this.resultJson = json
         }
         return true // Processing complete

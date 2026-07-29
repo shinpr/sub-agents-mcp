@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import type { ServerConfig } from '../../config/ServerConfig.js'
 import { AgentManager } from '../AgentManager.js'
 
@@ -37,10 +37,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 // Type the mocked functions
-const mockReaddir = vi.mocked(fs.promises.readdir)
+const mockReaddir = fs.promises.readdir as unknown as Mock<
+  (directoryPath: fs.PathLike) => Promise<string[]>
+>
 const mockReadFile = vi.mocked(fs.promises.readFile)
 const mockStat = vi.mocked(fs.promises.stat)
-const mockRealpath = vi.mocked(fs.promises.realpath)
+const mockRealpath = fs.promises.realpath as unknown as Mock<
+  (filePath: fs.PathLike) => Promise<string>
+>
 const mockResolve = vi.mocked(path.resolve)
 const mockJoin = vi.mocked(path.join)
 const mockBasename = vi.mocked(path.basename)
@@ -63,7 +67,7 @@ describe('AgentManager', () => {
     mockRelative.mockClear()
     mockIsAbsolute.mockClear()
 
-    mockRealpath.mockImplementation(async (filePath) => filePath)
+    mockRealpath.mockImplementation(async (filePath) => String(filePath))
     mockRelative.mockImplementation((from, to) => {
       const prefix = `${from}/`
       return to.startsWith(prefix) ? to.slice(prefix.length) : `../${to}`
@@ -103,7 +107,7 @@ describe('AgentManager', () => {
       const mockStats = { mtime: new Date('2025-01-01') }
       const mockContent = '# Test Agent\nThis is a test agent.'
 
-      mockReaddir.mockResolvedValue(mockFiles as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(mockFiles)
       mockStat.mockResolvedValue(mockStats as fs.Stats)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
@@ -125,7 +129,7 @@ describe('AgentManager', () => {
 
     it('should handle empty agents directory', async () => {
       // Arrange
-      mockReaddir.mockResolvedValue([] as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue([])
       mockResolve.mockReturnValue('/test/agents')
 
       // Act
@@ -137,7 +141,7 @@ describe('AgentManager', () => {
     })
 
     it('should prefer markdown when .md and .txt definitions share a name', async () => {
-      mockReaddir.mockResolvedValue(['reviewer.txt', 'reviewer.md'] as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(['reviewer.txt', 'reviewer.md'])
       mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') } as fs.Stats)
       mockReadFile.mockResolvedValue('# Markdown Reviewer')
       mockResolve.mockReturnValue('/test/agents')
@@ -152,7 +156,7 @@ describe('AgentManager', () => {
     })
 
     it('should reject an agent definition symlink that resolves outside AGENTS_DIR', async () => {
-      mockReaddir.mockResolvedValue(['outside.md'] as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(['outside.md'])
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
       mockRealpath
@@ -165,7 +169,7 @@ describe('AgentManager', () => {
     })
 
     it('should preserve the discovered name for a symlink within AGENTS_DIR', async () => {
-      mockReaddir.mockResolvedValue(['alias.md'] as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(['alias.md'])
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
       mockRealpath
@@ -188,7 +192,7 @@ describe('AgentManager', () => {
     it('should skip a broken symlink and continue loading other agents', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const missing = Object.assign(new Error('Missing symlink target'), { code: 'ENOENT' })
-      mockReaddir.mockResolvedValue(['broken.md', 'healthy.md'] as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(['broken.md', 'healthy.md'])
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
       mockRealpath
@@ -225,7 +229,7 @@ describe('AgentManager', () => {
       const mockStats = { mtime: new Date('2025-01-01') }
       const mockContent = '# Test Agent\nThis is a comprehensive test agent for validation.'
 
-      mockReaddir.mockResolvedValue(mockFiles as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(mockFiles)
       mockStat.mockResolvedValue(mockStats as fs.Stats)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
@@ -252,7 +256,7 @@ describe('AgentManager', () => {
 # My Custom Agent
 This agent does amazing things.`
 
-      mockReaddir.mockResolvedValue(mockFiles as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(mockFiles)
       mockStat.mockResolvedValue(mockStats as fs.Stats)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
@@ -273,7 +277,7 @@ This agent does amazing things.`
       const mockStats = { mtime: new Date('2025-01-01') }
       const mockContent = 'Simple agent for basic tasks\nWith some additional content.'
 
-      mockReaddir.mockResolvedValue(mockFiles as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(mockFiles)
       mockStat.mockResolvedValue(mockStats as fs.Stats)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
@@ -292,7 +296,7 @@ This agent does amazing things.`
       // Arrange
       const mockFiles = ['broken-agent.md']
 
-      mockReaddir.mockResolvedValue(mockFiles as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(mockFiles)
       mockReadFile.mockRejectedValue(new Error('Permission denied'))
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockReturnValue('/test/agents/broken-agent.md')
@@ -311,7 +315,7 @@ This agent does amazing things.`
       const mockFiles = ['cached-agent.md']
       const mockContent = '# Cached Agent\nThis agent should be loaded.'
 
-      mockReaddir.mockResolvedValue(mockFiles as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(mockFiles)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockReturnValue('/test/agents/cached-agent.md')
@@ -333,7 +337,7 @@ This agent does amazing things.`
       const mockFiles = ['agent1.md', 'agent2.txt']
       const mockContent = '# Test Agent\nTest content.'
 
-      mockReaddir.mockResolvedValue(mockFiles as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(mockFiles)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
@@ -369,9 +373,9 @@ This agent does amazing things.`
 
       // Set up sequential mock responses
       mockReaddir
-        .mockResolvedValueOnce(initialFiles as unknown as fs.Dirent[]) // Initial listAgents
-        .mockResolvedValueOnce(refreshedFiles as unknown as fs.Dirent[]) // refreshAgents
-        .mockResolvedValueOnce(refreshedFiles as unknown as fs.Dirent[]) // Final listAgents
+        .mockResolvedValueOnce(initialFiles) // Initial listAgents
+        .mockResolvedValueOnce(refreshedFiles) // refreshAgents
+        .mockResolvedValueOnce(refreshedFiles) // Final listAgents
 
       // Act - Initial load
       const initialAgents = await agentManager.listAgents()
@@ -393,7 +397,7 @@ This agent does amazing things.`
   describe('Agent Retrieval', () => {
     it('should return undefined for non-existent agent', async () => {
       // Arrange
-      mockReaddir.mockResolvedValue([] as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue([])
       mockResolve.mockReturnValue('/test/agents')
 
       // Act
@@ -410,7 +414,7 @@ This agent does amazing things.`
       const targetContent = '# Target Agent\nThis is the target agent.'
       const otherContent = '# Other Agent\nThis is the other agent.'
 
-      mockReaddir.mockResolvedValue(mockFiles as unknown as fs.Dirent[])
+      mockReaddir.mockResolvedValue(mockFiles)
       mockStat.mockResolvedValue(mockStats as fs.Stats)
       // Discovery is sorted by agent name, so other-agent is loaded first.
       mockReadFile.mockResolvedValueOnce(otherContent).mockResolvedValueOnce(targetContent)
