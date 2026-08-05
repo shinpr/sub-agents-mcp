@@ -5,16 +5,16 @@
 
 Bring Claude Code–style sub-agents to any MCP-compatible tool.
 
-This MCP server lets you define task-specific AI agents (like "test-writer" or "code-reviewer") in markdown files, and execute them via Cursor CLI, Claude Code, Codex, Gemini CLI, GLM, Kimi, Grok Build, or OpenCode backends.
+Define task-specific AI agents such as "test-writer" or "code-reviewer" in Markdown files. The server runs them through Cursor CLI, Claude Code, Codex, Gemini CLI, GLM, Kimi, Grok Build, or OpenCode.
 
 ## Why?
 
-Claude Code offers powerful sub-agent workflows—but they're limited to its own environment. This MCP server makes that workflow portable, so any MCP-compatible tool (Cursor, Claude Desktop, Windsurf, etc.) can use the same agents.
+Claude Code supports sub-agents within its own environment. This server exposes the same type of workflow through MCP, allowing clients such as Cursor, Claude Desktop, and Windsurf to use the agent definitions.
 
-**Concrete benefits:**
+**What it provides:**
 - Define reusable agents once, use them across multiple tools
 - Share agent definitions within teams regardless of IDE choice
-- Leverage Cursor CLI, Claude Code, Codex, Gemini CLI, GLM, Kimi, Grok Build, or OpenCode capabilities from any MCP client
+- Select Cursor CLI, Claude Code, Codex, Gemini CLI, GLM, Kimi, Grok Build, or OpenCode as the execution backend
 
 → [Read the full story](https://dev.to/shinpr/bringing-claude-codes-sub-agents-to-any-mcp-compatible-tool-1hb9)
 
@@ -51,7 +51,7 @@ Choose **sub-agents-mcp** when you want a centrally configured execution service
   - `cursor-agent` CLI (from Cursor)
   - `claude` CLI (from Claude Code)
   - `codex` CLI (from Codex)
-  - `gemini` CLI (from Gemini CLI — requires `GEMINI_API_KEY`)
+  - `gemini` CLI (from Gemini CLI; requires `GEMINI_API_KEY`)
   - `glm` backend (uses the Claude Code `claude` CLI with a Z.ai token)
   - `kimi` backend (uses the Claude Code `claude` CLI with a Kimi API key)
   - `grok` CLI (from Grok Build)
@@ -120,7 +120,7 @@ npm install -g @google/gemini-cli
 export GEMINI_API_KEY="your-key"
 ```
 
-Note: Set `GEMINI_API_KEY` — without it the `gemini` backend won't run (Google is retiring the free OAuth tier on June 18, 2026).
+Note: Set `GEMINI_API_KEY` for the `gemini` backend. Google is retiring the free OAuth tier on June 18, 2026.
 
 **For GLM (Z.ai) users:**
 ```bash
@@ -233,7 +233,7 @@ Note: Agents often run commands as one-liners like `cd /path && make build`, so 
 
 ## Usage Examples
 
-Just tell your AI to use an agent:
+Ask your AI tool to use an agent:
 
 ```
 "Use the code-reviewer agent to check my UserService class"
@@ -247,12 +247,12 @@ Just tell your AI to use an agent:
 "Use the doc-writer agent to add JSDoc comments to all public methods"
 ```
 
-Your AI automatically invokes the specialized agent and returns results.
+The AI tool calls the MCP server, which runs the selected agent and returns its result.
 
-**Tip:** Always include *what you want done* in your request—not just which agent to use. For example:
+**Tip:** Include *what you want done* in the request, not only the agent name. For example:
 
-- ✅ "Use the code-reviewer agent **to check my UserService class**"
-- ❌ "Use the code-reviewer agent" (too vague—the agent won't know what to review)
+- **Specific:** "Use the code-reviewer agent **to check my UserService class**"
+- **Incomplete:** "Use the code-reviewer agent" (the review target is missing)
 
 The more specific your task, the better the results.
 
@@ -291,7 +291,7 @@ Agents run in isolation with fresh context. Avoid:
 - Assumptions about prior context ("continuing from before...")
 - Scope creep beyond the stated purpose
 
-### Advanced Patterns
+### Optional Agent Sections
 
 For complex agents, consider adding:
 
@@ -325,7 +325,7 @@ Investigate bug reports and identify root causes.
 - Affected code locations listed
 ```
 
-For more advanced patterns (completion checklists, prohibited actions, structured output), see [claude-code-workflows/agents](https://github.com/shinpr/claude-code-workflows/tree/main/agents). These are written for Claude Code, but the design patterns apply to any execution engine.
+For examples with completion checklists, prohibited actions, and structured output, see [claude-code-workflows/agents](https://github.com/shinpr/claude-code-workflows/tree/main/agents). These examples target Claude Code, but the same structure applies to any execution engine.
 
 ## Configuration Reference
 
@@ -350,11 +350,11 @@ Which execution engine to use:
 **`AGENT_PERMISSION`**
 Approval/sandbox level the sub-agent runs with. Default: `"safe-edit"`.
 
-- `"read-only"` — investigation/review only, no edits or shell writes (codex `-s read-only` / claude+glm+kimi `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan` / grok `--sandbox read-only` / OpenCode deny rules)
-- `"safe-edit"` — auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude+glm+kimi `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust` / grok `--sandbox workspace` / OpenCode permission rules)
-- `"yolo"` — bypass all approvals and sandboxing. Use with care.
+- `"read-only"`: investigation/review only, no edits or shell writes (codex `-s read-only` / claude+glm+kimi `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan` / grok `--sandbox read-only` / OpenCode deny rules)
+- `"safe-edit"`: auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude+glm+kimi `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust` / grok `--sandbox workspace` / OpenCode permission rules)
+- `"yolo"`: bypass all approvals and sandboxing. Use with care.
 
-Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts; the depth of sandboxing depends on the CLI — codex and grok enforce a workspace-level sandbox (codex `workspace-write`, grok `--sandbox workspace`), while claude / glm / kimi / gemini / cursor only auto-approve and do not jail edits to the workspace. OpenCode's permission configuration is also not an OS-level sandbox and cannot confine every side effect of programs launched through bash. Grok fixes `--permission-mode bypassPermissions` and uses the kernel-enforced `--sandbox` profile to confine writes per `AGENT_PERMISSION`. If you need strict containment, use a sandbox-backed backend.
+Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts, but sandboxing depends on the CLI. Codex and Grok enforce a workspace-level sandbox (codex `workspace-write`, grok `--sandbox workspace`), while Claude, GLM, Kimi, Gemini, and Cursor only auto-approve and do not confine edits to the workspace. OpenCode's permission configuration is also not an OS-level sandbox and cannot confine every side effect of programs launched through bash. Grok fixes `--permission-mode bypassPermissions` and uses the kernel-enforced `--sandbox` profile to confine writes per `AGENT_PERMISSION`. If you need strict containment, use a sandbox-backed backend.
 
 OpenCode custom and MCP tools follow your OpenCode permissions even in `read-only`; explicitly deny any added tool that can cause side effects.
 
@@ -486,7 +486,7 @@ When calling the same sub-agent multiple times:
 ### Timeout errors or authentication failures
 
 **If using Cursor CLI:**
-Run `cursor-agent login` to authenticate. Sessions can expire, so just run this command again if you see auth errors.
+Run `cursor-agent login` to authenticate. If the session expires, run the command again.
 
 Verify installation:
 ```bash
@@ -518,7 +518,7 @@ Check that:
 ### Other execution errors
 
 1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, `gemini`, `codex`, `glm`, `kimi`, `grok`, or `opencode`)
-2. Ensure your chosen CLI tool is installed and accessible
+2. Confirm that your chosen CLI tool is installed and accessible
 3. Double-check that all environment variables are set in the MCP config
 
 ### Recursive sub-agent calls (infinite loop)
@@ -548,7 +548,7 @@ Solution: Don't place AGENTS.md at the project root. Use separate directories:
 
 ### Why Independent Contexts Matter
 
-Every sub-agent starts with a fresh context. This adds some startup overhead for each call, but it ensures that every task runs independently and without leftover state from previous runs.
+Every sub-agent starts with a fresh context. Each call has some startup overhead, and tasks run without state left over from previous runs.
 
 **Context Isolation**
 - Each agent only receives the information relevant to its task
