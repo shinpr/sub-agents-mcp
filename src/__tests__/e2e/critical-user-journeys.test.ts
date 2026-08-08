@@ -52,11 +52,13 @@ describe('Critical User Journeys - E2E Tests', () => {
             if (event === 'data') {
               // Synchronous for test stability
               if (isTestAgent) {
-                callback(Buffer.from('{"type": "result", "data": "E2E test successful"}\n'))
+                callback(Buffer.from('{"type": "result", "result": "E2E test successful"}\n'))
               } else if (isPerformanceAgent) {
-                callback(Buffer.from('{"type": "result", "data": "Performance test complete"}\n'))
+                callback(Buffer.from('{"type": "result", "result": "Performance test complete"}\n'))
               } else {
-                callback(Buffer.from('{"type": "result", "data": "Agent executed successfully"}\n'))
+                callback(
+                  Buffer.from('{"type": "result", "result": "Agent executed successfully"}\n')
+                )
               }
             }
           }),

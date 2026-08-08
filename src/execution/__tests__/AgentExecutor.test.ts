@@ -92,7 +92,7 @@ function createMockProcess(options: {
 /** Creates a success mock process that emits a JSON result */
 function createSuccessMock(data = 'Test execution successful') {
   return createMockProcess({
-    stdoutData: `${JSON.stringify({ type: 'result', data })}\n`,
+    stdoutData: `${JSON.stringify({ type: 'result', result: data })}\n`,
   })
 }
 
@@ -845,7 +845,7 @@ describe('AgentExecutor', () => {
       expect(result.hasResult).toBe(true)
       expect(result.resultJson).toEqual({
         type: 'result',
-        data: 'Test execution successful',
+        result: 'Test execution successful',
       })
       expect(result.executionTime).toBeGreaterThan(0)
     })
@@ -922,6 +922,29 @@ describe('AgentExecutor', () => {
         stop_reason: 'EndTurn',
         session_id: 'session-123',
         request_id: 'request-123',
+      })
+    })
+
+    it('should ignore a non-terminal Claude event and keep reading until the result', async () => {
+      mockSpawn.mockImplementationOnce(() =>
+        createMockProcess({
+          stdoutData:
+            '{"message":"Background operation completed"}\n' +
+            '{"type":"result","result":"actual response"}\n',
+        })
+      )
+      const executor = new AgentExecutor(createExecutionConfig('claude'))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Help me',
+        cwd: '/tmp',
+      })
+
+      expect(result.hasResult).toBe(true)
+      expect(result.resultJson).toMatchObject({
+        type: 'result',
+        result: 'actual response',
       })
     })
 
@@ -1221,7 +1244,7 @@ describe('AgentExecutor', () => {
     it('should handle SIGTERM (exit code 143) as normal when hasResult is true', async () => {
       mockSpawn.mockImplementationOnce(() =>
         createMockProcess({
-          stdoutData: '{"type": "result", "data": "Success"}\n',
+          stdoutData: '{"type": "result", "result": "Success"}\n',
           exitCode: 143,
         })
       )
@@ -1242,7 +1265,7 @@ describe('AgentExecutor', () => {
     it('should preserve a result when SIGTERM escalates to SIGKILL', async () => {
       mockSpawn.mockImplementationOnce(() =>
         createMockProcess({
-          stdoutData: '{"type": "result", "data": "Success"}\n',
+          stdoutData: '{"type": "result", "result": "Success"}\n',
           noClose: true,
         })
       )
@@ -1263,7 +1286,7 @@ describe('AgentExecutor', () => {
     it('should distinguish timeout with partial result from complete timeout', async () => {
       mockSpawn.mockImplementationOnce(() =>
         createMockProcess({
-          stdoutData: '{"type": "result", "partial": true}\n',
+          stdoutData: '{"type": "result", "result": "Partial", "status": "partial"}\n',
           stdoutDelay: 50,
           noClose: true, // Let timeout handler fire
         })
@@ -1279,7 +1302,11 @@ describe('AgentExecutor', () => {
 
       expect(result.exitCode).toBe(124)
       expect(result.hasResult).toBe(true)
-      expect(result.resultJson).toEqual({ type: 'result', partial: true })
+      expect(result.resultJson).toEqual({
+        type: 'result',
+        result: 'Partial',
+        status: 'partial',
+      })
     })
   })
 
@@ -1305,7 +1332,7 @@ describe('AgentExecutor', () => {
     })
 
     it('should decode UTF-8 characters split across stdout chunks', async () => {
-      const output = Buffer.from('{"type":"result","data":"日本語"}\n')
+      const output = Buffer.from('{"type":"result","result":"日本語"}\n')
       const splitAt = output.indexOf(Buffer.from('日')) + 1
       mockSpawn.mockImplementationOnce(() =>
         createMockProcess({
@@ -1320,7 +1347,7 @@ describe('AgentExecutor', () => {
         cwd: '/tmp',
       })
 
-      expect(result.resultJson).toEqual({ type: 'result', data: '日本語' })
+      expect(result.resultJson).toEqual({ type: 'result', result: '日本語' })
     })
 
     it('should not emit a replacement character when the byte cap splits UTF-8', async () => {
