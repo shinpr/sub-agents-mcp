@@ -41,7 +41,7 @@ describe('AgentExecutor Integration', () => {
                   Buffer.from(
                     `${JSON.stringify({
                       type: 'result',
-                      data: 'Integration test execution success',
+                      result: 'Integration test execution success',
                     })}\n`
                   )
                 )
@@ -53,7 +53,7 @@ describe('AgentExecutor Integration', () => {
                   Buffer.from(
                     `${JSON.stringify({
                       type: 'result',
-                      data: 'Default integration execution',
+                      result: 'Default integration execution',
                     })}\n`
                   )
                 )

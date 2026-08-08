@@ -631,8 +631,9 @@ export class RunAgentTool {
       (result.exitCode === 124 && result.hasResult === true) // Timeout with partial result
 
     const isSuccess =
-      (!isPartialSuccess && result.exitCode === 0) || // Normal completion
-      (!isPartialSuccess &&
+      (!isError && !isPartialSuccess && result.exitCode === 0) || // Normal completion
+      (!isError &&
+        !isPartialSuccess &&
         (result.exitCode === 143 || result.exitCode === 137) &&
         result.hasResult === true) // Terminated after receiving a result
 
@@ -643,7 +644,7 @@ export class RunAgentTool {
       agent: agentName,
       exit_code: result.exitCode,
       execution_time: result.executionTime,
-      status: isSuccess ? 'success' : isPartialSuccess ? 'partial' : 'error',
+      status: isError ? 'error' : isSuccess ? 'success' : isPartialSuccess ? 'partial' : 'error',
       ...(sessionId && { session_id: sessionId }),
       ...(requestId && { request_id: requestId }),
     }

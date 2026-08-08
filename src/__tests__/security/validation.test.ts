@@ -54,7 +54,7 @@ describe('Security Validation Tests', () => {
                 Buffer.from(
                   `${JSON.stringify({
                     type: 'result',
-                    data: 'Security test execution',
+                    result: 'Security test execution',
                   })}\n`
                 )
               )

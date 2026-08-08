@@ -363,6 +363,37 @@ describe('RunAgentTool', () => {
       expect(parsedContent.result).not.toContain('{"type":"error"}')
     })
 
+    it('should not report an agent error as a successful structured result', async () => {
+      const params = {
+        agent: 'failing-agent',
+        prompt: 'Test prompt',
+        cwd: process.cwd(),
+      }
+
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: '{"type":"result","is_error":true}',
+        stderr: '',
+        exitCode: 143,
+        executionTime: 50,
+        hasResult: true,
+        resultJson: {
+          type: 'result',
+          subtype: 'error_during_execution',
+          is_error: true,
+          status: 'error',
+          error: 'Authentication required',
+        },
+      })
+
+      const result = await runAgentTool.execute(params)
+
+      expect(result.isError).toBe(true)
+      expect(result.structuredContent).toMatchObject({
+        result: 'Authentication required',
+        status: 'error',
+      })
+    })
+
     it('should include execution metadata in response', async () => {
       const params = {
         agent: 'test-agent',

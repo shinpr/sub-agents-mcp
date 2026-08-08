@@ -1,207 +1,68 @@
+import type { AgentType } from './AgentExecutor.js'
+
 /**
- * StreamProcessor - Simplified stream processing for agent output
- *
- * Handles cursor, Claude-compatible, gemini, codex, grok, and OpenCode output in JSON format.
- * - Cursor/Claude-compatible: Return JSON events ending with type: "result"
- * - Gemini: Uses --output-format stream-json, returns multiple JSON lines,
- *           assistant messages contain the response, type: "result" signals completion
- * - Codex: Uses --json flag with exec subcommand, returns stream of JSON events,
- *          agent_message items contain the response, turn.completed signals completion
- * - Grok: Uses --output-format json, returns a complete JSON object after exit
- * - OpenCode: Uses --format json, returns step and text events as NDJSON
+ * Parses one backend's documented output protocol and stores its terminal result.
  */
 export class StreamProcessor {
   private resultJson: unknown = null
   private geminiResponseParts: string[] = []
-  private isGeminiStreamJson = false
-  private isCodexFormat = false
   private codexAgentMessages: string[] = []
-  private codexUsage: unknown = null
-  private isOpenCodeFormat = false
   private openCodeResponseParts: string[] = []
 
+  constructor(private readonly agentType: AgentType) {}
+
   /**
-   * Process a single line from the agent output stream.
-   * Returns true when a valid result JSON is detected, false otherwise.
-   *
-   * For Cursor/Claude-compatible: The first JSON line with type: "result" is the result.
-   * For Gemini stream-json: Accumulate assistant messages, return when type: "result" is seen.
-   * For Codex: Accumulate agent_message items, return when turn.completed is seen.
-   *
-   * @param line - Raw line from stdout
-   * @returns true if processing is complete, false to continue
+   * Process one line from stdout. Returns true only for a terminal event from
+   * the configured backend.
    */
   processLine(line: string): boolean {
     const trimmedLine = line.trim()
-
-    // Empty lines are ignored
-    if (!trimmedLine) {
+    if (!trimmedLine || this.resultJson !== null) {
       return false
     }
 
-    // If we already have a result, ignore subsequent lines
-    if (this.resultJson !== null) {
-      return false
-    }
-
-    // Try to parse as JSON
+    let json: unknown
     try {
-      const json = JSON.parse(trimmedLine) as Record<string, unknown>
-
-      // Detect Gemini stream-json format by init message
-      if (json['type'] === 'init') {
-        this.isGeminiStreamJson = true
-        return false
-      }
-
-      // Detect Codex format by thread.started message
-      if (json['type'] === 'thread.started') {
-        this.isCodexFormat = true
-        return false
-      }
-
-      const part = json['part']
-      if (
-        ['step_start', 'tool_use', 'text', 'step_finish'].includes(String(json['type'])) &&
-        this.isRecord(part)
-      ) {
-        this.isOpenCodeFormat = true
-      }
-
-      const normalizedError = this.normalizeFatalError(json)
-      if (normalizedError) {
-        this.resultJson = normalizedError
-        return true
-      }
-
-      if (this.isOpenCodeFormat && json['type'] === 'text' && this.isRecord(part)) {
-        if (typeof part['text'] === 'string') {
-          this.openCodeResponseParts.push(part['text'])
-        }
-        return false
-      }
-
-      if (this.isOpenCodeFormat && json['type'] === 'step_finish' && this.isRecord(part)) {
-        const reason = part['reason']
-        if (reason === 'tool-calls' || reason === undefined || reason === null) {
-          return false
-        }
-        this.resultJson = {
-          type: 'result',
-          result: this.openCodeResponseParts.join(''),
-          status: reason === 'stop' ? 'success' : 'partial',
-          stop_reason: reason,
-        }
-        return true
-      }
-
-      // For Gemini: accumulate assistant message content
-      if (
-        this.isGeminiStreamJson &&
-        json['type'] === 'message' &&
-        json['role'] === 'assistant' &&
-        typeof json['content'] === 'string'
-      ) {
-        this.geminiResponseParts.push(json['content'])
-        return false
-      }
-
-      // For Codex: accumulate agent_message content from item.completed events
-      if (this.isCodexFormat && json['type'] === 'item.completed') {
-        const item = json['item']
-        if (
-          this.isCodexItem(item) &&
-          item['type'] === 'agent_message' &&
-          typeof item['text'] === 'string'
-        ) {
-          this.codexAgentMessages.push(item['text'])
-        }
-        return false
-      }
-
-      // For Codex: turn.completed signals end of response
-      if (this.isCodexFormat && json['type'] === 'turn.completed') {
-        this.codexUsage = json['usage']
-        this.resultJson = {
-          type: 'result',
-          result: this.codexAgentMessages.join('\n'),
-          usage: this.codexUsage,
-          status: 'success',
-        }
-        return true // Processing complete
-      }
-
-      // Check if this is a result JSON
-      if (json['type'] === 'result') {
-        // For Gemini: construct result with accumulated response
-        if (this.isGeminiStreamJson) {
-          this.resultJson = {
-            type: 'result',
-            result: this.geminiResponseParts.join(''),
-            stats: json['stats'],
-            status: json['status'],
-          }
-        } else {
-          // Cursor/Claude-compatible: use as-is
-          this.resultJson = json
-        }
-        return true // Processing complete
-      }
-
-      const normalizedCompleteOutput = this.normalizeCompleteOutput(json)
-      if (normalizedCompleteOutput) {
-        this.resultJson = normalizedCompleteOutput
-        return true
-      }
-
-      // For backwards compatibility: store first valid JSON if no type field
-      // This handles any CLI that doesn't use the type field
-      if (!('type' in json)) {
-        this.resultJson = json
-        return true
-      }
-
-      return false // Continue processing (not a result type)
+      json = JSON.parse(trimmedLine) as unknown
     } catch {
-      // Not valid JSON, ignore
       return false
+    }
+
+    if (!this.isRecord(json)) {
+      return false
+    }
+
+    const agentType = this.agentType
+    switch (agentType) {
+      case 'cursor':
+      case 'claude':
+      case 'glm':
+      case 'kimi':
+        return this.processClaudeCompatibleLine(json)
+      case 'gemini':
+        return this.processGeminiLine(json)
+      case 'codex':
+        return this.processCodexLine(json)
+      case 'grok':
+        return this.processGrokLine(json)
+      case 'opencode':
+        return this.processOpenCodeLine(json)
+      default: {
+        const unsupportedAgentType: never = agentType
+        throw new Error(`Unsupported agent type: ${String(unsupportedAgentType)}`)
+      }
     }
   }
 
   /**
    * Process a complete non-NDJSON payload after process exit.
-   *
-   * Grok's `--output-format json` can emit a pretty-printed JSON object, which
-   * cannot be parsed by the line-oriented stream path.
-   *
-   * @param output - Complete stdout captured from the agent process
-   * @returns true if processing is complete, false otherwise
    */
   processCompleteOutput(output: string): boolean {
     if (this.resultJson !== null) {
       return false
     }
 
-    try {
-      const json = JSON.parse(output.trim()) as unknown
-      if (this.isRecord(json)) {
-        const normalizedError = this.normalizeFatalError(json)
-        if (normalizedError) {
-          this.resultJson = normalizedError
-          return true
-        }
-
-        const normalizedCompleteOutput = this.normalizeCompleteOutput(json)
-        if (normalizedCompleteOutput) {
-          this.resultJson = normalizedCompleteOutput
-          return true
-        }
-      }
-    } catch {
-      // NDJSON streams are expected to fail whole-output JSON parsing.
-    }
-
-    if (this.isOpenCodeFormat && this.openCodeResponseParts.length > 0) {
+    if (this.agentType === 'opencode' && this.openCodeResponseParts.length > 0) {
       this.resultJson = {
         type: 'result',
         result: this.openCodeResponseParts.join(''),
@@ -211,19 +72,164 @@ export class StreamProcessor {
       return true
     }
 
-    return false
-  }
-
-  private normalizeFatalError(json: Record<string, unknown>): Record<string, unknown> | null {
-    const isFatalEvent =
-      json['type'] === 'error' ||
-      json['type'] === 'turn.failed' ||
-      (json['type'] === 'result' && json['status'] === 'error')
-
-    if (!isFatalEvent) {
-      return null
+    if (this.agentType !== 'grok') {
+      return false
     }
 
+    try {
+      const json = JSON.parse(output.trim()) as unknown
+      return this.isRecord(json) && this.processGrokLine(json)
+    } catch {
+      return false
+    }
+  }
+
+  private processClaudeCompatibleLine(json: Record<string, unknown>): boolean {
+    if (json['type'] !== 'result') {
+      return false
+    }
+
+    const subtype = json['subtype']
+    const isError =
+      json['is_error'] === true ||
+      json['status'] === 'error' ||
+      (typeof subtype === 'string' && subtype.startsWith('error_'))
+
+    if (isError) {
+      const normalizedError = this.normalizeError(json)
+      const errorMessage =
+        (typeof json['error'] === 'string' && json['error']) ||
+        (typeof json['result'] === 'string' && json['result']) ||
+        normalizedError['error']
+      this.resultJson = {
+        ...json,
+        ...normalizedError,
+        subtype: typeof subtype === 'string' ? subtype : 'error',
+        status: 'error',
+        error: errorMessage,
+      }
+      return true
+    }
+
+    if (typeof json['result'] !== 'string') {
+      return false
+    }
+
+    this.resultJson = json
+    return true
+  }
+
+  private processGeminiLine(json: Record<string, unknown>): boolean {
+    if (
+      json['type'] === 'message' &&
+      json['role'] === 'assistant' &&
+      typeof json['content'] === 'string'
+    ) {
+      this.geminiResponseParts.push(json['content'])
+      return false
+    }
+
+    if (json['type'] !== 'result') {
+      return false
+    }
+
+    if (json['status'] === 'error') {
+      this.resultJson = this.normalizeError(json)
+      return true
+    }
+
+    this.resultJson = {
+      type: 'result',
+      result: this.geminiResponseParts.join(''),
+      stats: json['stats'],
+      status: json['status'],
+    }
+    return true
+  }
+
+  private processCodexLine(json: Record<string, unknown>): boolean {
+    if (json['type'] === 'error' || json['type'] === 'turn.failed') {
+      this.resultJson = this.normalizeError(json)
+      return true
+    }
+
+    if (json['type'] === 'item.completed') {
+      const item = json['item']
+      if (
+        this.isRecord(item) &&
+        item['type'] === 'agent_message' &&
+        typeof item['text'] === 'string'
+      ) {
+        this.codexAgentMessages.push(item['text'])
+      }
+      return false
+    }
+
+    if (json['type'] !== 'turn.completed') {
+      return false
+    }
+
+    this.resultJson = {
+      type: 'result',
+      result: this.codexAgentMessages.join('\n'),
+      usage: json['usage'],
+      status: 'success',
+    }
+    return true
+  }
+
+  private processGrokLine(json: Record<string, unknown>): boolean {
+    if (json['type'] === 'error') {
+      this.resultJson = this.normalizeError(json)
+      return true
+    }
+
+    const result = this.normalizeGrokOutput(json)
+    if (!result) {
+      return false
+    }
+
+    this.resultJson = result
+    return true
+  }
+
+  private processOpenCodeLine(json: Record<string, unknown>): boolean {
+    if (json['type'] === 'error') {
+      this.resultJson = this.normalizeError(json)
+      return true
+    }
+
+    const part = json['part']
+    if (!this.isRecord(part)) {
+      return false
+    }
+
+    if (json['type'] === 'text') {
+      if (typeof part['text'] === 'string') {
+        this.openCodeResponseParts.push(part['text'])
+      }
+      return false
+    }
+
+    if (json['type'] !== 'step_finish') {
+      return false
+    }
+
+    const reason = part['reason']
+    if (reason === 'tool-calls' || reason === undefined || reason === null) {
+      return false
+    }
+
+    this.resultJson = {
+      type: 'result',
+      result: this.openCodeResponseParts.join(''),
+      status: reason === 'stop' ? 'success' : 'partial',
+      stop_reason: reason,
+    }
+    return true
+  }
+
+  private normalizeError(json: Record<string, unknown>): Record<string, unknown> {
     const error = this.isRecord(json['error']) ? json['error'] : undefined
     const errorData = error && this.isRecord(error['data']) ? error['data'] : undefined
     const message =
@@ -231,6 +237,8 @@ export class StreamProcessor {
       (error && typeof error['message'] === 'string' && error['message']) ||
       (errorData && typeof errorData['message'] === 'string' && errorData['message']) ||
       (typeof json['error'] === 'string' && json['error']) ||
+      (typeof json['result'] === 'string' && json['result']) ||
+      (typeof json['subtype'] === 'string' && json['subtype']) ||
       'Agent execution failed'
     const errorType =
       (error && typeof error['name'] === 'string' && error['name']) ||
@@ -262,8 +270,8 @@ export class StreamProcessor {
     }
   }
 
-  private normalizeCompleteOutput(json: Record<string, unknown>): Record<string, unknown> | null {
-    if (typeof json['text'] !== 'string' || !('stopReason' in json)) {
+  private normalizeGrokOutput(json: Record<string, unknown>): Record<string, unknown> | null {
+    if (typeof json['text'] !== 'string') {
       return null
     }
 
@@ -286,23 +294,10 @@ export class StreamProcessor {
     return result
   }
 
-  /**
-   * Type guard for Codex item structure
-   * @param item - The item to check
-   * @returns true if item is a valid Codex item object
-   */
-  private isCodexItem(item: unknown): item is Record<string, unknown> {
-    return this.isRecord(item)
-  }
-
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
   }
 
-  /**
-   * Get the final result JSON.
-   * @returns The stored result JSON or null if not yet available
-   */
   getResult(): unknown {
     return this.resultJson
   }

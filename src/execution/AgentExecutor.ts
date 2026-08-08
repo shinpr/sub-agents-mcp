@@ -808,10 +808,10 @@ export class AgentExecutor {
         return
       }
 
-      const streamProcessor = new StreamProcessor()
-      let stdout = ''
-      let stderr = ''
-      let stdoutBuffer = ''
+      const streamProcessor = new StreamProcessor(this.config.agentType)
+      const stdoutParts: string[] = []
+      const stderrParts: string[] = []
+      let stdoutLineParts: string[] = []
       const stdoutDecoder = new StringDecoder('utf8')
       const stderrDecoder = new StringDecoder('utf8')
       let stdoutTruncated = false
@@ -843,17 +843,21 @@ export class AgentExecutor {
 
         if (!stdoutTruncated) {
           const tail = stdoutDecoder.end()
-          stdout += tail
-          stdoutBuffer += tail
+          stdoutParts.push(tail)
+          stdoutLineParts.push(tail)
         }
         if (!stderrTruncated) {
-          stderr += stderrDecoder.end()
+          stderrParts.push(stderrDecoder.end())
         }
 
-        if (stdoutBuffer.trim()) {
-          streamProcessor.processLine(stdoutBuffer)
-          stdoutBuffer = ''
+        const trailingLine = stdoutLineParts.join('')
+        if (trailingLine.trim()) {
+          streamProcessor.processLine(trailingLine)
         }
+        stdoutLineParts = []
+
+        const stdout = stdoutParts.join('')
+        const stderr = stderrParts.join('')
 
         let result = streamProcessor.getResult()
         if (result === null) {
@@ -925,13 +929,20 @@ export class AgentExecutor {
         const chunk = captureChunk(data, stdoutDecoder, () => {
           stdoutTruncated = true
         })
-        stdout += chunk
-        stdoutBuffer += chunk
+        stdoutParts.push(chunk)
 
-        const lines = stdoutBuffer.split('\n')
-        stdoutBuffer = lines.pop() || ''
+        let chunkOffset = 0
+        while (chunkOffset < chunk.length) {
+          const newlineIndex = chunk.indexOf('\n', chunkOffset)
+          if (newlineIndex < 0) {
+            stdoutLineParts.push(chunk.slice(chunkOffset))
+            break
+          }
 
-        for (const line of lines) {
+          stdoutLineParts.push(chunk.slice(chunkOffset, newlineIndex))
+          const line = stdoutLineParts.join('')
+          stdoutLineParts = []
+          chunkOffset = newlineIndex + 1
           if (streamProcessor.processLine(line)) {
             requestTermination()
             break
@@ -940,9 +951,11 @@ export class AgentExecutor {
       })
 
       childProcess.stderr?.on('data', (data: Buffer) => {
-        stderr += captureChunk(data, stderrDecoder, () => {
-          stderrTruncated = true
-        })
+        stderrParts.push(
+          captureChunk(data, stderrDecoder, () => {
+            stderrTruncated = true
+          })
+        )
       })
 
       childProcess.on('close', (code: number | null, signal?: NodeJS.Signals | null) => {

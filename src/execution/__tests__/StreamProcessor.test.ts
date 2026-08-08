@@ -4,24 +4,24 @@ describe('StreamProcessor', () => {
   let processor: StreamProcessor
 
   beforeEach(() => {
-    processor = new StreamProcessor()
+    processor = new StreamProcessor('cursor')
   })
 
   describe('JSON processing', () => {
     it('should detect and store the first valid JSON', () => {
-      const json = '{"type": "result", "data": "output", "status": "complete"}'
+      const json = '{"type": "result", "result": "output", "status": "complete"}'
 
       expect(processor.processLine(json)).toBe(true)
       expect(processor.getResult()).toEqual({
         type: 'result',
-        data: 'output',
+        result: 'output',
         status: 'complete',
       })
     })
 
     it('should ignore subsequent JSONs after finding result type', () => {
-      const json1 = '{"type": "result", "response": "First JSON", "status": "success"}'
-      const json2 = '{"type": "result", "response": "Second JSON", "status": "also success"}'
+      const json1 = '{"type": "result", "result": "First JSON", "status": "success"}'
+      const json2 = '{"type": "result", "result": "Second JSON", "status": "also success"}'
 
       expect(processor.processLine(json1)).toBe(true)
       expect(processor.processLine(json2)).toBe(false)
@@ -29,7 +29,7 @@ describe('StreamProcessor', () => {
       // Should still have the first JSON
       expect(processor.getResult()).toEqual({
         type: 'result',
-        response: 'First JSON',
+        result: 'First JSON',
         status: 'success',
       })
     })
@@ -59,6 +59,7 @@ describe('StreamProcessor', () => {
         type: 'result',
         subtype: 'error',
         is_error: true,
+        status: 'error',
         duration_ms: 1234,
         error: 'An error occurred',
         error_type: 'execution_error',
@@ -68,6 +69,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should handle claude JSON format', () => {
+      processor = new StreamProcessor('claude')
       const claudeJson =
         '{"type":"result","subtype":"success","is_error":false,"duration_ms":2856,"result":"Hi!","session_id":"711419a4-3a19-4448-aa4a-31de7c4fa7a5"}'
 
@@ -83,6 +85,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should handle gemini stream-json format by accumulating assistant messages', () => {
+      processor = new StreamProcessor('gemini')
       // Gemini stream-json outputs multiple JSON lines:
       // - init: signals stream-json mode
       // - message with role: "user": user prompt (ignored)
@@ -117,17 +120,43 @@ describe('StreamProcessor', () => {
       })
     })
 
-    it('should handle JSON without type field for backwards compatibility', () => {
+    it('should not treat typeless cursor JSON as terminal', () => {
       const legacyJson = '{"response": "Legacy output", "status": "complete"}'
 
-      expect(processor.processLine(legacyJson)).toBe(true)
-      expect(processor.getResult()).toEqual({
-        response: 'Legacy output',
-        status: 'complete',
+      expect(processor.processLine(legacyJson)).toBe(false)
+      expect(processor.getResult()).toBeNull()
+    })
+
+    it('should not apply Grok result parsing to Claude events', () => {
+      processor = new StreamProcessor('claude')
+
+      expect(
+        processor.processLine(
+          '{"type":"system","text":"Background operation completed","stopReason":"EndTurn"}'
+        )
+      ).toBe(false)
+      expect(processor.getResult()).toBeNull()
+    })
+
+    it('should preserve Claude terminal errors as errors', () => {
+      processor = new StreamProcessor('claude')
+
+      expect(
+        processor.processLine(
+          '{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Authentication required"}'
+        )
+      ).toBe(true)
+      expect(processor.getResult()).toMatchObject({
+        type: 'result',
+        subtype: 'error_during_execution',
+        is_error: true,
+        status: 'error',
+        error: 'Authentication required',
       })
     })
 
     it('should normalize single-line grok JSON output', () => {
+      processor = new StreamProcessor('grok')
       const grokJson =
         '{"text":"Grok output","stopReason":"EndTurn","sessionId":"session-123","requestId":"request-123"}'
 
@@ -142,7 +171,19 @@ describe('StreamProcessor', () => {
       })
     })
 
+    it('should mark Grok text without a stop reason as partial', () => {
+      processor = new StreamProcessor('grok')
+
+      expect(processor.processLine('{"text":"Work in progress"}')).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Work in progress',
+        status: 'partial',
+      })
+    })
+
     it('should extract agent_message text from codex output stream', () => {
+      processor = new StreamProcessor('codex')
       // Given: A complete Codex output stream with reasoning and agent_message
       const codexOutputStream = [
         '{"type":"thread.started","thread_id":"019b1291-a763-74a1-bffe-39670dad4b6b"}',
@@ -167,6 +208,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should collect OpenCode text across tool steps until stop', () => {
+      processor = new StreamProcessor('opencode')
       expect(processor.processLine('{"type":"step_start","part":{}}')).toBe(false)
       expect(processor.processLine('{"type":"text","part":{"text":"part 1"}}')).toBe(false)
       expect(processor.processLine('{"type":"step_finish","part":{"reason":"tool-calls"}}')).toBe(
@@ -184,6 +226,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should mark a non-stop OpenCode finish as partial', () => {
+      processor = new StreamProcessor('opencode')
       expect(processor.processLine('{"type":"text","part":{"text":"truncated"}}')).toBe(false)
       expect(processor.processLine('{"type":"step_finish","part":{"reason":"length"}}')).toBe(true)
 
@@ -196,6 +239,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should preserve OpenCode text as partial when the process exits without a finish event', () => {
+      processor = new StreamProcessor('opencode')
       expect(processor.processLine('{"type":"text","part":{"text":"work in progress"}}')).toBe(
         false
       )
@@ -212,6 +256,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should normalize OpenCode error events with diagnostic context', () => {
+      processor = new StreamProcessor('opencode')
       const openCodeError =
         '{"type":"error","timestamp":1784020603139,"sessionID":"ses_0a015ef55ffePMBqnSUUKOWwRG","error":{"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_c481aeec"}}}'
 
@@ -229,6 +274,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should normalize Codex turn.failed events', () => {
+      processor = new StreamProcessor('codex')
       expect(
         processor.processLine(
           '{"type":"turn.failed","error":{"message":"The model is unavailable"}}'
@@ -242,7 +288,11 @@ describe('StreamProcessor', () => {
       })
     })
 
-    it('should normalize top-level Codex and Grok error events', () => {
+    it.each([
+      'codex',
+      'grok',
+    ] as const)('should normalize top-level %s error events', (agentType) => {
+      processor = new StreamProcessor(agentType)
       expect(processor.processLine('{"type":"error","message":"Unknown model id"}')).toBe(true)
       expect(processor.getResult()).toEqual({
         type: 'result',
@@ -253,6 +303,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should normalize Gemini result errors', () => {
+      processor = new StreamProcessor('gemini')
       expect(
         processor.processLine(
           '{"type":"result","status":"error","error":{"type":"unknown","message":"Model not found"},"stats":{"total_tokens":0}}'
@@ -269,6 +320,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should ignore non-fatal Codex error items and allow the turn to complete', () => {
+      processor = new StreamProcessor('codex')
       expect(processor.processLine('{"type":"thread.started","thread_id":"thread-1"}')).toBe(false)
       expect(
         processor.processLine(
@@ -294,6 +346,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should concatenate multiple agent_messages with newlines', () => {
+      processor = new StreamProcessor('codex')
       // Given: Codex output with multiple agent_message items
       const codexOutputStream = [
         '{"type":"thread.started","thread_id":"019b1292-47b5-7bf3-8f7a-ef0986d5b982"}',
@@ -317,6 +370,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should ignore command_execution items and only include agent_message', () => {
+      processor = new StreamProcessor('codex')
       // Given: Codex output with command execution (reasoning, command, then summary)
       const codexOutputStream = [
         '{"type":"thread.started","thread_id":"019b1292-e66c-7c61-bcc5-4262b08f3535"}',
@@ -368,6 +422,7 @@ describe('StreamProcessor', () => {
 
   describe('Complete output handling', () => {
     it('should normalize pretty-printed grok JSON output after process exit', () => {
+      processor = new StreamProcessor('grok')
       expect(
         processor.processCompleteOutput(
           '{\n' +
@@ -390,6 +445,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should mark grok non-EndTurn output as partial', () => {
+      processor = new StreamProcessor('grok')
       expect(
         processor.processCompleteOutput('{"text":"Progress only","stopReason":"Cancelled"}')
       ).toBe(true)
@@ -403,6 +459,7 @@ describe('StreamProcessor', () => {
     })
 
     it('should ignore complete output when it is not grok JSON', () => {
+      processor = new StreamProcessor('grok')
       expect(processor.processCompleteOutput('plain text output')).toBe(false)
       expect(processor.processCompleteOutput('{"response":"legacy"}')).toBe(false)
       expect(processor.getResult()).toBeNull()
@@ -410,34 +467,28 @@ describe('StreamProcessor', () => {
   })
 
   describe('Edge cases', () => {
-    it('should handle complex nested JSON structures', () => {
+    it('should ignore arbitrary structured JSON from cursor', () => {
       const complexJson =
         '{"foo": "bar", "nested": {"deep": {"value": "test"}}, "array": [1, 2, 3]}'
 
-      expect(processor.processLine(complexJson)).toBe(true)
-      expect(processor.getResult()).toEqual({
-        foo: 'bar',
-        nested: { deep: { value: 'test' } },
-        array: [1, 2, 3],
-      })
+      expect(processor.processLine(complexJson)).toBe(false)
+      expect(processor.getResult()).toBeNull()
     })
 
-    it('should handle JSON with special characters', () => {
+    it('should ignore typeless JSON with special characters from cursor', () => {
       const jsonWithSpecialChars = '{"text": "Line 1\\nLine 2\\tTabbed", "emoji": "🎉"}'
 
-      expect(processor.processLine(jsonWithSpecialChars)).toBe(true)
-      expect(processor.getResult()).toEqual({
-        text: 'Line 1\nLine 2\tTabbed',
-        emoji: '🎉',
-      })
+      expect(processor.processLine(jsonWithSpecialChars)).toBe(false)
+      expect(processor.getResult()).toBeNull()
     })
 
-    it('should process lines with leading/trailing whitespace', () => {
-      const jsonWithWhitespace = '  {"data": "value"}  '
+    it('should process terminal lines with leading/trailing whitespace', () => {
+      const jsonWithWhitespace = '  {"type":"result","result":"value"}  '
 
       expect(processor.processLine(jsonWithWhitespace)).toBe(true)
       expect(processor.getResult()).toEqual({
-        data: 'value',
+        type: 'result',
+        result: 'value',
       })
     })
   })
