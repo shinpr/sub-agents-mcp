@@ -13,6 +13,7 @@ describe('ServerConfig', () => {
     // affecting ServerConfig construction in another)
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
+    vi.stubEnv('AGENT_TYPE', 'cursor')
 
     // Create a temporary test directory that exists
     testAgentsDir = path.join(tmpdir(), `test-agents-${Date.now()}`)
@@ -51,6 +52,7 @@ describe('ServerConfig', () => {
     'glm',
     'kimi',
     'grok',
+    'antigravity',
     'opencode',
   ] as const)('should accept AGENT_TYPE=%s', (agentType) => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
@@ -123,6 +125,21 @@ describe('ServerConfig', () => {
     expect(() => new ServerConfig()).toThrow(/Invalid AGENT_TYPE/)
   })
 
+  it('should throw a corrective error when AGENT_TYPE is not set', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('AGENT_TYPE', undefined)
+
+    expect(() => new ServerConfig()).toThrow('AGENT_TYPE environment variable is required')
+    expect(() => new ServerConfig()).toThrow(/cursor, claude, gemini, codex/)
+  })
+
+  it('should throw a corrective error when AGENT_TYPE is blank', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('AGENT_TYPE', '   ')
+
+    expect(() => new ServerConfig()).toThrow('AGENT_TYPE environment variable is required')
+  })
+
   it.each([
     'read-only',
     'safe-edit',
@@ -174,6 +191,16 @@ describe('ServerConfig', () => {
       expect(config.agentEffort).toBe('high')
     })
 
+    it('should accept AGENT_EFFORT for Antigravity', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('AGENT_TYPE', 'antigravity')
+      vi.stubEnv('AGENT_EFFORT', 'high')
+
+      const config = new ServerConfig()
+
+      expect(config.agentEffort).toBe('high')
+    })
+
     it('should treat blank model and effort values as unset', () => {
       vi.stubEnv('AGENTS_DIR', testAgentsDir)
       vi.stubEnv('AGENT_MODEL', '   ')
@@ -212,17 +239,14 @@ describe('ServerConfig', () => {
     expect(() => new ServerConfig()).toThrow('Please set it to an absolute path')
   })
 
-  it('should use default values for other configs when only AGENTS_DIR is set', () => {
-    // Set only required AGENTS_DIR
+  it('should use default values for optional configs', () => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('SERVER_NAME', undefined)
-    vi.stubEnv('AGENT_TYPE', undefined)
 
     const config = new ServerConfig()
 
     expect(config.serverName).toBe('sub-agents-mcp')
     expect(config.agentsDir).toBe(testAgentsDir)
-    expect(config.agentType).toBe('cursor')
     expect(config.executionTimeoutMs).toBe(300000)
   })
 
@@ -234,16 +258,12 @@ describe('ServerConfig', () => {
   })
 
   it('should handle empty optional environment variables gracefully', () => {
-    // Set required AGENTS_DIR, but empty optional configs
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('SERVER_NAME', '')
-    vi.stubEnv('AGENT_TYPE', '')
 
     const config = new ServerConfig()
 
-    // Should fall back to defaults when empty
     expect(config.serverName).toBe('sub-agents-mcp')
-    expect(config.agentType).toBe('cursor')
   })
 
   describe('session management configuration', () => {

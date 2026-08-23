@@ -16,6 +16,7 @@ describe('McpServer', () => {
   beforeEach(() => {
     // Set required environment variables for ServerConfig
     process.env['AGENTS_DIR'] = './test-agents'
+    process.env['AGENT_TYPE'] = 'cursor'
     process.env['SESSION_ENABLED'] = 'false'
     mockConfig = new ServerConfig()
   })

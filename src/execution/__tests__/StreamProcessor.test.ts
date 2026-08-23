@@ -120,6 +120,70 @@ describe('StreamProcessor', () => {
       })
     })
 
+    it('should normalize an Antigravity success result', () => {
+      processor = new StreamProcessor('antigravity')
+
+      expect(processor.processLine('{"event":"init","conversation_id":"c1"}')).toBe(false)
+      expect(
+        processor.processLine('{"event":"result","result":{"status":"SUCCESS","response":"Done"}}')
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Done',
+        status: 'success',
+      })
+    })
+
+    it.each([
+      'CANCELED',
+      'INTERRUPTED',
+      'WAITING',
+      'RUNNING',
+    ])('should normalize Antigravity %s as partial', (status) => {
+      processor = new StreamProcessor('antigravity')
+
+      expect(
+        processor.processLine(
+          JSON.stringify({ event: 'result', result: { status, response: 'Progress' } })
+        )
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'Progress',
+        status: 'partial',
+      })
+    })
+
+    it('should normalize an Antigravity error for the MCP error contract', () => {
+      processor = new StreamProcessor('antigravity')
+
+      expect(
+        processor.processLine(
+          '{"event":"result","result":{"status":"ERROR","response":"","error":"Authentication required"}}'
+        )
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        status: 'error',
+        error: 'Authentication required',
+      })
+    })
+
+    it('should treat an unknown Antigravity terminal status as an observable error', () => {
+      processor = new StreamProcessor('antigravity')
+
+      expect(
+        processor.processLine('{"event":"result","result":{"status":"INVALID","response":""}}')
+      ).toBe(true)
+      expect(processor.getResult()).toMatchObject({
+        is_error: true,
+        status: 'error',
+        error: 'Antigravity execution failed with status: INVALID',
+      })
+    })
+
     it('should not treat typeless cursor JSON as terminal', () => {
       const legacyJson = '{"response": "Legacy output", "status": "complete"}'
 

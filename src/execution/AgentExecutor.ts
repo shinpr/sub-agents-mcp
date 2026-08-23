@@ -64,7 +64,7 @@ export interface ExecutionConfig {
 
   /**
    * Type of agent to use for execution.
-   * 'cursor', 'claude', 'gemini', 'codex', 'glm', 'kimi', 'grok', or 'opencode'
+   * 'cursor', 'claude', 'gemini', 'codex', 'glm', 'kimi', 'grok', 'antigravity', or 'opencode'
    */
   agentType: AgentType
 
@@ -147,6 +147,7 @@ export const AGENT_TYPES = [
   'glm',
   'kimi',
   'grok',
+  'antigravity',
   'opencode',
 ] as const
 
@@ -162,6 +163,7 @@ export const AGENT_EFFORT_SUPPORTED_TYPES = [
   'glm',
   'kimi',
   'grok',
+  'antigravity',
   'opencode',
 ] as const
 
@@ -237,6 +239,11 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     'read-only': ['--permission-mode', 'bypassPermissions', '--sandbox', 'read-only'],
     'safe-edit': ['--permission-mode', 'bypassPermissions', '--sandbox', 'workspace'],
     yolo: ['--permission-mode', 'bypassPermissions', '--sandbox', 'off'],
+  },
+  antigravity: {
+    'read-only': ['--mode', 'plan', '--sandbox'],
+    'safe-edit': ['--mode', 'accept-edits', '--sandbox'],
+    yolo: ['--dangerously-skip-permissions'],
   },
   // OpenCode permissions are supplied through OPENCODE_PERMISSION.
   opencode: {
@@ -438,6 +445,8 @@ export class AgentExecutor {
         return this.buildCursorArgs(params, envOverrides)
       case 'grok':
         return this.buildGrokArgs(params, envOverrides)
+      case 'antigravity':
+        return this.buildAntigravityArgs(params, envOverrides)
       case 'opencode':
         return this.buildOpenCodeArgs(params, envOverrides)
     }
@@ -462,7 +471,7 @@ export class AgentExecutor {
         break
       // claude: handled via --settings argv below
       // glm/kimi: use the claude binary, but intentionally avoid Claude settings.
-      // grok: not supported (upstream limitation)
+      // grok/antigravity: not supported (upstream limitation)
       // opencode: uses its normal XDG/project configuration discovery.
       // gemini: not supported (upstream limitation)
     }
@@ -491,6 +500,7 @@ export class AgentExecutor {
       case 'claude':
       case 'glm':
       case 'kimi':
+      case 'antigravity':
         flags.push('--effort', this.config.effort)
         break
       case 'grok':
@@ -678,6 +688,16 @@ export class AgentExecutor {
       formattedPrompt,
     ]
     return { command: 'grok', args, envOverrides }
+  }
+
+  private buildAntigravityArgs(
+    params: ExecutionParams,
+    envOverrides: EnvOverrides
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+    const flags = this.invocationFlags()
+    const formattedPrompt = this.formatSystemUserPrompt(params)
+    const args = [...flags, '--output-format', 'stream-json', '-p', formattedPrompt]
+    return { command: 'agy', args, envOverrides }
   }
 
   private buildOpenCodeArgs(

@@ -21,7 +21,7 @@ import { isLogLevel, LOG_LEVELS, type LogLevel } from '../utils/Logger.js'
  * - SERVER_NAME: Name identifier for the MCP server (default: 'sub-agents-mcp-server')
  * - SERVER_VERSION: Version of the MCP server (default: '1.0.0')
  * - AGENTS_DIR: Directory containing agent definition files (REQUIRED - must be absolute path)
- * - AGENT_TYPE: Type of agent to use (default: 'cursor')
+ * - AGENT_TYPE: Type of agent to use (REQUIRED)
  * - AGENT_PERMISSION: Approval/sandbox level for sub-agents ('read-only' | 'safe-edit' | 'yolo') (default: 'safe-edit')
  * - AGENT_MODEL: Optional model override for every agent execution
  * - AGENT_EFFORT: Optional backend-specific reasoning effort/model variant
@@ -109,7 +109,11 @@ export class ServerConfig {
 
     const agentTypeEnv = process.env['AGENT_TYPE']?.trim()
     if (!agentTypeEnv) {
-      this.agentType = 'cursor'
+      throw new Error(
+        'AGENT_TYPE environment variable is required. ' +
+          `Set it to one of: ${AGENT_TYPES.join(', ')} in your MCP configuration, ` +
+          'then restart or reconnect the MCP server.'
+      )
     } else if (isAgentType(agentTypeEnv)) {
       this.agentType = agentTypeEnv
     } else {
@@ -180,7 +184,7 @@ export class ServerConfig {
     // - Claude: passed as --settings argument
     // - Cursor: set as CURSOR_CONFIG_DIR environment variable
     // - Codex: set as CODEX_HOME environment variable
-    // - Gemini/Grok/OpenCode: not supported (upstream limitation or normal config discovery)
+    // - Gemini/Grok/Antigravity/OpenCode: not supported (upstream limitation or normal config discovery)
     this.agentsSettingsPath = process.env['AGENTS_SETTINGS_PATH'] || undefined
 
     // Cursor API key: prefer CURSOR_API_KEY, fall back to CLI_API_KEY for backward compatibility

@@ -132,6 +132,7 @@ describe('AgentExecutor', () => {
       const glmConfig = createExecutionConfig('glm')
       const kimiConfig = createExecutionConfig('kimi')
       const grokConfig = createExecutionConfig('grok')
+      const antigravityConfig = createExecutionConfig('antigravity')
       const openCodeConfig = createExecutionConfig('opencode')
 
       expect(cursorConfig.agentType).toBe('cursor')
@@ -141,6 +142,7 @@ describe('AgentExecutor', () => {
       expect(glmConfig.agentType).toBe('glm')
       expect(kimiConfig.agentType).toBe('kimi')
       expect(grokConfig.agentType).toBe('grok')
+      expect(antigravityConfig.agentType).toBe('antigravity')
       expect(openCodeConfig.agentType).toBe('opencode')
     })
 
@@ -226,6 +228,18 @@ describe('AgentExecutor', () => {
       expect(mockSpawn).toHaveBeenCalledWith('grok', expect.any(Array), expect.any(Object))
     })
 
+    it('should use agy with streaming JSON output for antigravity type', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('antigravity'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'agy',
+        expect.arrayContaining(['--output-format', 'stream-json', '-p']),
+        expect.any(Object)
+      )
+    })
+
     it('should use opencode run with non-interactive JSON output', async () => {
       const executor = new AgentExecutor(createExecutionConfig('opencode'))
 
@@ -271,6 +285,7 @@ describe('AgentExecutor', () => {
       { agentType: 'glm', expected: ['--effort', 'high'] },
       { agentType: 'kimi', expected: ['--effort', 'high'] },
       { agentType: 'grok', expected: ['--reasoning-effort', 'high'] },
+      { agentType: 'antigravity', expected: ['--effort', 'high'] },
       { agentType: 'opencode', expected: ['--variant', 'high'] },
     ] as const)('should map effort for $agentType', async ({ agentType, expected }) => {
       const executor = new AgentExecutor(
@@ -829,6 +844,20 @@ describe('AgentExecutor', () => {
       expect(promptArg).toContain('[User Prompt]')
       expect(promptArg).toContain('Test prompt')
     })
+
+    it('should concatenate for antigravity with both system context and user prompt', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('antigravity'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      const pIdx = args.indexOf('-p')
+      const promptArg = args[pIdx + 1]
+      expect(promptArg).toContain('[System Context]')
+      expect(promptArg).toContain('test-agent')
+      expect(promptArg).toContain('[User Prompt]')
+      expect(promptArg).toContain('Test prompt')
+    })
   })
 
   describe('executeAgent', () => {
@@ -922,6 +951,31 @@ describe('AgentExecutor', () => {
         stop_reason: 'EndTurn',
         session_id: 'session-123',
         request_id: 'request-123',
+      })
+    })
+
+    it('should normalize Antigravity NDJSON output', async () => {
+      mockSpawn.mockImplementationOnce(() =>
+        createMockProcess({
+          stdoutData:
+            '{"event":"init","conversation_id":"c1"}\n' +
+            '{"event":"step_update","step_update":{"text_delta":"Done"}}\n' +
+            '{"event":"result","result":{"status":"SUCCESS","response":"Done"}}\n',
+        })
+      )
+
+      const executor = new AgentExecutor(createExecutionConfig('antigravity'))
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Help me',
+        cwd: '/tmp',
+      })
+
+      expect(result.hasResult).toBe(true)
+      expect(result.resultJson).toEqual({
+        type: 'result',
+        result: 'Done',
+        status: 'success',
       })
     })
 
@@ -1099,6 +1153,22 @@ describe('AgentExecutor', () => {
         perm: 'yolo',
         expected: ['--permission-mode', 'bypassPermissions', '--sandbox', 'off'],
       },
+      // antigravity
+      {
+        agent: 'antigravity',
+        perm: 'read-only',
+        expected: ['--mode', 'plan', '--sandbox'],
+      },
+      {
+        agent: 'antigravity',
+        perm: 'safe-edit',
+        expected: ['--mode', 'accept-edits', '--sandbox'],
+      },
+      {
+        agent: 'antigravity',
+        perm: 'yolo',
+        expected: ['--dangerously-skip-permissions'],
+      },
     ]
 
     it.each(cases)('should prepend $expected for agent=$agent permission=$perm', async ({
@@ -1142,6 +1212,18 @@ describe('AgentExecutor', () => {
 
       const args = mockSpawn.mock.calls[0][1] as string[]
       expect(args.slice(0, 2)).toEqual(['--permission-mode', 'acceptEdits'])
+    })
+
+    it('should omit the Antigravity sandbox only for yolo', async () => {
+      const executor = new AgentExecutor(
+        createExecutionConfig('antigravity', { permission: 'yolo' })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      const args = mockSpawn.mock.calls[0][1] as string[]
+      expect(args).toContain('--dangerously-skip-permissions')
+      expect(args).not.toContain('--sandbox')
     })
   })
 
