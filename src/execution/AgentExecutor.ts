@@ -229,8 +229,9 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     yolo: ['-y'],
   },
   cursor: {
-    'read-only': ['--mode', 'plan'],
-    'safe-edit': ['--trust'],
+    // Cursor's execution mode and shell sandbox are independent controls.
+    'read-only': ['--mode', 'plan', '--sandbox', 'enabled'],
+    'safe-edit': ['--trust', '--sandbox', 'enabled'],
     yolo: ['-f', '--trust'],
   },
   // Grok's --permission-mode enforces only bypassPermissions via the flag, so
