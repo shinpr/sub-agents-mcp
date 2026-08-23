@@ -44,6 +44,7 @@ describe('Startup Performance Tests', () => {
       ...process.env,
       SERVER_NAME: 'startup-performance-test',
       AGENTS_DIR: testAgentsDir,
+      AGENT_TYPE: 'cursor',
     }
 
     // Start server process
@@ -139,6 +140,7 @@ describe('Startup Performance Tests', () => {
         ...process.env,
         SERVER_NAME: 'startup-stress-test',
         AGENTS_DIR: stressTestDir,
+        AGENT_TYPE: 'cursor',
       }
 
       const serverPath = path.join(
@@ -213,11 +215,13 @@ describe('Startup Performance Tests', () => {
       ...process.env,
       SERVER_NAME: 'minimal-startup-test',
       AGENTS_DIR: testAgentsDir, // Use basic test directory
+      AGENT_TYPE: 'cursor',
     }
 
     // Set environment variables
     process.env.SERVER_NAME = minimalEnv.SERVER_NAME
     process.env.AGENTS_DIR = minimalEnv.AGENTS_DIR
+    process.env.AGENT_TYPE = minimalEnv.AGENT_TYPE
     const config = new ServerConfig()
     const server = new McpServer(config)
 
@@ -243,6 +247,7 @@ describe('Startup Performance Tests', () => {
       ...process.env,
       SERVER_NAME: 'concurrent-startup-test',
       AGENTS_DIR: testAgentsDir,
+      AGENT_TYPE: 'cursor',
     }
 
     // Start multiple server configurations simultaneously
@@ -289,6 +294,7 @@ describe('Startup Performance Tests', () => {
       ...process.env,
       SERVER_NAME: 'env-heavy-test',
       AGENTS_DIR: testAgentsDir,
+      AGENT_TYPE: 'cursor',
       // Add extra variables to test processing
       TEST_VAR_1: 'value1',
       TEST_VAR_2: 'value2',

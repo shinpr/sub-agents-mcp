@@ -45,6 +45,8 @@ export class StreamProcessor {
         return this.processCodexLine(json)
       case 'grok':
         return this.processGrokLine(json)
+      case 'antigravity':
+        return this.processAntigravityLine(json)
       case 'opencode':
         return this.processOpenCodeLine(json)
       default: {
@@ -190,6 +192,54 @@ export class StreamProcessor {
     }
 
     this.resultJson = result
+    return true
+  }
+
+  private processAntigravityLine(json: Record<string, unknown>): boolean {
+    if (json['event'] !== 'result') {
+      return false
+    }
+
+    const payload = json['result']
+    if (!this.isRecord(payload) || typeof payload['response'] !== 'string') {
+      return false
+    }
+
+    const status = payload['status']
+    if (status === 'SUCCESS') {
+      this.resultJson = {
+        type: 'result',
+        result: payload['response'],
+        status: 'success',
+      }
+      return true
+    }
+
+    if (
+      status === 'CANCELED' ||
+      status === 'INTERRUPTED' ||
+      status === 'WAITING' ||
+      status === 'RUNNING'
+    ) {
+      this.resultJson = {
+        type: 'result',
+        result: payload['response'],
+        status: 'partial',
+      }
+      return true
+    }
+
+    const error =
+      (typeof payload['error'] === 'string' && payload['error']) ||
+      payload['response'] ||
+      `Antigravity execution failed with status: ${typeof status === 'string' ? status : 'UNKNOWN'}`
+    this.resultJson = {
+      type: 'result',
+      subtype: 'error',
+      is_error: true,
+      status: 'error',
+      error,
+    }
     return true
   }
 

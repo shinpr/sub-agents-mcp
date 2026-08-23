@@ -205,6 +205,7 @@ describe('Execution Performance Tests', () => {
     // Set test environment variables
     process.env.SERVER_NAME = 'execution-performance-test'
     process.env.AGENTS_DIR = testAgentsDir
+    process.env.AGENT_TYPE = 'cursor'
 
     config = new ServerConfig()
 
