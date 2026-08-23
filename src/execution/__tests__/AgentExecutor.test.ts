@@ -1134,8 +1134,16 @@ describe('AgentExecutor', () => {
       { agent: 'gemini', perm: 'safe-edit', expected: ['--approval-mode', 'auto_edit'] },
       { agent: 'gemini', perm: 'yolo', expected: ['-y'] },
       // cursor
-      { agent: 'cursor', perm: 'read-only', expected: ['--mode', 'plan'] },
-      { agent: 'cursor', perm: 'safe-edit', expected: ['--trust'] },
+      {
+        agent: 'cursor',
+        perm: 'read-only',
+        expected: ['--mode', 'plan', '--sandbox', 'enabled'],
+      },
+      {
+        agent: 'cursor',
+        perm: 'safe-edit',
+        expected: ['--trust', '--sandbox', 'enabled'],
+      },
       { agent: 'cursor', perm: 'yolo', expected: ['-f', '--trust'] },
       // grok
       {
