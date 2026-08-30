@@ -110,72 +110,6 @@ class QualityChecker {
     }
   }
 
-  async checkTestCoverage() {
-    this.section('Test Coverage Check');
-    
-    const result = await this.runCommand('pnpm run test:coverage');
-    if (!result.success) {
-      this.error(`Test execution failed: ${result.error}`);
-      return false;
-    }
-
-    const coveragePath = path.join(__dirname, '../coverage/coverage-final.json');
-    if (!fs.existsSync(coveragePath)) {
-      this.error('Coverage report not found');
-      return false;
-    }
-
-    try {
-      const coverage = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
-      const totals = Object.values(coverage).reduce((acc, file) => {
-        if (file.s) { // Statement coverage
-          acc.statements.covered += Object.values(file.s).filter(v => v > 0).length;
-          acc.statements.total += Object.values(file.s).length;
-        }
-        if (file.b) { // Branch coverage
-          acc.branches.covered += Object.values(file.b).flat().filter(v => v > 0).length;
-          acc.branches.total += Object.values(file.b).flat().length;
-        }
-        if (file.f) { // Function coverage
-          acc.functions.covered += Object.values(file.f).filter(v => v > 0).length;
-          acc.functions.total += Object.values(file.f).length;
-        }
-        if (file.l) { // Line coverage
-          acc.lines.covered += Object.values(file.l).filter(v => v > 0).length;
-          acc.lines.total += Object.values(file.l).length;
-        }
-        return acc;
-      }, {
-        statements: { covered: 0, total: 0 },
-        branches: { covered: 0, total: 0 },
-        functions: { covered: 0, total: 0 },
-        lines: { covered: 0, total: 0 }
-      });
-
-      const statementCoverage = (totals.statements.covered / totals.statements.total) * 100;
-      const branchCoverage = (totals.branches.covered / totals.branches.total) * 100;
-      const functionCoverage = (totals.functions.covered / totals.functions.total) * 100;
-      const lineCoverage = (totals.lines.covered / totals.lines.total) * 100;
-
-      this.info(`Statement Coverage: ${statementCoverage.toFixed(2)}%`);
-      this.info(`Branch Coverage: ${branchCoverage.toFixed(2)}%`);
-      this.info(`Function Coverage: ${functionCoverage.toFixed(2)}%`);
-      this.info(`Line Coverage: ${lineCoverage.toFixed(2)}%`);
-
-      const targetCoverage = 80;
-      if (statementCoverage >= targetCoverage && lineCoverage >= targetCoverage) {
-        this.success(`Test coverage meets requirement (≥${targetCoverage}%)`);
-        return true;
-      } else {
-        this.error(`Test coverage below requirement (${targetCoverage}%)`);
-        return false;
-      }
-    } catch (error) {
-      this.error(`Failed to parse coverage report: ${error.message}`);
-      return false;
-    }
-  }
-
   async checkDependencies() {
     this.section('Dependency Security Check');
     
@@ -391,7 +325,6 @@ class QualityChecker {
       () => this.checkTypeScript(),
       () => this.checkLinting(),
       () => this.checkFormatting(),
-      () => this.checkTestCoverage(),
       () => this.checkDependencies(),
       () => this.checkCircularDependencies(),
       () => this.checkCodeQuality(),

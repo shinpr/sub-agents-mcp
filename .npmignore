@@ -3,8 +3,6 @@ src/
 __tests__/
 
 # Development files
-.vitest-cache/
-coverage/
 *.log
 *.tgz
 

@@ -22,8 +22,6 @@ logs
 *.log
 
 # Runtime data
-.nyc_output
-coverage
 test-output.json
 
 # IDE and editor specific files
@@ -51,7 +49,6 @@ docs/
 scripts/*
 !scripts/quality-check.cjs
 !scripts/cleanup-test-processes.sh
-!scripts/show-coverage.cjs
 CLAUDE.md
 
 # MCP Registry publisher files

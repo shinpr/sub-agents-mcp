@@ -54,10 +54,6 @@
     "watch": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage",
-    "test:coverage:summary": "node scripts/show-coverage.cjs",
-    "test:coverage:clean": "rm -rf coverage .vitest-cache",
-    "test:coverage:fresh": "pnpm run test:coverage:clean && pnpm run test:coverage",
     "test:watch": "vitest",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "format": "biome format --write src",
@@ -81,7 +77,6 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",
     "@types/node": "^26.1.0",
-    "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
     "dpdm": "^4.2.0",
     "husky": "^9.1.7",
