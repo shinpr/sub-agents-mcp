@@ -47,7 +47,6 @@ tmp/
 .claude/
 docs/
 scripts/*
-!scripts/quality-check.cjs
 !scripts/cleanup-test-processes.sh
 CLAUDE.md
 
