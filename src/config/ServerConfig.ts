@@ -11,85 +11,43 @@ import {
 } from '../execution/AgentExecutor.js'
 import { isLogLevel, LOG_LEVELS, type LogLevel } from '../utils/Logger.js'
 
-/**
- * Server configuration management class.
- *
- * Handles loading configuration from environment variables with fallback defaults,
- * validates configuration values, and provides type-safe access to server settings.
- *
- * Environment variables:
- * - SERVER_NAME: Name identifier for the MCP server (default: 'sub-agents-mcp-server')
- * - SERVER_VERSION: Version of the MCP server (default: '1.0.0')
- * - AGENTS_DIR: Directory containing agent definition files (REQUIRED - must be absolute path)
- * - AGENT_TYPE: Type of agent to use (REQUIRED)
- * - AGENT_PERMISSION: Approval/sandbox level for sub-agents ('read-only' | 'safe-edit' | 'yolo') (default: 'safe-edit')
- * - AGENT_MODEL: Optional model override for every agent execution
- * - AGENT_EFFORT: Optional backend-specific reasoning effort/model variant
- * - LOG_LEVEL: Log level for server operations (default: 'info')
- * - SESSION_ENABLED: Enable session management functionality (default: false)
- * - SESSION_DIR: Directory for storing session files (default: '.mcp-sessions')
- * - SESSION_RETENTION_DAYS: Number of days to retain session files (default: 1)
- * - AGENTS_SETTINGS_PATH: Path to CLI settings file/directory (optional)
- */
 export class ServerConfig {
-  /** Server name identifier used for MCP registration */
   public readonly serverName: string
 
-  /** Server version used for identification */
   public readonly serverVersion: string
 
-  /** Directory path containing agent definition markdown files */
   public readonly agentsDir: string
 
-  /** Type of agent to use for execution */
   public readonly agentType: AgentType
 
-  /** Approval/sandbox level for sub-agent execution */
   public readonly agentPermission: AgentPermission
 
-  /** Optional model override applied to every execution */
   public readonly agentModel: string | undefined
 
-  /** Optional backend-specific reasoning effort or model variant */
   public readonly agentEffort: string | undefined
 
-  /** Log level for server operations */
   public readonly logLevel: LogLevel
 
-  /** Maximum execution timeout in milliseconds for agent execution */
   public readonly executionTimeoutMs: number
 
-  /** Enable session management functionality */
   public readonly sessionEnabled: boolean
 
-  /** Directory for storing session files */
   public readonly sessionDir: string
 
-  /** Number of days to retain session files before cleanup */
   public readonly sessionRetentionDays: number
 
-  /** Path to CLI settings file/directory for agent execution */
   public readonly agentsSettingsPath: string | undefined
 
-  /** API key for cursor-agent authentication (from CURSOR_API_KEY or CLI_API_KEY env var) */
   public readonly cursorApiKey: string | undefined
 
-  /** API key for GLM/Z.ai authentication (from CLI_API_KEY env var) */
   public readonly glmApiKey: string | undefined
 
-  /** API key for Kimi authentication (from CLI_API_KEY env var) */
   public readonly kimiApiKey: string | undefined
 
-  /**
-   * Creates a new ServerConfig instance by loading values from environment variables
-   * or using default values.
-   * @throws {Error} When AGENTS_DIR environment variable is not set
-   */
   constructor() {
     this.serverName = process.env['SERVER_NAME'] || 'sub-agents-mcp'
     this.serverVersion = process.env['SERVER_VERSION'] || '0.1.0'
 
-    // AGENTS_DIR is required for MCP to work correctly
     const agentsDir = process.env['AGENTS_DIR']
     if (!agentsDir) {
       throw new Error(
@@ -164,27 +122,17 @@ export class ServerConfig {
       this.executionTimeoutMs = 300000
     }
 
-    // Session management configuration
-    // Only 'true' string enables session management, all other values are treated as false
     this.sessionEnabled = process.env['SESSION_ENABLED'] === 'true'
     this.sessionDir = process.env['SESSION_DIR'] || '.mcp-sessions'
 
-    // Parse SESSION_RETENTION_DAYS with validation (must be positive integer)
     const retentionDaysEnv = process.env['SESSION_RETENTION_DAYS']
     if (retentionDaysEnv?.trim()) {
       const parsedDays = Number.parseInt(retentionDaysEnv, 10)
-      // Use default (1 day) for invalid values (NaN, zero, or negative)
       this.sessionRetentionDays = Number.isNaN(parsedDays) || parsedDays <= 0 ? 1 : parsedDays
     } else {
       this.sessionRetentionDays = 1
     }
 
-    // CLI settings path (optional)
-    // Used to specify custom settings file/directory for each CLI:
-    // - Claude: passed as --settings argument
-    // - Cursor: set as CURSOR_CONFIG_DIR environment variable
-    // - Codex: set as CODEX_HOME environment variable
-    // - Gemini/Grok/Antigravity/OpenCode: not supported (upstream limitation or normal config discovery)
     this.agentsSettingsPath = process.env['AGENTS_SETTINGS_PATH'] || undefined
 
     // Cursor API key: prefer CURSOR_API_KEY, fall back to CLI_API_KEY for backward compatibility

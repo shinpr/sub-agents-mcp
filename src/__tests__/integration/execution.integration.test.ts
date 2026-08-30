@@ -2,12 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentExecutor, createExecutionConfig } from '../../execution/AgentExecutor.js'
 import type { ExecutionParams } from '../../types/ExecutionParams.js'
 
-// Mock child_process module for integration testing
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }))
 
-// Import the mocked module to get references
 import { spawn } from 'node:child_process'
 
 const mockSpawn = vi.mocked(spawn)
@@ -20,9 +18,7 @@ describe('AgentExecutor Integration', () => {
     const testConfig = createExecutionConfig('cursor')
     executor = new AgentExecutor(testConfig)
 
-    // Setup spawn mock for integration tests
     mockSpawn.mockImplementation((_cmd: string, args: readonly string[], _options: any) => {
-      // Extract the prompt which should be the last argument after -p flag
       const promptIndex = args.indexOf('-p')
       const prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''
       const isNonexistentAgent = prompt.includes('nonexistent-agent')
@@ -36,7 +32,6 @@ describe('AgentExecutor Integration', () => {
           on: vi.fn((event, callback) => {
             if (event === 'data') {
               if (isTestAgent) {
-                // Success case - simulate cursor type:result response (synchronous for test stability)
                 callback(
                   Buffer.from(
                     `${JSON.stringify({
@@ -46,9 +41,7 @@ describe('AgentExecutor Integration', () => {
                   )
                 )
               } else if (isNonexistentAgent) {
-                // Don't send successful data for nonexistent agents
               } else {
-                // Default success - cursor type:result format (synchronous for test stability)
                 callback(
                   Buffer.from(
                     `${JSON.stringify({
@@ -64,7 +57,6 @@ describe('AgentExecutor Integration', () => {
         stderr: {
           on: vi.fn((event, callback) => {
             if (event === 'data' && isNonexistentAgent) {
-              // Synchronous for test stability
               callback(Buffer.from('Agent not found'))
             }
           }),
@@ -72,13 +64,10 @@ describe('AgentExecutor Integration', () => {
         on: vi.fn((event, callback) => {
           if (event === 'close') {
             const exitCode = isNonexistentAgent ? 1 : 0
-            // Synchronous for test stability
             callback(exitCode)
           } else if (event === 'error' && isNonexistentAgent) {
-            // Synchronous for test stability
             callback(new Error('Integration execution failed'))
           } else if (event === 'exit') {
-            // Synchronous for test stability
             callback()
           }
         }),
@@ -101,10 +90,6 @@ describe('AgentExecutor Integration', () => {
         extra_args: ['--verbose'],
       }
 
-      // This test verifies the complete integration flow:
-      // 1. Execution method is selected (always spawn)
-      // 2. Agent is executed with formatted prompt
-      // 3. Results are collected with performance metrics
       const result = await executor.executeAgent(originalParams)
 
       expect(result).toEqual({
@@ -116,10 +101,8 @@ describe('AgentExecutor Integration', () => {
         resultJson: expect.any(Object),
       })
 
-      // Verify basic execution properties
       expect(result.exitCode).toBeDefined()
 
-      // Verify performance monitoring
       expect(result.executionTime).toBeGreaterThanOrEqual(0)
       expect(result.executionTime).toBeGreaterThanOrEqual(0)
     })
@@ -140,7 +123,6 @@ describe('AgentExecutor Integration', () => {
       const smallResult = await executor.executeAgent(smallPromptParams)
       const largeResult = await executor.executeAgent(largePromptParams)
 
-      // Verify spawn is used for all cases
       expect(smallResult.exitCode).toBeDefined()
       expect(largeResult.exitCode).toBeDefined()
     })
@@ -154,11 +136,9 @@ describe('AgentExecutor Integration', () => {
 
       const result = await executor.executeAgent(params)
 
-      // Verify error is properly captured
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toBeTruthy()
 
-      // Verify performance metrics are still collected for failed executions
       expect(result.executionTime).toBeGreaterThanOrEqual(0)
       expect(result.exitCode).toBeDefined()
     })
@@ -210,15 +190,12 @@ describe('AgentExecutor Integration', () => {
       const smallResult = await executor.executeAgent(smallParams)
       const largeResult = await executor.executeAgent(largeParams)
 
-      // Both should have performance metrics
       expect(smallResult.executionTime).toBeGreaterThanOrEqual(0)
       expect(largeResult.executionTime).toBeGreaterThanOrEqual(0)
 
-      // Both use spawn method (no exec method anymore)
       expect(smallResult.exitCode).toBeDefined()
       expect(largeResult.exitCode).toBeDefined()
 
-      // Output size estimation should differ
       expect(smallResult.executionTime).toBeGreaterThanOrEqual(0)
       expect(largeResult.executionTime).toBeGreaterThanOrEqual(0)
     })
@@ -232,10 +209,8 @@ describe('AgentExecutor Integration', () => {
         cwd: '/tmp',
       }
 
-      // Direct execution should work without enhancement layer
       const result = await executor.executeAgent(params)
 
-      // Should not throw and return valid result
       expect(result).toBeDefined()
       expect(result.exitCode).toBeDefined()
       expect(typeof result.executionTime).toBe('number')
@@ -248,7 +223,6 @@ describe('AgentExecutor Integration', () => {
         cwd: '/tmp',
       }
 
-      // This should fail at the parameter validation level
       await expect(executor.executeAgent(invalidParams)).rejects.toThrow()
     })
   })

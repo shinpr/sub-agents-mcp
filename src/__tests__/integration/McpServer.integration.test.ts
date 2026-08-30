@@ -1,10 +1,3 @@
-/**
- * Integration tests for McpServer with tools and resources
- *
- * Tests the complete MCP server functionality including run_agent tool
- * registration, agent resources publication, and MCP client interaction.
- */
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ServerConfig } from '../../config/ServerConfig.js'
 import { McpServer } from '../../server/McpServer.js'
@@ -46,7 +39,6 @@ describe('McpServer Integration', () => {
     })
 
     it('should register run_agent tool during initialization', async () => {
-      // This test will fail initially as run_agent tool integration is not implemented
       const tools = await server.listTools()
 
       expect(tools).toBeDefined()
@@ -79,7 +71,6 @@ describe('McpServer Integration', () => {
     })
 
     it('should publish agent list resource', async () => {
-      // This test will fail initially as agent resources are not implemented
       const resources = await server.listResources()
 
       expect(resources).toBeDefined()
@@ -94,12 +85,10 @@ describe('McpServer Integration', () => {
     it('should provide individual agent resources with valid URI format', async () => {
       const resources = await server.listResources()
 
-      // Check if individual agent resources are available
       const agentResources = resources.filter(
         (resource) => resource.uri.startsWith('agents://') && resource.uri !== 'agents://list'
       )
 
-      // If there are agent resources, verify their structure
       for (const agentResource of agentResources) {
         expect(agentResource.name).toBeTruthy()
         expect(agentResource.description).toBeTruthy()
@@ -114,7 +103,6 @@ describe('McpServer Integration', () => {
     })
 
     it('should execute run_agent tool with valid parameters', async () => {
-      // This test will fail initially as tool execution is not fully implemented
       const params = {
         agent: 'test-agent',
         prompt: 'Hello, world!',
@@ -135,7 +123,6 @@ describe('McpServer Integration', () => {
 
     it('should validate run_agent tool parameters', async () => {
       const invalidParams = {
-        // Missing required 'agent' parameter
         prompt: 'Test prompt',
       }
 
@@ -168,7 +155,6 @@ describe('McpServer Integration', () => {
     })
 
     it('should provide agent list resource content', async () => {
-      // This test will fail initially as resource access is not implemented
       const resource = await server.readResource('agents://list')
 
       expect(resource).toBeDefined()
@@ -183,7 +169,6 @@ describe('McpServer Integration', () => {
     })
 
     it('should provide individual agent resource content', async () => {
-      // First get the list of available agents
       const listResource = await server.readResource('agents://list')
 
       if (listResource.contents.length > 0) {
@@ -209,20 +194,15 @@ describe('McpServer Integration', () => {
     })
 
     it('should handle complete agent execution workflow', async () => {
-      // This test simulates a complete MCP client interaction
-      // 1. List available tools
       const tools = await server.listTools()
       expect(tools.find((t) => t.name === 'run_agent')).toBeDefined()
 
-      // 2. List available resources
       const resources = await server.listResources()
       expect(resources.find((r) => r.uri === 'agents://list')).toBeDefined()
 
-      // 3. Read agent list resource
       const agentList = await server.readResource('agents://list')
       expect(agentList).toBeDefined()
 
-      // 4. Execute run_agent tool
       const executionResult = await server.callTool('run_agent', {
         agent: 'test-agent',
         prompt: 'Test execution',
@@ -234,18 +214,15 @@ describe('McpServer Integration', () => {
     })
 
     it('should maintain consistent state across operations', async () => {
-      // Perform multiple operations to ensure server state consistency
       const tools1 = await server.listTools()
       const resources1 = await server.listResources()
 
-      // Execute a tool
       await server.callTool('run_agent', {
         agent: 'test-agent',
         prompt: 'State test',
         cwd: process.cwd(),
       })
 
-      // Check that tool and resource lists remain consistent
       const tools2 = await server.listTools()
       const resources2 = await server.listResources()
 
@@ -270,9 +247,7 @@ describe('McpServer Integration', () => {
     })
 
     it('should provide meaningful error messages', async () => {
-      const result = (await server.callTool('run_agent', {
-        /* missing required params */
-      })) as any
+      const result = (await server.callTool('run_agent', {})) as any
       expect(result.content).toBeDefined()
       const textContent = result.content.find((c: any) => c.type === 'text')
       expect(textContent?.text).toMatch(/agent.*required|prompt.*required/i)

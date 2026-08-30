@@ -7,109 +7,39 @@ import type { ExecutionParams } from '../types/ExecutionParams.js'
 import { Logger, type LogLevel } from '../utils/Logger.js'
 import { StreamProcessor } from './StreamProcessor.js'
 
-/**
- * Detailed execution result that includes performance metrics and method information.
- * Captures the agent execution outcome with additional monitoring capabilities.
- */
 export interface AgentExecutionResult {
-  /**
-   * Standard output from the agent execution.
-   * Contains the agent's response or execution result.
-   */
   stdout: string
 
-  /**
-   * Standard error output from the agent execution.
-   * Contains error messages and diagnostic information.
-   */
   stderr: string
 
-  /**
-   * Exit code returned by the agent process.
-   * 0 indicates success, non-zero indicates failure.
-   */
   exitCode: number
 
-  /**
-   * Total execution time in milliseconds.
-   * Used for performance monitoring and optimization.
-   */
   executionTime: number
 
-  /**
-   * Whether a result JSON was successfully obtained from the agent.
-   * True when StreamProcessor detects a valid JSON response.
-   */
   hasResult?: boolean
 
-  /**
-   * The parsed JSON result from the agent if available.
-   * Contains the structured response data when hasResult is true.
-   */
   resultJson?: unknown
 }
 
-/**
- * Simplified execution configuration.
- */
 export interface ExecutionConfig {
-  /**
-   * Maximum execution timeout in milliseconds.
-   * Default: 5 minutes (300000ms)
-   */
   executionTimeout: number
 
-  /** Maximum combined stdout/stderr bytes retained in memory. */
   maxOutputBytes: number
 
-  /**
-   * Type of agent to use for execution.
-   * 'cursor', 'claude', 'gemini', 'codex', 'glm', 'kimi', 'grok', 'antigravity', or 'opencode'
-   */
   agentType: AgentType
 
-  /**
-   * Approval/sandbox level the sub-agent runs with.
-   *
-   * Sub-agents have no stdin, so any approval prompt would deadlock the run.
-   * The default 'safe-edit' keeps writes confined to the workspace while
-   * suppressing prompts. The default value is owned by ServerConfig and
-   * threaded through here; this field is required.
-   */
   permission: AgentPermission
 
-  /**
-   * Path to CLI settings file/directory.
-   * Applied differently based on agentType:
-   * - claude: passed as --settings argument
-   * - cursor: set as CURSOR_CONFIG_DIR environment variable
-   * - codex: set as CODEX_HOME environment variable
-   * - gemini: not supported (ignored)
-   */
   agentsSettingsPath?: string
 
-  /**
-   * API key for cursor-agent authentication.
-   * Passed to cursor-agent via CURSOR_API_KEY environment variable.
-   */
   cursorApiKey?: string
 
-  /**
-   * API key for GLM (Z.ai) authentication.
-   * Passed to the claude binary via ANTHROPIC_AUTH_TOKEN environment variable.
-   */
   glmApiKey?: string
 
-  /**
-   * API key for Kimi authentication.
-   * Passed to the claude binary via ANTHROPIC_API_KEY environment variable.
-   */
   kimiApiKey?: string
 
-  /** Optional model override applied to every execution by this MCP server. */
   model?: string
 
-  /** Optional backend-specific reasoning effort or model variant. */
   effort?: string
 }
 
@@ -135,10 +65,6 @@ const KIMI_MISSING_API_KEY_ERROR =
   'then restart or reconnect the MCP server so the running process receives it. ' +
   'This run will keep failing until the MCP process is restarted with CLI_API_KEY set.'
 
-/**
- * Supported agent runtimes. Single source of truth for both runtime validation
- * (ServerConfig) and static typing.
- */
 export const AGENT_TYPES = [
   'cursor',
   'claude',
@@ -149,6 +75,7 @@ export const AGENT_TYPES = [
   'grok',
   'antigravity',
   'opencode',
+  'command-code',
 ] as const
 
 export type AgentType = (typeof AGENT_TYPES)[number]
@@ -165,6 +92,7 @@ export const AGENT_EFFORT_SUPPORTED_TYPES = [
   'grok',
   'antigravity',
   'opencode',
+  'command-code',
 ] as const
 
 export function supportsAgentEffort(
@@ -173,10 +101,6 @@ export function supportsAgentEffort(
   return (AGENT_EFFORT_SUPPORTED_TYPES as readonly AgentType[]).includes(agentType)
 }
 
-/**
- * Supported permission levels. Single source of truth for both runtime
- * validation (ServerConfig) and static typing.
- */
 export const AGENT_PERMISSIONS = ['read-only', 'safe-edit', 'yolo'] as const
 
 export type AgentPermission = (typeof AGENT_PERMISSIONS)[number]
@@ -185,23 +109,8 @@ export function isAgentPermission(value: unknown): value is AgentPermission {
   return typeof value === 'string' && (AGENT_PERMISSIONS as readonly string[]).includes(value)
 }
 
-/**
- * Default permission level used when AGENT_PERMISSION is not set.
- * Owned here so ServerConfig and createExecutionConfig share a single constant.
- */
 export const DEFAULT_AGENT_PERMISSION: AgentPermission = 'safe-edit'
 
-/**
- * Permission level → per-CLI flag mapping.
- *
- * Levels:
- * - 'read-only': investigation/review only, no edits or shell writes.
- * - 'safe-edit' (default): auto-approve edits inside the workspace, suppress prompts.
- * - 'yolo': bypass all approvals and sandboxing.
- *
- * Order is preserved when these flags are spliced into argv; tests assert
- * exact arrays via toEqual, so any change here must be reflected in tests.
- */
 const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly string[]>> = {
   codex: {
     'read-only': ['-s', 'read-only'],
@@ -252,6 +161,11 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     'safe-edit': [],
     yolo: [],
   },
+  'command-code': {
+    'read-only': ['--permission-mode', 'plan'],
+    'safe-edit': ['--yolo', '--permission-mode', 'auto-accept'],
+    yolo: ['--yolo'],
+  },
 }
 
 const OPENCODE_PERMISSION_MAPPING: Record<AgentPermission, object | 'allow'> = {
@@ -272,11 +186,6 @@ const OPENCODE_PERMISSION_MAPPING: Record<AgentPermission, object | 'allow'> = {
   yolo: 'allow',
 }
 
-/**
- * Creates a complete ExecutionConfig with the provided agent type.
- * @param agentType - The type of agent to use
- * @param overrides - Optional overrides for configuration values
- */
 export function createExecutionConfig(
   agentType: AgentType,
   overrides?: Partial<Omit<ExecutionConfig, 'agentType'>>
@@ -293,50 +202,16 @@ export function createExecutionConfig(
   }
 }
 
-/**
- * AgentExecutor class implements execution strategy for running Claude Code agents.
- * Uses child_process.spawn for proper TTY handling and stdin/stdout streaming.
- * Includes performance monitoring and timeout management.
- */
 export class AgentExecutor {
   private readonly config: ExecutionConfig
   private readonly logger: Logger
 
-  /**
-   * Creates a new AgentExecutor instance.
-   *
-   * @param config - Execution configuration including CLI command and thresholds
-   * @param logger - Optional Logger instance for structured logging
-   */
   constructor(config: ExecutionConfig, logger?: Logger) {
     this.config = config
-    // Use provided logger or create new one with LOG_LEVEL env var
     this.logger = logger || new Logger((process.env['LOG_LEVEL'] as LogLevel) || 'info')
   }
 
-  /**
-   * Executes an agent with the specified parameters using spawn strategy.
-   *
-   * This method implements the core execution logic using spawn for proper TTY
-   * handling and streaming. It includes comprehensive performance monitoring.
-   *
-   * @param params - Execution parameters including agent name, prompt, and options
-   * @returns Promise resolving to detailed execution result with performance metrics
-   * @throws {Error} When agent execution fails or parameters are invalid
-   *
-   * @example
-   * ```typescript
-   * const executor = new AgentExecutor()
-   * const result = await executor.executeAgent({
-   *   agent: "code-helper",
-   *   prompt: "Review this code",
-   *   cwd: "/project"
-   * })
-   * console.log(`Execution took ${result.executionTime}ms using ${result.executionMethod}`)
-   * ```
-   */
   async executeAgent(params: ExecutionParams): Promise<AgentExecutionResult> {
-    // Input validation
     if (!params?.agent || !params.prompt) {
       const error = 'Invalid execution parameters: agent and prompt are required'
       this.logger.error('Agent execution failed during validation', undefined, { error, params })
@@ -363,10 +238,6 @@ export class AgentExecutor {
     try {
       // Add minimal delay to ensure execution time is measurable
       await new Promise((resolve) => setTimeout(resolve, 1))
-
-      // Use spawn method for proper TTY handling
-
-      // Execute using spawn for proper TTY handling
       const result = await this.executeWithSpawn(params)
 
       const executionTime = Date.now() - startTime
@@ -394,7 +265,6 @@ export class AgentExecutor {
         executionTime,
       })
 
-      // Re-throw enhancement errors
       if (
         error instanceof Error &&
         (error.message.includes('enhance') || error.message.includes('Enhancement'))
@@ -402,7 +272,6 @@ export class AgentExecutor {
         throw error
       }
 
-      // Return error result for execution failures
       return {
         stdout: '',
         stderr: error instanceof Error ? error.message : 'Unknown execution error',
@@ -414,16 +283,6 @@ export class AgentExecutor {
     }
   }
 
-  /**
-   * Builds CLI-specific command, args, and environment overrides.
-   *
-   * Each CLI's argv layout follows the pattern: permission flags first
-   * (so the per-CLI base flags and the prompt remain at the tail). Per-CLI
-   * specifics (system-prompt injection, settings path, API key) are handled
-   * by the dedicated builder.
-   *
-   * @private
-   */
   private buildCommandArgs(params: ExecutionParams): {
     command: string
     args: string[]
@@ -450,16 +309,11 @@ export class AgentExecutor {
         return this.buildAntigravityArgs(params, envOverrides)
       case 'opencode':
         return this.buildOpenCodeArgs(params, envOverrides)
+      case 'command-code':
+        return this.buildCommandCodeArgs(params, envOverrides)
     }
   }
 
-  /**
-   * Maps AGENTS_SETTINGS_PATH onto the per-CLI env var (claude is handled
-   * via argv, gemini does not support it). Gemini ignoring this is a known
-   * upstream limitation, not a bug here.
-   *
-   * @private
-   */
   private buildSettingsPathEnv(): EnvOverrides {
     const env: EnvOverrides = {}
     if (!this.config.agentsSettingsPath) return env
@@ -470,11 +324,8 @@ export class AgentExecutor {
       case 'codex':
         env['CODEX_HOME'] = this.config.agentsSettingsPath
         break
-      // claude: handled via --settings argv below
-      // glm/kimi: use the claude binary, but intentionally avoid Claude settings.
-      // grok/antigravity: not supported (upstream limitation)
-      // opencode: uses its normal XDG/project configuration discovery.
-      // gemini: not supported (upstream limitation)
+      // Claude uses argv; redirected Claude backends avoid Claude settings.
+      // Other backends use normal config discovery or do not support this override.
     }
     return env
   }
@@ -502,6 +353,7 @@ export class AgentExecutor {
       case 'glm':
       case 'kimi':
       case 'antigravity':
+      case 'command-code':
         flags.push('--effort', this.config.effort)
         break
       case 'grok':
@@ -538,6 +390,25 @@ export class AgentExecutor {
     const formattedPrompt = this.formatSystemUserPrompt(params)
     const args = [...flags, 'exec', '--json', '--skip-git-repo-check', formattedPrompt]
     return { command: 'codex', args, envOverrides }
+  }
+
+  private buildCommandCodeArgs(
+    params: ExecutionParams,
+    envOverrides: EnvOverrides
+  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+    const flags = this.invocationFlags()
+    const formattedPrompt = this.formatSystemUserPrompt(params)
+    const args = [
+      ...flags,
+      '--output-format',
+      'json',
+      '--trust',
+      '--no-session',
+      '--skip-onboarding',
+      '-p',
+      formattedPrompt,
+    ]
+    return { command: 'command-code', args, envOverrides }
   }
 
   private buildClaudeArgs(
@@ -677,7 +548,6 @@ export class AgentExecutor {
     const flags = this.invocationFlags()
     const cwd = params.cwd || process.cwd()
     const formattedPrompt = this.formatSystemUserPrompt(params)
-    // Approval mode + sandbox live in PERMISSION_FLAGS.grok (via perm).
     const args = [
       ...flags,
       '--cwd',
@@ -786,13 +656,6 @@ export class AgentExecutor {
     return typeof error.code === 'string' ? error.code : undefined
   }
 
-  /**
-   * Executes an agent using child_process.spawn for proper TTY handling.
-   *
-   * @private
-   * @param params - Execution parameters
-   * @returns Promise resolving to execution result
-   */
   private async executeWithSpawn(params: ExecutionParams): Promise<{
     stdout: string
     stderr: string
@@ -996,12 +859,6 @@ export class AgentExecutor {
     return 1
   }
 
-  /**
-   * Generates a unique request ID for tracking execution requests.
-   *
-   * @private
-   * @returns Unique request identifier
-   */
   private generateRequestId(): string {
     return `req_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }

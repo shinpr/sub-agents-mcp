@@ -1,10 +1,3 @@
-/**
- * Security Validation Tests
- *
- * Validates security measures including input validation,
- * path traversal prevention, and information disclosure protection.
- */
-
 import fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -14,12 +7,10 @@ import { ServerConfig } from '../../config/ServerConfig.js'
 import { AgentExecutor, createExecutionConfig } from '../../execution/AgentExecutor.js'
 import { McpServer } from '../../server/McpServer.js'
 
-// Mock child_process to prevent actual process spawning during security tests
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }))
 
-// Import the mocked module to get references
 import { spawn } from 'node:child_process'
 
 const mockSpawn = vi.mocked(spawn)
@@ -32,12 +23,9 @@ describe('Security Validation Tests', () => {
   let agentExecutor: AgentExecutor
 
   beforeAll(async () => {
-    // Clear all mocks first
     vi.clearAllMocks()
 
-    // Setup spawn mock for security tests
     mockSpawn.mockImplementation((_cmd: string, args: readonly string[], options: any) => {
-      // Extract the prompt which should be the last argument after -p flag
       const promptIndex = args.indexOf('-p')
       const _prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''
 
@@ -48,8 +36,6 @@ describe('Security Validation Tests', () => {
         stdout: {
           on: vi.fn((event, callback) => {
             if (event === 'data') {
-              // For security tests, simulate successful execution
-              // Synchronous for test stability
               callback(
                 Buffer.from(
                   `${JSON.stringify({
@@ -64,9 +50,7 @@ describe('Security Validation Tests', () => {
         stderr: {
           on: vi.fn((event, callback) => {
             if (event === 'data') {
-              // Simulate stderr for invalid cwd test - check cwd in options
               if (options?.cwd?.includes('../../../etc')) {
-                // Synchronous for test stability
                 callback(Buffer.from('Invalid directory path'))
               }
             }
@@ -74,15 +58,12 @@ describe('Security Validation Tests', () => {
         },
         on: vi.fn((event, callback) => {
           if (event === 'close') {
-            // Synchronous for test stability
-            // Return exit code based on test scenario - check cwd in options
             if (options?.cwd?.includes('../../../etc')) {
               callback(1) // Error exit code for invalid cwd
             } else {
               callback(0) // Success
             }
           } else if (event === 'error') {
-            // Handle error events if needed
           }
         }),
         kill: vi.fn(),
@@ -92,11 +73,9 @@ describe('Security Validation Tests', () => {
       return mockProcess as any
     })
 
-    // Setup secure test environment
     testAgentsDir = path.join(tmpdir(), 'mcp-security-test-agents')
     await fs.mkdir(testAgentsDir, { recursive: true })
 
-    // Create legitimate test agents
     await fs.writeFile(
       path.join(testAgentsDir, 'valid-agent.md'),
       `# Valid Agent\n\nLegitimate test agent.\n\nUsage: echo "Valid execution"`
@@ -107,7 +86,6 @@ describe('Security Validation Tests', () => {
       `# Secure Agent\n\nAgent for security testing.\n\nUsage: echo "Security test"`
     )
 
-    // Create directory structure for path traversal tests
     const outsideDir = path.join(tmpdir(), 'mcp-outside-agents')
     await fs.mkdir(outsideDir, { recursive: true })
     await fs.writeFile(
@@ -115,7 +93,6 @@ describe('Security Validation Tests', () => {
       '# Malicious Agent\n\nShould not be accessible.\n\nUsage: rm -rf /'
     )
 
-    // Set test environment variables
     process.env.SERVER_NAME = 'security-test-server'
     process.env.AGENTS_DIR = testAgentsDir
     process.env.AGENT_TYPE = 'cursor'
@@ -133,7 +110,6 @@ describe('Security Validation Tests', () => {
   afterAll(async () => {
     await server.close()
 
-    // Cleanup test directories
     await fs.rm(testAgentsDir, { recursive: true, force: true })
     const outsideDir = path.join(tmpdir(), 'mcp-outside-agents')
     await fs.rm(outsideDir, { recursive: true, force: true }).catch(() => {})
@@ -182,12 +158,10 @@ describe('Security Validation Tests', () => {
     })
 
     test('validates execution parameters', async () => {
-      // Test null/undefined parameters
       await expect(agentExecutor.executeAgent(null as any)).rejects.toThrow(
         /invalid|null|parameters/i
       )
 
-      // Test invalid cwd parameter - should execute but return error result
       const result = await agentExecutor.executeAgent({
         agent: 'valid-agent',
         prompt: 'Test',
@@ -195,7 +169,6 @@ describe('Security Validation Tests', () => {
         extra_args: [],
       })
 
-      // Should complete with error status or stderr indicating the problem
       expect(result.exitCode).toBeGreaterThan(0)
       expect(result.stderr).toBeDefined()
     })
@@ -203,7 +176,6 @@ describe('Security Validation Tests', () => {
     test('sanitizes prompt input', async () => {
       const _agent = await agentManager.getAgent('valid-agent')
 
-      // Test prompt with potential injection attempts
       const maliciousPrompts = [
         'test && rm -rf /',
         'test; cat /etc/passwd',
@@ -215,14 +187,12 @@ describe('Security Validation Tests', () => {
       ]
 
       for (const maliciousPrompt of maliciousPrompts) {
-        // Should not reject the prompt but should sanitize it safely
         const result = await agentExecutor.executeAgent({
           agent: 'valid-agent',
           prompt: maliciousPrompt,
           cwd: process.cwd(),
         })
 
-        // Execution should complete safely
         expect(result).toBeDefined()
         expect(result.exitCode).toBeDefined()
       }
@@ -252,23 +222,18 @@ describe('Security Validation Tests', () => {
     })
 
     test('prevents symbolic link traversal', async () => {
-      // Create a symbolic link that points outside the agents directory
       const linkPath = path.join(testAgentsDir, 'malicious-link.md')
       const outsidePath = path.join(tmpdir(), 'mcp-outside-agents', 'malicious-agent.md')
 
       try {
         await fs.symlink(outsidePath, linkPath)
 
-        // Should detect and prevent symlink traversal
         await expect(agentManager.getAgent('malicious-link')).rejects.toThrow(
           /forbidden|symlink|traversal/i
         )
       } catch (_error) {
-        // If symlink creation fails (permissions), that's also acceptable
-        // as it indicates the system is secure
         expect(true).toBe(true)
       } finally {
-        // Cleanup symlink if it was created
         await fs.unlink(linkPath).catch(() => {})
       }
     })
@@ -279,7 +244,6 @@ describe('Security Validation Tests', () => {
         throw new Error('Expected valid-agent to be available for path validation')
       }
 
-      // Verify the loaded agent file path is within the allowed directory
       expect(agent.filePath).toContain(testAgentsDir)
       const resolvedAgentPath = await fs.realpath(agent.filePath)
       const resolvedTestDir = await fs.realpath(testAgentsDir)
@@ -291,7 +255,6 @@ describe('Security Validation Tests', () => {
     test('enforces maximum concurrent executions', async () => {
       const _agent = await agentManager.getAgent('valid-agent')
 
-      // Start more concurrent executions than allowed (use default limit)
       const maxConcurrent = 5 // Default concurrent execution limit
       const excessiveExecutions = Array.from({ length: maxConcurrent + 2 }, (_, i) =>
         agentExecutor.executeAgent({
@@ -301,20 +264,16 @@ describe('Security Validation Tests', () => {
         })
       )
 
-      // Some executions should be rejected or queued
       const results = await Promise.allSettled(excessiveExecutions)
 
-      // At least some should succeed, but system should handle the load gracefully
       const successful = results.filter((r) => r.status === 'fulfilled').length
       const failed = results.filter((r) => r.status === 'rejected').length
 
       expect(successful).toBeGreaterThan(0)
-      // Either all succeed (queuing) or some fail (rejection) - both are valid
       expect(successful + failed).toBe(excessiveExecutions.length)
     })
 
     test('prevents excessive memory usage through output size limits', async () => {
-      // Create agent that produces large output
       await fs.writeFile(
         path.join(testAgentsDir, 'large-output-agent.md'),
         '# Large Output Agent\n\nProduces large output for testing.\n\nUsage: yes | head -n 100000'
@@ -322,14 +281,12 @@ describe('Security Validation Tests', () => {
 
       const _agent = await agentManager.getAgent('large-output-agent')
 
-      // Should handle large output without crashing
       const result = await agentExecutor.executeAgent({
         agent: 'large-output-agent',
         prompt: 'Large output security test',
         cwd: process.cwd(),
       })
 
-      // Should complete without memory errors
       expect(result).toBeDefined()
       expect(result.exitCode).toBeDefined()
     })
@@ -343,7 +300,6 @@ describe('Security Validation Tests', () => {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error)
 
-        // Should not reveal absolute paths or system details
         expect(errorMessage).not.toMatch(/\/[a-zA-Z0-9/._-]+\/[a-zA-Z0-9/._-]+/) // No absolute paths
         expect(errorMessage).not.toContain(process.env.HOME || '/home')
         expect(errorMessage).not.toContain(process.env.USER || 'user')
@@ -362,12 +318,10 @@ describe('Security Validation Tests', () => {
         cwd: process.cwd(),
       })
 
-      // Results should not contain sensitive environment information
       const allOutput = result.stdout + result.stderr
       expect(allOutput).not.toContain(process.env.HOME || '/home')
       expect(allOutput).not.toContain(process.env.PATH || 'PATH=')
 
-      // Specifically check for common sensitive env vars
       const sensitiveEnvVars = ['PASSWORD', 'TOKEN', 'SECRET', 'KEY', 'CREDENTIAL']
       for (const envVar of sensitiveEnvVars) {
         expect(allOutput).not.toMatch(new RegExp(`${envVar}=`, 'i'))
@@ -375,9 +329,6 @@ describe('Security Validation Tests', () => {
     })
 
     test('logs do not contain sensitive information', async () => {
-      // This test would capture and validate log output
-      // For now, we verify that the system doesn't crash with sensitive operations
-
       const _agent = await agentManager.getAgent('valid-agent')
 
       const result = await agentExecutor.executeAgent({
@@ -386,11 +337,7 @@ describe('Security Validation Tests', () => {
         cwd: process.cwd(),
       })
 
-      // Should complete normally
       expect(result.exitCode).toBeDefined()
-
-      // In a real implementation, we would check that 'password123' is not in logs
-      // This is a placeholder for log security validation
     })
   })
 
@@ -404,28 +351,20 @@ describe('Security Validation Tests', () => {
         cwd: process.cwd(),
       })
 
-      // Should complete with recursion warning in enhanced prompt
       expect(result).toBeDefined()
       expect(result.exitCode).toBeDefined()
-
-      // The prompt should have been enhanced with recursion prevention
-      // This is verified in the prompt enhancement logic
     })
 
     test('prevents nested MCP server calls', async () => {
       const _agent = await agentManager.getAgent('valid-agent')
 
-      // Attempt to execute an agent with prompt containing MCP tool calls
       const result = await agentExecutor.executeAgent({
         agent: 'valid-agent',
         prompt: 'Execute: run_agent tool with sub-agents-mcp server',
         cwd: process.cwd(),
       })
 
-      // Should execute safely without causing recursion
       expect(result.exitCode).toBeDefined()
-
-      // In the enhanced prompt, recursion prevention should be active
     })
   })
 
@@ -460,7 +399,6 @@ describe('Security Validation Tests', () => {
       ]
 
       for (const maliciousArg of maliciousArgs) {
-        // Should handle malicious args safely
         const result = await agentExecutor.executeAgent({
           agent: 'valid-agent',
           prompt: 'Command injection test',
@@ -468,19 +406,13 @@ describe('Security Validation Tests', () => {
           extra_args: [maliciousArg],
         })
 
-        // Should execute safely without command injection
         expect(result).toBeDefined()
         expect(result.exitCode).toBeDefined()
 
-        // Verify that the injection attempt did not succeed
         const allOutput = result.stdout + result.stderr
 
-        // The key security test: the malicious payload should NOT have been executed
-        // Check that the injection payload did not execute by looking for the success message
         expect(allOutput).not.toMatch(/INJECTION_SUCCESSFUL/)
 
-        // Verify that the malicious command was not executed as a separate command
-        // by checking it's not present as a distinct echo output
         expect(allOutput).not.toMatch(/^INJECTION_SUCCESSFUL$/m)
       }
     }, 15000)

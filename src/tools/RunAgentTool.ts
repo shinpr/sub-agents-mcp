@@ -1,11 +1,3 @@
-/**
- * RunAgentTool implementation for executing Claude Code sub-agents via MCP
- *
- * Provides the run_agent tool that allows MCP clients to execute specific
- * agents with parameters, integrating with AgentExecutor and AgentManager
- * for complete agent execution workflow.
- */
-
 import { randomUUID } from 'node:crypto'
 import type { AgentManager } from '../agents/AgentManager.js'
 import type { AgentExecutionResult, AgentExecutor } from '../execution/AgentExecutor.js'
@@ -15,18 +7,17 @@ import type { AgentDefinition } from '../types/AgentDefinition.js'
 import type { ExecutionParams } from '../types/ExecutionParams.js'
 import { Logger, type LogLevel } from '../utils/Logger.js'
 
-/**
- * MCP tool content type for text responses
- */
+const COMMAND_CODE_MAX_TURNS_EXIT_CODE = 8
+const TIMEOUT_EXIT_CODE = 124
+const SIGKILL_EXIT_CODE = 137
+const SIGTERM_EXIT_CODE = 143
+
 interface McpTextContent {
   [x: string]: unknown
   type: 'text'
   text: string
 }
 
-/**
- * MCP tool response format
- */
 interface McpToolResponse {
   [x: string]: unknown
   content: McpTextContent[]
@@ -37,10 +28,6 @@ interface McpToolResponse {
   }
 }
 
-/**
- * MCP response data structure (ADR-0003)
- * This structure is used in both content[0].text (as JSON string) and structuredContent
- */
 interface McpResponseData {
   result: string
   session_id?: string
@@ -51,9 +38,6 @@ interface McpResponseData {
   request_id?: string
 }
 
-/**
- * Input schema for run_agent tool parameters
- */
 interface RunAgentInputSchema {
   [x: string]: unknown
   type: 'object'
@@ -84,29 +68,14 @@ interface RunAgentInputSchema {
   required: string[]
 }
 
-/**
- * Parameters for run_agent tool execution
- */
 interface RunAgentParams {
   agent: string
   prompt: string
   cwd: string
   extra_args?: string[] | undefined
-  /**
-   * Session ID for continuing previous conversation context (optional)
-   *
-   * When provided, the agent will have access to previous request/response history.
-   * Must be alphanumeric with hyphens and underscores only (max 100 characters).
-   */
   session_id?: string | undefined
 }
 
-/**
- * RunAgentTool class implementing the run_agent MCP tool
- *
- * Provides execution of Claude Code sub-agents with parameter validation,
- * error handling, and proper MCP response formatting.
- */
 export class RunAgentTool {
   public readonly name = 'run_agent'
   public readonly description =
@@ -151,18 +120,10 @@ export class RunAgentTool {
     private agentManager?: AgentManager,
     private sessionManager?: SessionManager
   ) {
-    // Use LOG_LEVEL environment variable if available
     const logLevel = (process.env['LOG_LEVEL'] as LogLevel) || 'info'
     this.logger = new Logger(logLevel)
   }
 
-  /**
-   * Execute the run_agent tool with the provided parameters
-   *
-   * @param params - Tool execution parameters
-   * @returns Promise resolving to MCP tool response
-   * @throws {Error} When parameters are invalid or execution fails
-   */
   async execute(params: unknown): Promise<McpToolResponse> {
     const startTime = Date.now()
     const requestId = this.generateRequestId()
@@ -172,8 +133,6 @@ export class RunAgentTool {
       timestamp: new Date().toISOString(),
     })
 
-    // Best-effort cleanup: old session files (ADR-0002)
-    // Non-blocking execution - does not affect main processing flow
     if (this.sessionManager) {
       Promise.resolve()
         .then(() => this.sessionManager!.cleanupOldSessions())
@@ -186,10 +145,7 @@ export class RunAgentTool {
     }
 
     try {
-      // Validate parameters with enhanced validation
       const validatedParams = this.validateParams(params)
-
-      // Auto-generate session_id if not provided and SessionManager is available
       const sessionId =
         validatedParams.session_id || (this.sessionManager ? randomUUID() : undefined)
 
@@ -203,7 +159,6 @@ export class RunAgentTool {
         sessionIdGenerated: !validatedParams.session_id && !!sessionId,
       })
 
-      // Check if agent exists and load agent definition once
       let agentDefinition: AgentDefinition | undefined
       if (this.agentManager) {
         agentDefinition = await this.agentManager.getAgent(validatedParams.agent)
@@ -226,24 +181,17 @@ export class RunAgentTool {
         })
       }
 
-      // Execute agent if executor is available
       if (this.agentExecutor) {
-        // Report progress: Starting agent execution
-
-        // Use agent definition content if available (already loaded above)
         const agentContext = agentDefinition?.content ?? validatedParams.agent
-
-        // Load session history if session_id is provided and SessionManager is available
         let promptWithHistory = validatedParams.prompt
         if (sessionId && this.sessionManager) {
           try {
-            // CRITICAL: Pass agent_type to enforce sub-agent isolation
+            // Session history is partitioned by agent name.
             const sessionData = await this.sessionManager.loadSession(
               sessionId,
               validatedParams.agent
             )
             if (sessionData && sessionData.history.length > 0) {
-              // Convert session history to Markdown format for token efficiency and LLM comprehension
               const historyMarkdown = formatSessionHistory(sessionData)
               promptWithHistory = `Previous conversation history:\n\n${historyMarkdown}\n\n---\n\nCurrent request:\n${validatedParams.prompt}`
 
@@ -259,7 +207,6 @@ export class RunAgentTool {
               })
             }
           } catch (error) {
-            // Log error but continue - session loading failure should not break main flow
             this.logger.warn('Failed to load session history', {
               requestId,
               sessionId: sessionId,
@@ -280,14 +227,7 @@ export class RunAgentTool {
           }),
         }
 
-        // Report progress: Executing agent
-
-        // Execute agent (this has its own timeout: MCP -> AI)
         const result = await this.agentExecutor.executeAgent(executionParams)
-
-        // Report progress: Execution completed
-
-        // Update execution statistics
         this.updateExecutionStats(validatedParams.agent, result.executionTime)
 
         this.logger.info('Agent execution completed successfully', {
@@ -298,10 +238,8 @@ export class RunAgentTool {
           totalTime: Date.now() - startTime,
         })
 
-        // Save session if session_id is available and SessionManager is available
         if (sessionId && this.sessionManager) {
           try {
-            // Build request object with only defined properties
             const sessionRequest: {
               agent: string
               prompt: string
@@ -331,7 +269,6 @@ export class RunAgentTool {
               sessionId: sessionId,
             })
           } catch (error) {
-            // Log error but continue - session save failure should not break main flow
             this.logger.warn('Failed to save session', {
               requestId,
               sessionId: sessionId,
@@ -340,12 +277,9 @@ export class RunAgentTool {
           }
         }
 
-        // Mark MCP request as completed
-
         return this.formatExecutionResponse(result, validatedParams.agent, requestId, sessionId)
       }
 
-      // Fallback response if executor is not available
       this.logger.warn('Agent executor not available', { requestId })
       return {
         content: [
@@ -371,14 +305,6 @@ export class RunAgentTool {
     }
   }
 
-  /**
-   * Validate and type-check the input parameters with comprehensive validation
-   *
-   * @private
-   * @param params - Raw parameters to validate
-   * @returns Validated parameters
-   * @throws {Error} When parameters are invalid
-   */
   private validateParams(params: unknown): RunAgentParams {
     if (!params || typeof params !== 'object') {
       throw new Error('Invalid parameters: expected object')
@@ -386,7 +312,6 @@ export class RunAgentTool {
 
     const p = params as Record<string, unknown>
 
-    // Validate required agent parameter with enhanced checks
     if (!p['agent'] || typeof p['agent'] !== 'string') {
       throw new Error('Agent parameter is required and must be a string')
     }
@@ -396,7 +321,6 @@ export class RunAgentTool {
       throw new Error('Invalid agent parameter: cannot be empty')
     }
 
-    // Enhanced agent name validation
     if (agentName.length > 100) {
       throw new Error('Agent name too long (max 100 characters)')
     }
@@ -407,7 +331,6 @@ export class RunAgentTool {
       )
     }
 
-    // Validate required prompt parameter with enhanced checks
     if (!p['prompt'] || typeof p['prompt'] !== 'string') {
       throw new Error('Prompt parameter is required and must be a string')
     }
@@ -421,7 +344,6 @@ export class RunAgentTool {
       throw new Error('Prompt too long (max 50,000 characters)')
     }
 
-    // Validate required cwd parameter with path validation
     if (p['cwd'] === undefined || p['cwd'] === null) {
       throw new Error('CWD parameter is required')
     }
@@ -439,12 +361,10 @@ export class RunAgentTool {
       throw new Error('Working directory path too long (max 1000 characters)')
     }
 
-    // Basic path security check - prevent obvious malicious paths
     if (cwd.includes('..') || cwd.includes('\0')) {
       throw new Error('Invalid working directory path')
     }
 
-    // Validate optional extra_args parameter with enhanced checks
     if (p['extra_args'] !== undefined) {
       if (!Array.isArray(p['extra_args'])) {
         throw new Error('Extra args parameter must be an array if provided')
@@ -465,7 +385,6 @@ export class RunAgentTool {
       }
     }
 
-    // Validate optional session_id parameter
     if (p['session_id'] !== undefined) {
       if (typeof p['session_id'] !== 'string') {
         throw new Error('Session ID parameter must be a string if provided')
@@ -480,7 +399,6 @@ export class RunAgentTool {
         throw new Error('Session ID too long (max 100 characters)')
       }
 
-      // Validate session ID format (alphanumeric, hyphens, underscores only)
       if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
         throw new Error(
           'Session ID contains invalid characters (only alphanumeric, underscore, and dash allowed)'
@@ -497,95 +415,56 @@ export class RunAgentTool {
     }
   }
 
-  /**
-   * Type guard to check if a value is a Record (plain object)
-   *
-   * @private
-   * @param value - Value to check
-   * @returns True if value is a Record
-   */
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
   }
 
-  /**
-   * Type guard to check if a value is a string
-   *
-   * @private
-   * @param value - Value to check
-   * @returns True if value is a string
-   */
   private isStringField(value: unknown): value is string {
     return typeof value === 'string'
   }
 
-  /**
-   * Extract content from agent response JSON
-   *
-   * Implements information extraction layer to hide agent implementation details.
-   * Supports both cursor-agent and claude code response formats.
-   *
-   * @private
-   * @param resultJson - Parsed agent response JSON (unknown type for safety)
-   * @param isError - Whether this is an error response
-   * @param stdout - Raw stdout as fallback
-   * @param stderr - Raw stderr as fallback
-   * @returns Extracted content string
-   */
   private extractAgentContent(
     resultJson: unknown,
     isError: boolean,
     stdout: string,
     stderr: string
   ): string {
-    // Type guard: Check if resultJson is a valid record
     if (!this.isRecord(resultJson)) {
       return stdout || stderr || 'No output'
     }
 
-    // Priority field differs between success and error cases
     const primaryField = isError ? 'error' : 'result'
-
-    // Extract primary field (result or error)
     if (this.isStringField(resultJson[primaryField])) {
       return resultJson[primaryField]
     }
 
-    // Fallback to content field (claude code may use this)
     if (this.isStringField(resultJson['content'])) {
       return resultJson['content']
     }
 
-    // Final fallback to raw stdout/stderr
     return stdout || stderr || 'No output'
   }
 
-  /**
-   * Determine if agent response indicates an error
-   *
-   * Checks is_error flag first (agent-level error), then exitCode (process-level error).
-   *
-   * @private
-   * @param resultJson - Parsed agent response JSON
-   * @param exitCode - Process exit code
-   * @returns True if response indicates an error
-   */
   private isAgentError(resultJson: unknown, exitCode: number): boolean {
-    // Priority 1: Check agent's is_error flag
     if (this.isRecord(resultJson) && resultJson['is_error'] === true) {
       return true
     }
 
-    // Priority 2: Check process exit code (excluding special cases)
-    // 143: SIGTERM (normal termination)
-    // 124: Timeout (may have partial result)
-    // 137: SIGKILL after a complete result when the CLI ignores our SIGTERM
+    if (
+      exitCode === COMMAND_CODE_MAX_TURNS_EXIT_CODE &&
+      this.isRecord(resultJson) &&
+      resultJson['status'] === 'partial' &&
+      resultJson['stop_reason'] === 'max_turns'
+    ) {
+      return false
+    }
+
     const hasStructuredResult = resultJson !== null && resultJson !== undefined
     return (
       exitCode !== 0 &&
-      exitCode !== 143 &&
-      exitCode !== 124 &&
-      !(exitCode === 137 && hasStructuredResult)
+      exitCode !== SIGTERM_EXIT_CODE &&
+      exitCode !== TIMEOUT_EXIT_CODE &&
+      !(exitCode === SIGKILL_EXIT_CODE && hasStructuredResult)
     )
   }
 
@@ -593,31 +472,13 @@ export class RunAgentTool {
     return this.isRecord(resultJson) && resultJson['status'] === 'partial'
   }
 
-  /**
-   * Format agent execution response (ADR-0003)
-   *
-   * Returns MCP 2025-06-18 compliant response with:
-   * - content[0].text: JSON string (readable by current clients)
-   * - structuredContent: structured data (MCP 2025-06-18 standard)
-   * - _meta.session_id: session tracking (ADR-0002)
-   *
-   * @private
-   * @param result - Agent execution result
-   * @param agentName - Name of the executed agent
-   * @param requestId - Request tracking ID
-   * @param sessionId - Session ID if session management is used
-   * @returns Formatted MCP response
-   */
   private formatExecutionResponse(
     result: AgentExecutionResult,
     agentName: string,
     requestId?: string,
     sessionId?: string
   ): McpToolResponse {
-    // Determine if response indicates an error (agent-level or process-level)
     const isError = this.isAgentError(result.resultJson, result.exitCode)
-
-    // Extract actual content from agent response
     const contentText = this.extractAgentContent(
       result.resultJson,
       isError,
@@ -625,20 +486,17 @@ export class RunAgentTool {
       result.stderr
     )
 
-    // Determine detailed status
     const isPartialSuccess =
       this.isPartialResult(result.resultJson) ||
-      (result.exitCode === 124 && result.hasResult === true) // Timeout with partial result
+      (result.exitCode === TIMEOUT_EXIT_CODE && result.hasResult === true)
 
     const isSuccess =
       (!isError && !isPartialSuccess && result.exitCode === 0) || // Normal completion
       (!isError &&
         !isPartialSuccess &&
-        (result.exitCode === 143 || result.exitCode === 137) &&
+        (result.exitCode === SIGTERM_EXIT_CODE || result.exitCode === SIGKILL_EXIT_CODE) &&
         result.hasResult === true) // Terminated after receiving a result
 
-    // Build response data structure (ADR-0003)
-    // This object is used in both content[0].text and structuredContent
     const responseData: McpResponseData = {
       result: contentText,
       agent: agentName,
@@ -653,16 +511,13 @@ export class RunAgentTool {
       content: [
         {
           type: 'text',
-          // JSON string format for current MCP clients (Cursor, Claude Code, etc.)
           text: JSON.stringify(responseData, null, 2),
         },
       ],
       isError: isError,
-      // Structured data format (MCP 2025-06-18 standard)
       structuredContent: responseData,
     }
 
-    // Add session_id to response metadata (ADR-0002)
     if (sessionId) {
       response._meta = {
         session_id: sessionId,
@@ -672,19 +527,10 @@ export class RunAgentTool {
     return response
   }
 
-  /**
-   * Create error response with optional available agents list (ADR-0003)
-   *
-   * @private
-   * @param errorMessage - Error message to display
-   * @param availableAgents - Optional list of available agents
-   * @returns Error response in MCP format
-   */
   private createErrorResponse(
     errorMessage: string,
     availableAgents: string[] | null
   ): McpToolResponse {
-    // Build error response data
     const errorData: Record<string, unknown> = {
       status: 'error',
       error: errorMessage,
@@ -695,33 +541,18 @@ export class RunAgentTool {
       content: [
         {
           type: 'text',
-          // JSON string format for current MCP clients
           text: JSON.stringify(errorData, null, 2),
         },
       ],
       isError: true,
-      // Structured data format (MCP 2025-06-18 standard)
       structuredContent: errorData,
     }
   }
 
-  /**
-   * Generate unique request ID for tracking
-   *
-   * @private
-   * @returns Unique request identifier
-   */
   private generateRequestId(): string {
     return `run_agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
-  /**
-   * Update execution statistics
-   *
-   * @private
-   * @param agentName - Name of the executed agent
-   * @param executionTime - Time taken for execution
-   */
   private updateExecutionStats(agentName: string, executionTime: number): void {
     const existing = this.executionStats.get(agentName)
 
@@ -738,21 +569,10 @@ export class RunAgentTool {
     }
   }
 
-  /**
-   * Get execution statistics for monitoring
-   *
-   * @returns Map of agent execution statistics
-   */
   getExecutionStats(): Map<string, { count: number; totalTime: number; lastUsed: Date }> {
     return new Map(this.executionStats)
   }
 
-  /**
-   * Get list of available agent names
-   *
-   * @private
-   * @returns Promise resolving to array of agent names
-   */
   private async getAvailableAgentsList(): Promise<string[] | null> {
     if (!this.agentManager) {
       return null

@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -21,8 +22,6 @@ logs
 *.log
 
 # Runtime data
-.nyc_output
-coverage
 test-output.json
 
 # IDE and editor specific files
@@ -48,9 +47,7 @@ tmp/
 .claude/
 docs/
 scripts/*
-!scripts/quality-check.js
 !scripts/cleanup-test-processes.sh
-!scripts/show-coverage.js
 CLAUDE.md
 
 # MCP Registry publisher files

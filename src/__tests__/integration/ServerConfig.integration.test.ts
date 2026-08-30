@@ -8,35 +8,26 @@ describe('ServerConfig', () => {
   let testAgentsDir: string
 
   beforeEach(() => {
-    // Reset mocks and environment variable stubs before each test
-    // to prevent leakage between tests (e.g., LOG_LEVEL set in one test
-    // affecting ServerConfig construction in another)
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
     vi.stubEnv('AGENT_TYPE', 'cursor')
 
-    // Create a temporary test directory that exists
     testAgentsDir = path.join(tmpdir(), `test-agents-${Date.now()}`)
     fs.mkdirSync(testAgentsDir, { recursive: true })
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
-    // Clean up test directory
     try {
       fs.rmSync(testAgentsDir, { recursive: true, force: true })
-    } catch {
-      // Ignore cleanup errors
-    }
+    } catch {}
   })
 
   it('should load environment variables: SERVER_NAME, AGENTS_DIR, AGENT_TYPE', () => {
-    // Mock environment variables
     vi.stubEnv('SERVER_NAME', 'test-server')
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('AGENT_TYPE', 'claude')
 
-    // This test will fail until we implement the ServerConfig class
     const config = new ServerConfig()
 
     expect(config.serverName).toBe('test-server')
@@ -54,6 +45,7 @@ describe('ServerConfig', () => {
     'grok',
     'antigravity',
     'opencode',
+    'command-code',
   ] as const)('should accept AGENT_TYPE=%s', (agentType) => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('AGENT_TYPE', agentType)
@@ -232,7 +224,6 @@ describe('ServerConfig', () => {
   })
 
   it('should throw error when AGENTS_DIR is not set', () => {
-    // Ensure AGENTS_DIR is not set
     vi.stubEnv('AGENTS_DIR', undefined)
 
     expect(() => new ServerConfig()).toThrow('AGENTS_DIR environment variable is required')
@@ -251,7 +242,6 @@ describe('ServerConfig', () => {
   })
 
   it('should throw error when AGENTS_DIR is empty string', () => {
-    // Mock empty AGENTS_DIR
     vi.stubEnv('AGENTS_DIR', '')
 
     expect(() => new ServerConfig()).toThrow('AGENTS_DIR environment variable is required')
@@ -401,7 +391,6 @@ describe('ServerConfig', () => {
     it('should use default timeout for invalid values', () => {
       vi.stubEnv('AGENTS_DIR', testAgentsDir)
 
-      // Test invalid values (non-numeric will be parsed as NaN)
       const invalidValues = ['invalid', 'not-a-number', '']
 
       for (const invalidValue of invalidValues) {

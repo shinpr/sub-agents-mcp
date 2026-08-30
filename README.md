@@ -5,7 +5,7 @@
 
 Bring Claude Code–style sub-agents to any MCP-compatible tool.
 
-Define task-specific AI agents such as "test-writer" or "code-reviewer" in Markdown files. The server runs them through Cursor CLI, Claude Code, Codex, Google Antigravity, Gemini CLI, GLM, Kimi, Grok Build, or OpenCode.
+Define task-specific AI agents such as "test-writer" or "code-reviewer" in Markdown files. The server runs them through Cursor CLI, Claude Code, Codex, Command Code, Google Antigravity, Gemini CLI, GLM, Kimi, Grok Build, or OpenCode.
 
 ## Why?
 
@@ -14,7 +14,7 @@ Claude Code supports sub-agents within its own environment. This server exposes 
 **What it provides:**
 - Define reusable agents once, use them across multiple tools
 - Share agent definitions within teams regardless of IDE choice
-- Select Cursor CLI, Claude Code, Codex, Google Antigravity, Gemini CLI, GLM, Kimi, Grok Build, or OpenCode as the execution backend
+- Select Cursor CLI, Claude Code, Codex, Command Code, Google Antigravity, Gemini CLI, GLM, Kimi, Grok Build, or OpenCode as the execution backend
 
 → [Read the full story](https://dev.to/shinpr/bringing-claude-codes-sub-agents-to-any-mcp-compatible-tool-1hb9)
 
@@ -51,6 +51,7 @@ Choose **sub-agents-mcp** when you want a centrally configured execution service
   - `cursor-agent` CLI (from Cursor)
   - `claude` CLI (from Claude Code)
   - `codex` CLI (from Codex)
+  - `command-code` CLI (from Command Code)
   - `gemini` CLI (from Gemini CLI; requires `GEMINI_API_KEY`)
   - `glm` backend (uses the Claude Code `claude` CLI with a Z.ai token)
   - `kimi` backend (uses the Claude Code `claude` CLI with a Kimi API key)
@@ -110,6 +111,11 @@ Note: Claude Code installs the `claude` CLI command.
 ```bash
 # Install Codex
 npm install -g @openai/codex
+```
+
+**For Command Code users:**
+```bash
+npm install -g command-code
 ```
 
 **For Gemini CLI users:**
@@ -176,7 +182,7 @@ Add this to your MCP configuration file:
       "args": ["-y", "sub-agents-mcp"],
       "env": {
         "AGENTS_DIR": "/absolute/path/to/your/agents-folder",
-        "AGENT_TYPE": "cursor"  // or "claude", "codex", "antigravity", "gemini", "glm", "kimi", "grok", or "opencode"
+        "AGENT_TYPE": "cursor"  // or "claude", "codex", "command-code", "antigravity", "gemini", "glm", "kimi", "grok", or "opencode"
       }
     }
   }
@@ -206,6 +212,9 @@ Sub-agents may fail to execute shell commands with permission errors. This happe
 
    # For Codex CLI users
    codex
+
+   # For Command Code users
+   command-code
 
    # For Gemini CLI users
    gemini
@@ -353,6 +362,7 @@ Which execution engine to use:
 - `"claude"` - uses `claude` CLI
 - `"gemini"` - uses `gemini` CLI
 - `"codex"` - uses `codex` CLI (OpenAI Codex)
+- `"command-code"` - uses `command-code` CLI
 - `"glm"` - uses the Claude Code `claude` CLI against GLM's Z.ai endpoint
 - `"kimi"` - uses the Claude Code `claude` CLI against Kimi's coding endpoint
 - `"grok"` - uses `grok` CLI (Grok Build)
@@ -366,11 +376,11 @@ Which execution engine to use:
 **`AGENT_PERMISSION`**
 Approval/sandbox level the sub-agent runs with. Default: `"safe-edit"`.
 
-- `"read-only"`: investigation/review only, no edits or shell writes (codex `-s read-only` / claude+glm+kimi `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan --sandbox enabled` / grok `--sandbox read-only` / antigravity `--mode plan --sandbox` / OpenCode deny rules)
-- `"safe-edit"`: auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude+glm+kimi `--permission-mode acceptEdits` / gemini `--approval-mode auto_edit` / cursor `--trust --sandbox enabled` / grok `--sandbox workspace` / antigravity `--mode accept-edits --sandbox` / OpenCode permission rules)
+- `"read-only"`: investigation/review only, no edits or shell writes (codex `-s read-only` / claude+glm+kimi `--permission-mode plan` / Command Code `--permission-mode plan` / gemini `--approval-mode plan` / cursor `--mode plan --sandbox enabled` / grok `--sandbox read-only` / antigravity `--mode plan --sandbox` / OpenCode deny rules)
+- `"safe-edit"`: auto-approve edits and suppress prompts (codex `-s workspace-write` + `approval_policy=never` / claude+glm+kimi `--permission-mode acceptEdits` / Command Code `--yolo --permission-mode auto-accept` / gemini `--approval-mode auto_edit` / cursor `--trust --sandbox enabled` / grok `--sandbox workspace` / antigravity `--mode accept-edits --sandbox` / OpenCode permission rules)
 - `"yolo"`: bypass all approvals and sandboxing. Use with care.
 
-Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts, but sandboxing depends on the CLI. Codex, Cursor, Grok, and Antigravity enforce a workspace-level sandbox for `safe-edit`, while Claude, GLM, Kimi, and Gemini only auto-approve and do not confine edits to the workspace. OpenCode's permission configuration is also not an OS-level sandbox and cannot confine every side effect of programs launched through bash. Cursor combines `--mode plan` with its shell sandbox for `read-only`; the mode prevents edits while the sandbox confines supported shell commands. Grok fixes `--permission-mode bypassPermissions` and uses the kernel-enforced `--sandbox` profile to confine writes per `AGENT_PERMISSION`. Antigravity uses `--sandbox` for `read-only` and `safe-edit`, and omits it only for `yolo`. If you need strict containment, use a sandbox-backed backend.
+Sub-agents have no stdin, so any approval prompt would deadlock the run. The default `safe-edit` removes prompts, but sandboxing depends on the CLI. Codex, Cursor, Grok, and Antigravity enforce a workspace-level sandbox for `safe-edit`, while Claude, GLM, Kimi, Gemini, and Command Code only apply approval policies and do not provide an OS-level workspace sandbox. OpenCode's permission configuration is also not an OS-level sandbox and cannot confine every side effect of programs launched through bash. Cursor combines `--mode plan` with its shell sandbox for `read-only`; the mode prevents edits while the sandbox confines supported shell commands. Grok fixes `--permission-mode bypassPermissions` and uses the kernel-enforced `--sandbox` profile to confine writes per `AGENT_PERMISSION`. Antigravity uses `--sandbox` for `read-only` and `safe-edit`, and omits it only for `yolo`. If you need strict containment, use a sandbox-backed backend.
 
 OpenCode custom and MCP tools follow your OpenCode permissions even in `read-only`; explicitly deny any added tool that can cause side effects.
 
@@ -384,7 +394,7 @@ Optional model override applied to every execution by this MCP server. The value
 OpenCode model names normally use `provider/model` syntax.
 
 **`AGENT_EFFORT`**
-Optional backend/model-specific reasoning level or model variant. It is passed to Codex as `model_reasoning_effort`, Claude/GLM/Kimi/Antigravity as `--effort`, Grok as `--reasoning-effort`, and OpenCode as `--variant`. Cursor and Gemini do not support this setting; the MCP server rejects that configuration at startup.
+Optional backend/model-specific reasoning level or model variant. It is passed to Codex as `model_reasoning_effort`, Claude/GLM/Kimi/Antigravity/Command Code as `--effort`, Grok as `--reasoning-effort`, and OpenCode as `--variant`. Cursor and Gemini do not support this setting; the MCP server rejects that configuration at startup.
 
 Accepted values depend on the selected backend and model. The MCP server forwards the value unchanged.
 
@@ -401,7 +411,7 @@ Each CLI normally reads settings from project-level directories (`.claude/`, `.c
 
 Applied to: `claude`, `cursor`, `codex`.
 
-Note: Gemini CLI, Grok Build, Google Antigravity, and OpenCode do not use this option, so it has no effect when `AGENT_TYPE` is `gemini`, `grok`, `antigravity`, or `opencode`. OpenCode continues its normal XDG/project configuration discovery. The `glm` and `kimi` backends also ignore this setting to avoid mixing Claude settings and credentials into redirected subprocesses.
+Note: Gemini CLI, Grok Build, Google Antigravity, OpenCode, and Command Code do not use this option, so it has no effect when `AGENT_TYPE` is `gemini`, `grok`, `antigravity`, `opencode`, or `command-code`. OpenCode continues its normal XDG/project configuration discovery. The `glm` and `kimi` backends also ignore this setting to avoid mixing Claude settings and credentials into redirected subprocesses.
 
 Example with custom settings:
 ```json
@@ -536,7 +546,7 @@ Check that:
 
 ### Other execution errors
 
-1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, `gemini`, `codex`, `glm`, `kimi`, `grok`, `antigravity`, or `opencode`)
+1. Verify `AGENT_TYPE` is set correctly (`cursor`, `claude`, `gemini`, `codex`, `command-code`, `glm`, `kimi`, `grok`, `antigravity`, or `opencode`)
 2. Confirm that your chosen CLI tool is installed and accessible
 3. Double-check that all environment variables are set in the MCP config
 
@@ -588,14 +598,14 @@ The startup overhead is an intentional trade-off: the system favors clarity and 
 
 ## How It Works
 
-This MCP server acts as a bridge between your AI tool and a supported execution engine (Cursor CLI, Claude Code, Google Antigravity, Gemini CLI, Codex, GLM via Z.ai, Kimi, Grok Build, or OpenCode).
+This MCP server acts as a bridge between your AI tool and a supported execution engine (Cursor CLI, Claude Code, Google Antigravity, Gemini CLI, Codex, Command Code, GLM via Z.ai, Kimi, Grok Build, or OpenCode).
 
 **The flow:**
 
 1. You configure the MCP server in your client (Cursor, Claude Desktop, etc.)
 2. The client automatically launches `sub-agents-mcp` as a background process when it starts
 3. When your main AI assistant needs a sub-agent, it makes an MCP tool call
-4. The MCP server reads the agent definition (markdown file) and invokes the globally configured CLI (`cursor-agent`, `claude`, `agy`, `gemini`, `codex`, `glm`/`kimi` via the `claude` binary, `grok`, or `opencode`)
+4. The MCP server reads the agent definition (markdown file) and invokes the globally configured CLI (`cursor-agent`, `claude`, `agy`, `gemini`, `codex`, `command-code`, `glm`/`kimi` via the `claude` binary, `grok`, or `opencode`)
 5. The execution engine runs the agent and streams results back through the MCP server
 6. Your main assistant receives the results and continues working
 

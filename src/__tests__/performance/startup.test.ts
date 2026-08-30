@@ -1,10 +1,3 @@
-/**
- * Startup Performance Tests
- *
- * Validates that the MCP server meets startup time requirements
- * as specified in the Design Doc (≤3 seconds).
- */
-
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -18,11 +11,9 @@ describe('Startup Performance Tests', () => {
   let testAgentsDir: string
 
   beforeAll(async () => {
-    // Setup test environment
     testAgentsDir = path.join(tmpdir(), 'mcp-startup-test-agents')
     await fs.mkdir(testAgentsDir, { recursive: true })
 
-    // Create several test agent files to simulate realistic load
     for (let i = 1; i <= 10; i++) {
       await fs.writeFile(
         path.join(testAgentsDir, `test-agent-${i}.md`),
@@ -32,14 +23,12 @@ describe('Startup Performance Tests', () => {
   })
 
   afterAll(async () => {
-    // Cleanup test agents directory
     await fs.rm(testAgentsDir, { recursive: true, force: true })
   })
 
   test('server startup time meets 3-second requirement', async () => {
     const startTime = Date.now()
 
-    // Set test environment variables
     const testEnv = {
       ...process.env,
       SERVER_NAME: 'startup-performance-test',
@@ -47,7 +36,6 @@ describe('Startup Performance Tests', () => {
       AGENT_TYPE: 'cursor',
     }
 
-    // Start server process
     const serverPath = path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       '../../../dist/index.js'
@@ -58,13 +46,11 @@ describe('Startup Performance Tests', () => {
     })
 
     try {
-      // Wait for server to be ready
       const startupComplete = await new Promise<number>((resolve, reject) => {
         const timeout = setTimeout(() => {
           reject(new Error('Startup timeout exceeded 5 seconds'))
         }, 5000)
 
-        // MCP server logs to stderr (MCP protocol compliance)
         serverProcess.stderr?.on('data', (data) => {
           const output = data.toString()
           if (
@@ -79,8 +65,6 @@ describe('Startup Performance Tests', () => {
         })
 
         serverProcess.stdout?.on('data', (data) => {
-          // stdout should only contain JSON-RPC messages in MCP protocol
-          // Log for debugging if anything unexpected appears
           const stdoutData = data.toString()
           if (stdoutData.trim()) {
             console.warn('Unexpected stdout output:', stdoutData)
@@ -102,13 +86,8 @@ describe('Startup Performance Tests', () => {
 
       const startupTime = startupComplete - startTime
 
-      // Verify startup time requirement
       expect(startupTime).toBeLessThan(3000) // 3 seconds max
-
-      // Performance metric captured in test assertion above
-      // expect(startupTime).toBeLessThan(3000)
     } finally {
-      // Clean up server process
       serverProcess.kill('SIGTERM')
       await new Promise((resolve) => {
         serverProcess.on('exit', resolve)
@@ -121,12 +100,10 @@ describe('Startup Performance Tests', () => {
   })
 
   test('server startup time with large agent directory (stress test)', async () => {
-    // Create larger test directory for stress testing
     const stressTestDir = path.join(tmpdir(), 'mcp-startup-stress-test')
     await fs.mkdir(stressTestDir, { recursive: true })
 
     try {
-      // Create 50 agent files to test scalability
       for (let i = 1; i <= 50; i++) {
         await fs.writeFile(
           path.join(stressTestDir, `stress-agent-${i}.md`),
@@ -158,7 +135,6 @@ describe('Startup Performance Tests', () => {
             reject(new Error('Stress test startup timeout exceeded 5 seconds'))
           }, 5000)
 
-          // MCP server logs to stderr (MCP protocol compliance)
           serverProcess.stderr?.on('data', (data) => {
             const output = data.toString()
             if (
@@ -173,8 +149,6 @@ describe('Startup Performance Tests', () => {
           })
 
           serverProcess.stdout?.on('data', (data) => {
-            // stdout should only contain JSON-RPC messages in MCP protocol
-            // Log for debugging if anything unexpected appears
             const stdoutData = data.toString()
             if (stdoutData.trim()) {
               console.warn('Unexpected stdout output:', stdoutData)
@@ -186,11 +160,7 @@ describe('Startup Performance Tests', () => {
 
         const stressStartupTime = startupComplete - startTime
 
-        // Even with 50 agents, should still meet startup requirement
         expect(stressStartupTime).toBeLessThan(3000)
-
-        // Performance metric already verified in assertion above
-        // expect(stressStartupTime).toBeLessThan(3000)
       } finally {
         serverProcess.kill('SIGTERM')
         await new Promise((resolve) => {
@@ -202,13 +172,11 @@ describe('Startup Performance Tests', () => {
         })
       }
     } finally {
-      // Cleanup stress test directory
       await fs.rm(stressTestDir, { recursive: true, force: true })
     }
   })
 
   test('server startup performance with minimal configuration', async () => {
-    // Test minimal configuration startup performance
     const startTime = Date.now()
 
     const minimalEnv = {
@@ -218,7 +186,6 @@ describe('Startup Performance Tests', () => {
       AGENT_TYPE: 'cursor',
     }
 
-    // Set environment variables
     process.env.SERVER_NAME = minimalEnv.SERVER_NAME
     process.env.AGENTS_DIR = minimalEnv.AGENTS_DIR
     process.env.AGENT_TYPE = minimalEnv.AGENT_TYPE
@@ -229,18 +196,13 @@ describe('Startup Performance Tests', () => {
       await server.start()
       const startupTime = Date.now() - startTime
 
-      // Should start very quickly with minimal config
       expect(startupTime).toBeLessThan(1000) // 1 second for minimal setup
-
-      // Performance metric already verified in assertion above
-      // expect(startupTime).toBeLessThan(1000)
     } finally {
       await server.close()
     }
   })
 
   test('concurrent startup requests handling', async () => {
-    // Test that server can handle multiple simultaneous startup requests
     const startTime = Date.now()
 
     const testEnv = {
@@ -250,7 +212,6 @@ describe('Startup Performance Tests', () => {
       AGENT_TYPE: 'cursor',
     }
 
-    // Start multiple server configurations simultaneously
     const originalEnv = { ...process.env }
 
     Object.assign(process.env, testEnv)
@@ -262,40 +223,30 @@ describe('Startup Performance Tests', () => {
     process.env.SERVER_NAME = 'concurrent-test-3'
     const config3 = new ServerConfig()
 
-    // Restore original environment
     Object.assign(process.env, originalEnv)
     const configs = [config1, config2, config3]
 
     const servers = configs.map((config) => new McpServer(config))
 
     try {
-      // Start all servers concurrently
       await Promise.all(servers.map((server) => server.start()))
 
       const concurrentStartupTime = Date.now() - startTime
 
-      // Even with concurrent initialization, should meet startup requirements
       expect(concurrentStartupTime).toBeLessThan(3000)
-
-      // Performance metric already verified in assertion above
-      // expect(concurrentStartupTime).toBeLessThan(3000)
     } finally {
-      // Clean up all servers
       await Promise.all(servers.map((server) => server.close()))
     }
   })
 
   test('startup performance with environment variable loading', async () => {
-    // Test that environment variable processing doesn't significantly impact startup
     const startTime = Date.now()
 
-    // Set many environment variables to test processing overhead
     const heavyEnv = {
       ...process.env,
       SERVER_NAME: 'env-heavy-test',
       AGENTS_DIR: testAgentsDir,
       AGENT_TYPE: 'cursor',
-      // Add extra variables to test processing
       TEST_VAR_1: 'value1',
       TEST_VAR_2: 'value2',
       TEST_VAR_3: 'value3',
@@ -304,12 +255,10 @@ describe('Startup Performance Tests', () => {
       PROMPT_ENHANCEMENT_ENABLED: 'true',
     }
 
-    // Set heavy environment variables
     Object.assign(process.env, heavyEnv)
     const config = new ServerConfig()
     const configLoadTime = Date.now() - startTime
 
-    // Configuration loading should be very fast
     expect(configLoadTime).toBeLessThan(100) // 100ms max for config loading
 
     const server = new McpServer(config)
@@ -317,9 +266,6 @@ describe('Startup Performance Tests', () => {
 
     const totalStartupTime = Date.now() - startTime
     expect(totalStartupTime).toBeLessThan(3000)
-
-    // Performance metric already verified in assertion above
-    // expect(totalStartupTime).toBeLessThan(3000)
 
     await server.close()
   })

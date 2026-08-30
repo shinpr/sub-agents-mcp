@@ -10,12 +10,10 @@ import {
   DEFAULT_EXECUTION_TIMEOUT,
 } from '../AgentExecutor.js'
 
-// Mock child_process module
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }))
 
-// Import the mocked module to get references
 import { spawn } from 'node:child_process'
 
 type SpawnMockOptions = SpawnOptions & { env: NodeJS.ProcessEnv }
@@ -23,10 +21,6 @@ const mockSpawn = spawn as unknown as Mock<
   (command: string, args: string[], options: SpawnMockOptions) => ChildProcess
 >
 
-/**
- * Creates a minimal mock process for spawn.
- * Each test configures its own mock via mockImplementationOnce.
- */
 function createMockProcess(options: {
   stdoutData?: string
   stdoutChunks?: Buffer[]
@@ -89,7 +83,6 @@ function createMockProcess(options: {
   } as any
 }
 
-/** Creates a success mock process that emits a JSON result */
 function createSuccessMock(data = 'Test execution successful') {
   return createMockProcess({
     stdoutData: `${JSON.stringify({ type: 'result', result: data })}\n`,
@@ -99,7 +92,6 @@ function createSuccessMock(data = 'Test execution successful') {
 describe('AgentExecutor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Default: success mock. Tests that need different behavior override with mockImplementationOnce.
     mockSpawn.mockImplementation(() => createSuccessMock())
   })
 
@@ -134,6 +126,7 @@ describe('AgentExecutor', () => {
       const grokConfig = createExecutionConfig('grok')
       const antigravityConfig = createExecutionConfig('antigravity')
       const openCodeConfig = createExecutionConfig('opencode')
+      const commandCodeConfig = createExecutionConfig('command-code')
 
       expect(cursorConfig.agentType).toBe('cursor')
       expect(claudeConfig.agentType).toBe('claude')
@@ -144,6 +137,7 @@ describe('AgentExecutor', () => {
       expect(grokConfig.agentType).toBe('grok')
       expect(antigravityConfig.agentType).toBe('antigravity')
       expect(openCodeConfig.agentType).toBe('opencode')
+      expect(commandCodeConfig.agentType).toBe('command-code')
     })
 
     it('should allow setting agentsSettingsPath', () => {
@@ -251,6 +245,25 @@ describe('AgentExecutor', () => {
         expect.any(Object)
       )
     })
+
+    it('should use Command Code in headless JSON mode without persisting a session', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('command-code'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'command-code',
+        expect.arrayContaining([
+          '--output-format',
+          'json',
+          '--trust',
+          '--no-session',
+          '--skip-onboarding',
+          '-p',
+        ]),
+        expect.any(Object)
+      )
+    })
   })
 
   describe('global model and effort options', () => {
@@ -287,6 +300,7 @@ describe('AgentExecutor', () => {
       { agentType: 'grok', expected: ['--reasoning-effort', 'high'] },
       { agentType: 'antigravity', expected: ['--effort', 'high'] },
       { agentType: 'opencode', expected: ['--variant', 'high'] },
+      { agentType: 'command-code', expected: ['--effort', 'high'] },
     ] as const)('should map effort for $agentType', async ({ agentType, expected }) => {
       const executor = new AgentExecutor(
         createExecutionConfig(agentType, {
@@ -684,14 +698,12 @@ describe('AgentExecutor', () => {
 
       const args = mockSpawn.mock.calls[0][1] as string[]
 
-      // Should have --append-system-prompt with cwd prefix and agent content
       expect(args).toContain('--append-system-prompt')
       const spIdx = args.indexOf('--append-system-prompt')
       const systemPrompt = args[spIdx + 1]
       expect(systemPrompt).toContain('cwd: /test/cwd')
       expect(systemPrompt).toContain('test-agent')
 
-      // User prompt should be separate via -p (not concatenated)
       const pIdx = args.indexOf('-p')
       expect(args[pIdx + 1]).toBe('Test prompt')
       expect(args[pIdx + 1]).not.toContain('[System Context]')
@@ -760,7 +772,6 @@ describe('AgentExecutor', () => {
       const spawnEnv = mockSpawn.mock.calls[0][2].env
       expect(spawnEnv['GEMINI_SYSTEM_MD']).toBe('/path/to/agent.md')
 
-      // User prompt should be separate (not concatenated)
       const args = mockSpawn.mock.calls[0][1] as string[]
       const pIdx = args.indexOf('-p')
       expect(args[pIdx + 1]).toBe('Test prompt')
@@ -784,7 +795,6 @@ describe('AgentExecutor', () => {
       const spawnEnv = mockSpawn.mock.calls[0][2].env
       expect(spawnEnv['GEMINI_SYSTEM_MD']).toBe('/path/to/agent.md')
 
-      // User prompt should still be separate
       const args = mockSpawn.mock.calls[0][1] as string[]
       const pIdx = args.indexOf('-p')
       expect(args[pIdx + 1]).toBe('Test prompt')
@@ -1109,7 +1119,6 @@ describe('AgentExecutor', () => {
     }
 
     const cases: readonly Case[] = [
-      // codex
       { agent: 'codex', perm: 'read-only', expected: ['-s', 'read-only'] },
       {
         agent: 'codex',
@@ -1117,23 +1126,18 @@ describe('AgentExecutor', () => {
         expected: ['-s', 'workspace-write', '-c', 'approval_policy=never'],
       },
       { agent: 'codex', perm: 'yolo', expected: ['--dangerously-bypass-approvals-and-sandbox'] },
-      // claude
       { agent: 'claude', perm: 'read-only', expected: ['--permission-mode', 'plan'] },
       { agent: 'claude', perm: 'safe-edit', expected: ['--permission-mode', 'acceptEdits'] },
       { agent: 'claude', perm: 'yolo', expected: ['--dangerously-skip-permissions'] },
-      // glm
       { agent: 'glm', perm: 'read-only', expected: ['--permission-mode', 'plan'] },
       { agent: 'glm', perm: 'safe-edit', expected: ['--permission-mode', 'acceptEdits'] },
       { agent: 'glm', perm: 'yolo', expected: ['--dangerously-skip-permissions'] },
-      // kimi
       { agent: 'kimi', perm: 'read-only', expected: ['--permission-mode', 'plan'] },
       { agent: 'kimi', perm: 'safe-edit', expected: ['--permission-mode', 'acceptEdits'] },
       { agent: 'kimi', perm: 'yolo', expected: ['--dangerously-skip-permissions'] },
-      // gemini
       { agent: 'gemini', perm: 'read-only', expected: ['--approval-mode', 'plan'] },
       { agent: 'gemini', perm: 'safe-edit', expected: ['--approval-mode', 'auto_edit'] },
       { agent: 'gemini', perm: 'yolo', expected: ['-y'] },
-      // cursor
       {
         agent: 'cursor',
         perm: 'read-only',
@@ -1145,7 +1149,6 @@ describe('AgentExecutor', () => {
         expected: ['--trust', '--sandbox', 'enabled'],
       },
       { agent: 'cursor', perm: 'yolo', expected: ['-f', '--trust'] },
-      // grok
       {
         agent: 'grok',
         perm: 'read-only',
@@ -1161,7 +1164,6 @@ describe('AgentExecutor', () => {
         perm: 'yolo',
         expected: ['--permission-mode', 'bypassPermissions', '--sandbox', 'off'],
       },
-      // antigravity
       {
         agent: 'antigravity',
         perm: 'read-only',
@@ -1177,6 +1179,17 @@ describe('AgentExecutor', () => {
         perm: 'yolo',
         expected: ['--dangerously-skip-permissions'],
       },
+      {
+        agent: 'command-code',
+        perm: 'read-only',
+        expected: ['--permission-mode', 'plan'],
+      },
+      {
+        agent: 'command-code',
+        perm: 'safe-edit',
+        expected: ['--yolo', '--permission-mode', 'auto-accept'],
+      },
+      { agent: 'command-code', perm: 'yolo', expected: ['--yolo'] },
     ]
 
     it.each(cases)('should prepend $expected for agent=$agent permission=$perm', async ({
@@ -1195,7 +1208,6 @@ describe('AgentExecutor', () => {
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
       const args = mockSpawn.mock.calls[0][1] as string[]
-      // Permission flags must occupy the head of argv (before the per-CLI base flags).
       expect(args.slice(0, expected.length)).toEqual(expected)
     })
 
@@ -1209,9 +1221,6 @@ describe('AgentExecutor', () => {
     })
 
     it('should fall back to safe-edit when overrides.permission is undefined (mocks bypassing TS)', async () => {
-      // Simulates a test mock or JS caller that passes { permission: undefined }
-      // — without the `??` guard the spread would overwrite the default and
-      // leave the sub-agent without any approval flag, deadlocking on prompt.
       const executor = new AgentExecutor(
         createExecutionConfig('claude', { permission: undefined as unknown as AgentPermission })
       )
@@ -1307,9 +1316,6 @@ describe('AgentExecutor', () => {
 
   describe('codex prompt assembly', () => {
     it('should concatenate system context into the prompt regardless of agentFilePath', async () => {
-      // codex's `-c model_instructions_file` was deliberately not adopted: it
-      // replaces codex's built-in system prompt and measurably increased
-      // exploration overhead and token usage in real-task comparisons.
       const executor = new AgentExecutor(createExecutionConfig('codex'))
 
       await executor.executeAgent({
@@ -1325,7 +1331,6 @@ describe('AgentExecutor', () => {
       expect(promptArg).toContain('test-agent')
       expect(promptArg).toContain('[User Prompt]')
       expect(promptArg).toContain('Test prompt')
-      // model_instructions_file must never appear in argv.
       expect(args.some((a) => a.startsWith('model_instructions_file='))).toBe(false)
     })
   })

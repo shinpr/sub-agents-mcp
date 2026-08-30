@@ -1,31 +1,17 @@
-/**
- * Session information
- *
- * Maintains historical request-response records from sub-agent executions.
- * Autonomously managed by the MCP server and shared across multiple clients.
- */
 export interface SessionData {
-  /** Only alphanumerics, hyphens, and underscores are allowed to prevent directory traversal attacks. */
   sessionId: string
 
   agentType: string
   history: SessionEntry[]
 
-  /** Used to determine retention period during cleanup processing. */
   createdAt: Date
 
   lastUpdatedAt: Date
 }
 
-/**
- * Session history entry
- *
- * A request-response pair from a single sub-agent execution.
- */
 export interface SessionEntry {
   timestamp: Date
 
-  /** Has a structure compatible with ExecutionParams. */
   request: {
     agent: string
     prompt: string
@@ -33,7 +19,6 @@ export interface SessionEntry {
     extra_args?: string[]
   }
 
-  /** Captures the sub-agent execution outcome. */
   response: {
     stdout: string
     stderr: string
@@ -42,18 +27,10 @@ export interface SessionEntry {
   }
 }
 
-/**
- * Session configuration
- *
- * Loaded from environment variables and used during SessionManager initialization.
- */
 export interface SessionConfig {
-  /** Controlled by the SESSION_ENABLED environment variable. */
   enabled: boolean
 
-  /** Controlled by the SESSION_DIR environment variable. */
   sessionDir: string
 
-  /** Controlled by the SESSION_RETENTION_DAYS environment variable. */
   retentionDays: number
 }

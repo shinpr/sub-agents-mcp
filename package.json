@@ -1,8 +1,8 @@
 {
   "name": "sub-agents-mcp",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "mcpName": "io.github.shinpr/sub-agents-mcp",
-  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude Code, Codex, Google Antigravity, Gemini, GLM, Kimi, Grok, and OpenCode",
+  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude Code, Codex, Command Code, Google Antigravity, Gemini, GLM, Kimi, Grok, and OpenCode",
   "type": "module",
   "main": "dist/index.js",
   "files": [
@@ -30,6 +30,7 @@
     "grok",
     "antigravity",
     "opencode",
+    "command-code",
     "llm",
     "cli",
     "agent-orchestration"
@@ -53,10 +54,6 @@
     "watch": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage",
-    "test:coverage:summary": "node scripts/show-coverage.js",
-    "test:coverage:clean": "rm -rf coverage .vitest-cache",
-    "test:coverage:fresh": "npm run test:coverage:clean && npm run test:coverage",
     "test:watch": "vitest",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "format": "biome format --write src",
@@ -67,9 +64,9 @@
     "check:fix": "biome check --write src",
     "check:deps": "dpdm --no-warning --no-tree --circular --exclude \"node_modules|__tests__|\\.test\\.ts$|\\.spec\\.ts$\" --tsconfig ./tsconfig.json --transform --exit-code circular:1 src/index.ts",
     "check:knip": "knip",
-    "check:all": "npm run check && npm run lint && npm run format:check && npm run check:deps && npm run check:knip && npm run build && npm run typecheck:test && npm run test",
+    "check:all": "pnpm run check && pnpm run lint && pnpm run format:check && pnpm run check:deps && pnpm run check:knip && pnpm run build && pnpm run typecheck:test && pnpm run test",
     "cleanup:processes": "bash ./scripts/cleanup-test-processes.sh",
-    "test:safe": "npm test && npm run cleanup:processes",
+    "test:safe": "pnpm test && pnpm run cleanup:processes",
     "lang:ja": "node scripts/set-language.js ja",
     "lang:en": "node scripts/set-language.js en",
     "prepare": "husky"
@@ -80,7 +77,6 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",
     "@types/node": "^26.1.0",
-    "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.10",
     "dpdm": "^4.2.0",
     "husky": "^9.1.7",
@@ -90,6 +86,7 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   },
+  "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=22.22.2"
   },

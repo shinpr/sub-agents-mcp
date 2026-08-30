@@ -1,8 +1,5 @@
 import type { AgentType } from './AgentExecutor.js'
 
-/**
- * Parses one backend's documented output protocol and stores its terminal result.
- */
 export class StreamProcessor {
   private resultJson: unknown = null
   private geminiResponseParts: string[] = []
@@ -11,10 +8,6 @@ export class StreamProcessor {
 
   constructor(private readonly agentType: AgentType) {}
 
-  /**
-   * Process one line from stdout. Returns true only for a terminal event from
-   * the configured backend.
-   */
   processLine(line: string): boolean {
     const trimmedLine = line.trim()
     if (!trimmedLine || this.resultJson !== null) {
@@ -49,6 +42,8 @@ export class StreamProcessor {
         return this.processAntigravityLine(json)
       case 'opencode':
         return this.processOpenCodeLine(json)
+      case 'command-code':
+        return this.processCommandCodeLine(json)
       default: {
         const unsupportedAgentType: never = agentType
         throw new Error(`Unsupported agent type: ${String(unsupportedAgentType)}`)
@@ -56,9 +51,6 @@ export class StreamProcessor {
     }
   }
 
-  /**
-   * Process a complete non-NDJSON payload after process exit.
-   */
   processCompleteOutput(output: string): boolean {
     if (this.resultJson !== null) {
       return false
@@ -275,6 +267,41 @@ export class StreamProcessor {
       result: this.openCodeResponseParts.join(''),
       status: reason === 'stop' ? 'success' : 'partial',
       stop_reason: reason,
+    }
+    return true
+  }
+
+  private processCommandCodeLine(json: Record<string, unknown>): boolean {
+    if (json['type'] !== 'result') {
+      return false
+    }
+
+    const subtype = json['subtype']
+    if (subtype === 'success' || subtype === 'max_turns') {
+      const result: Record<string, unknown> = {
+        type: 'result',
+        result: typeof json['finalText'] === 'string' ? json['finalText'] : '',
+        status: subtype === 'success' ? 'success' : 'partial',
+      }
+      if (typeof json['stopReason'] === 'string') {
+        result['stop_reason'] = json['stopReason']
+      }
+      if (typeof json['sessionId'] === 'string') {
+        result['session_id'] = json['sessionId']
+      }
+      this.resultJson = result
+      return true
+    }
+
+    this.resultJson = {
+      type: 'result',
+      subtype: 'error',
+      is_error: true,
+      status: 'error',
+      error:
+        typeof json['error'] === 'string'
+          ? json['error']
+          : `Command Code execution failed${typeof subtype === 'string' ? `: ${subtype}` : ''}`,
     }
     return true
   }

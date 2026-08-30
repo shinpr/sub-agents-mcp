@@ -10,7 +10,6 @@ describe('SessionManager', () => {
   let sessionConfig: SessionConfig
 
   beforeEach(async () => {
-    // Create a temporary test directory
     testSessionDir = path.join(os.tmpdir(), `test-sessions-${Date.now()}`)
     sessionConfig = {
       enabled: true,
@@ -20,12 +19,9 @@ describe('SessionManager', () => {
   })
 
   afterEach(async () => {
-    // Clean up test directory
     try {
       await fs.rm(testSessionDir, { recursive: true, force: true })
-    } catch {
-      // Ignore errors if directory doesn't exist
-    }
+    } catch {}
   })
 
   describe('constructor', () => {
@@ -33,7 +29,6 @@ describe('SessionManager', () => {
       const manager = new SessionManager(sessionConfig)
       expect(manager).toBeInstanceOf(SessionManager)
 
-      // Verify that session directory was created
       const dirExists = await fs.stat(testSessionDir)
       expect(dirExists.isDirectory()).toBe(true)
     })
@@ -48,11 +43,9 @@ describe('SessionManager', () => {
 
       new SessionManager(newConfig)
 
-      // Verify that directory was created
       const dirExists = await fs.stat(newDir)
       expect(dirExists.isDirectory()).toBe(true)
 
-      // Cleanup
       await fs.rm(newDir, { recursive: true, force: true })
     })
   })
@@ -100,7 +93,6 @@ describe('SessionManager', () => {
 
       const filePath = manager.buildFilePath(sessionId, agentType)
 
-      // Expected format: [session_id]_[agent_type].json
       const expectedFileName = `${sessionId}_${agentType}.json`
       expect(filePath).toBe(path.join(testSessionDir, expectedFileName))
     })
@@ -122,7 +114,6 @@ describe('SessionManager', () => {
 
       const filePath = manager.buildFilePath(sessionId, agentType)
 
-      // Verify that the resolved path is within the session directory
       const normalizedFilePath = path.normalize(filePath)
       const normalizedSessionDir = path.normalize(testSessionDir)
       expect(normalizedFilePath.startsWith(normalizedSessionDir)).toBe(true)
@@ -147,13 +138,10 @@ describe('SessionManager', () => {
 
       await manager.saveSession(sessionId, request, response)
 
-      // Verify that file was created
       const files = await fs.readdir(testSessionDir)
       expect(files.length).toBe(1)
-      // File name should match: [session_id]_[agent_type].json
       expect(files[0]).toBe('test-session-001_rule-advisor.json')
 
-      // Verify file content
       const filePath = path.join(testSessionDir, files[0])
       const fileContent = await fs.readFile(filePath, 'utf-8')
       const sessionData = JSON.parse(fileContent)
@@ -191,24 +179,19 @@ describe('SessionManager', () => {
         executionTime: 200,
       }
 
-      // Save first session
       await manager.saveSession(sessionId, request1, response1)
 
-      // Save second session (should append)
       await manager.saveSession(sessionId, request2, response2)
 
-      // Verify that there's still only one file
       const files = await fs.readdir(testSessionDir)
       const sessionFiles = files.filter((file) => file.startsWith('test-session-002'))
       expect(sessionFiles.length).toBeGreaterThan(0)
 
-      // Get the latest file
       const latestFile = sessionFiles.sort().pop()
       const filePath = path.join(testSessionDir, latestFile!)
       const fileContent = await fs.readFile(filePath, 'utf-8')
       const sessionData = JSON.parse(fileContent)
 
-      // Verify that both entries are in history
       expect(sessionData.history.length).toBeGreaterThanOrEqual(2)
       expect(sessionData.createdAt).toBeDefined()
       expect(sessionData.lastUpdatedAt).toBeDefined()
@@ -230,11 +213,9 @@ describe('SessionManager', () => {
 
       await manager.saveSession(sessionId, request, response)
 
-      // Get the created file
       const files = await fs.readdir(testSessionDir)
       const filePath = path.join(testSessionDir, files[0])
 
-      // Check file permissions
       const stats = await fs.stat(filePath)
       const mode = stats.mode & 0o777
       expect(mode).toBe(0o600)
@@ -254,7 +235,6 @@ describe('SessionManager', () => {
         executionTime: 100,
       }
 
-      // Should not throw error even with invalid session ID
       await expect(
         manager.saveSession(invalidSessionId, request, response)
       ).resolves.toBeUndefined()
@@ -274,12 +254,10 @@ describe('SessionManager', () => {
         executionTime: 100,
       }
 
-      // Spy on console.error
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       await manager.saveSession(invalidSessionId, request, response)
 
-      // Verify that error was logged
       expect(consoleErrorSpy).toHaveBeenCalled()
 
       consoleErrorSpy.mockRestore()
@@ -301,13 +279,10 @@ describe('SessionManager', () => {
         executionTime: 100,
       }
 
-      // First, save a session
       await manager.saveSession(sessionId, request, response)
 
-      // Then, load it
       const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
 
-      // Verify the loaded session
       expect(loadedSession).not.toBeNull()
       expect(loadedSession?.sessionId).toBe(sessionId)
       expect(loadedSession?.agentType).toBe('rule-advisor')
@@ -331,7 +306,6 @@ describe('SessionManager', () => {
       const manager = new SessionManager(sessionConfig)
       const sessionId = 'test-session-invalid-json'
 
-      // Create a file with invalid JSON
       const fileName = `${sessionId}_rule-advisor.json`
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, 'invalid json content', 'utf-8')
@@ -365,13 +339,10 @@ describe('SessionManager', () => {
         executionTime: 200,
       }
 
-      // Save first session
       await manager.saveSession(sessionId, request1, response1)
 
-      // Save second session (appends to the same file)
       await manager.saveSession(sessionId, request2, response2)
 
-      // Load session - should get both entries in history
       const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
 
       expect(loadedSession).not.toBeNull()
@@ -379,12 +350,9 @@ describe('SessionManager', () => {
     })
 
     it('should isolate sessions by agent type - CRITICAL for sub-agent isolation', async () => {
-      // Red: This test should FAIL with current implementation
-      // Current bug: loadSession(sessionId) ignores agent_type
       const manager = new SessionManager(sessionConfig)
       const sessionId = 'shared-session-001'
 
-      // Save session for rule-advisor
       const ruleAdvisorRequest = {
         agent: 'rule-advisor',
         prompt: 'Analyze code quality',
@@ -397,7 +365,6 @@ describe('SessionManager', () => {
       }
       await manager.saveSession(sessionId, ruleAdvisorRequest, ruleAdvisorResponse)
 
-      // Save session for task-executor (same session_id, different agent)
       const taskExecutorRequest = {
         agent: 'task-executor',
         prompt: 'Execute task',
@@ -410,20 +377,16 @@ describe('SessionManager', () => {
       }
       await manager.saveSession(sessionId, taskExecutorRequest, taskExecutorResponse)
 
-      // Load session for rule-advisor with agent_type parameter
       const ruleAdvisorSession = await manager.loadSession(sessionId, 'rule-advisor')
 
-      // Verify isolation: should ONLY get rule-advisor's session, NOT task-executor's
       expect(ruleAdvisorSession).not.toBeNull()
       expect(ruleAdvisorSession?.agentType).toBe('rule-advisor')
       expect(ruleAdvisorSession?.history).toHaveLength(1)
       expect(ruleAdvisorSession?.history[0].request.prompt).toBe('Analyze code quality')
       expect(ruleAdvisorSession?.history[0].response.stdout).toBe('Rule advisor response')
 
-      // Load session for task-executor with agent_type parameter
       const taskExecutorSession = await manager.loadSession(sessionId, 'task-executor')
 
-      // Verify isolation: should ONLY get task-executor's session, NOT rule-advisor's
       expect(taskExecutorSession).not.toBeNull()
       expect(taskExecutorSession?.agentType).toBe('task-executor')
       expect(taskExecutorSession?.history).toHaveLength(1)
@@ -436,25 +399,20 @@ describe('SessionManager', () => {
     it('should delete files older than retention days', async () => {
       const manager = new SessionManager(sessionConfig)
 
-      // Create test files with different ages
       const oldFileName = 'old-session_rule-advisor.json'
       const oldFilePath = path.join(testSessionDir, oldFileName)
       await fs.writeFile(oldFilePath, JSON.stringify({ test: 'data' }), 'utf-8')
 
-      // Set file modification time to 8 days ago (older than retention period)
       const eightDaysAgo = new Date()
       eightDaysAgo.setDate(eightDaysAgo.getDate() - 8)
       await fs.utimes(oldFilePath, eightDaysAgo, eightDaysAgo)
 
-      // Create a recent file (within retention period)
       const recentFileName = 'recent-session_rule-advisor.json'
       const recentFilePath = path.join(testSessionDir, recentFileName)
       await fs.writeFile(recentFilePath, JSON.stringify({ test: 'data' }), 'utf-8')
 
-      // Execute cleanup
       await manager.cleanupOldSessions()
 
-      // Verify old file was deleted
       const files = await fs.readdir(testSessionDir)
       expect(files).not.toContain(oldFileName)
       expect(files).toContain(recentFileName)
@@ -463,20 +421,16 @@ describe('SessionManager', () => {
     it('should not delete files within retention period', async () => {
       const manager = new SessionManager(sessionConfig)
 
-      // Create a file that's 3 days old (within 7-day retention)
       const fileName = 'test-session_rule-advisor.json'
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
 
-      // Set file modification time to 3 days ago
       const threeDaysAgo = new Date()
       threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
       await fs.utimes(filePath, threeDaysAgo, threeDaysAgo)
 
-      // Execute cleanup
       await manager.cleanupOldSessions()
 
-      // Verify file still exists
       const files = await fs.readdir(testSessionDir)
       expect(files).toContain(fileName)
     })
@@ -484,39 +438,30 @@ describe('SessionManager', () => {
     it('should not throw error when cleanup fails', async () => {
       const manager = new SessionManager(sessionConfig)
 
-      // Create a file
       const fileName = 'test-session_rule-advisor.json'
       const filePath = path.join(testSessionDir, fileName)
       await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
 
-      // Set to old date
       const eightDaysAgo = new Date()
       eightDaysAgo.setDate(eightDaysAgo.getDate() - 8)
       await fs.utimes(filePath, eightDaysAgo, eightDaysAgo)
 
-      // Make file read-only to simulate delete failure
       await fs.chmod(filePath, 0o444)
 
-      // Spy on console.error to verify error logging
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-      // Should not throw error even if deletion fails
       await expect(manager.cleanupOldSessions()).resolves.toBeUndefined()
 
       consoleErrorSpy.mockRestore()
 
-      // Try to restore permissions for cleanup (may fail if file was deleted)
       try {
         await fs.chmod(filePath, 0o644)
-      } catch {
-        // Ignore if file was already deleted
-      }
+      } catch {}
     })
 
     it('should delete multiple old files in a single cleanup', async () => {
       const manager = new SessionManager(sessionConfig)
 
-      // Create two old files (different session IDs)
       const oldFile1 = 'old-session-1_rule-advisor.json'
       const oldFile2 = 'old-session-2_rule-advisor.json'
       const oldFilePath1 = path.join(testSessionDir, oldFile1)
@@ -524,16 +469,13 @@ describe('SessionManager', () => {
       await fs.writeFile(oldFilePath1, JSON.stringify({ test: 'data' }), 'utf-8')
       await fs.writeFile(oldFilePath2, JSON.stringify({ test: 'data' }), 'utf-8')
 
-      // Set both files to 8 days ago
       const eightDaysAgo = new Date()
       eightDaysAgo.setDate(eightDaysAgo.getDate() - 8)
       await fs.utimes(oldFilePath1, eightDaysAgo, eightDaysAgo)
       await fs.utimes(oldFilePath2, eightDaysAgo, eightDaysAgo)
 
-      // Execute cleanup
       await manager.cleanupOldSessions()
 
-      // Assert - focus on behavior: both old files are deleted
       const remainingFiles = await fs.readdir(testSessionDir)
       expect(remainingFiles).not.toContain(oldFile1)
       expect(remainingFiles).not.toContain(oldFile2)
