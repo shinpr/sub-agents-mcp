@@ -26,7 +26,6 @@ describe('StreamProcessor', () => {
       expect(processor.processLine(json1)).toBe(true)
       expect(processor.processLine(json2)).toBe(false)
 
-      // Should still have the first JSON
       expect(processor.getResult()).toEqual({
         type: 'result',
         result: 'First JSON',
@@ -86,11 +85,6 @@ describe('StreamProcessor', () => {
 
     it('should handle gemini stream-json format by accumulating assistant messages', () => {
       processor = new StreamProcessor('gemini')
-      // Gemini stream-json outputs multiple JSON lines:
-      // - init: signals stream-json mode
-      // - message with role: "user": user prompt (ignored)
-      // - message with role: "assistant": response content (accumulated)
-      // - result: signals completion with stats
       const initJson =
         '{"type":"init","timestamp":"2025-12-08T01:58:05.481Z","session_id":"abc123","model":"auto"}'
       const userMessageJson =
@@ -102,15 +96,11 @@ describe('StreamProcessor', () => {
       const resultJson =
         '{"type":"result","timestamp":"2025-12-08T01:58:09.651Z","status":"success","stats":{"total_tokens":100}}'
 
-      // init signals Gemini stream-json mode
       expect(processor.processLine(initJson)).toBe(false)
-      // user message is ignored
       expect(processor.processLine(userMessageJson)).toBe(false)
-      // assistant messages are accumulated
       expect(processor.processLine(assistantDelta1)).toBe(false)
       expect(processor.processLine(assistantDelta2)).toBe(false)
 
-      // Result type should return true and include accumulated response
       expect(processor.processLine(resultJson)).toBe(true)
       expect(processor.getResult()).toEqual({
         type: 'result',
@@ -248,7 +238,6 @@ describe('StreamProcessor', () => {
 
     it('should extract agent_message text from codex output stream', () => {
       processor = new StreamProcessor('codex')
-      // Given: A complete Codex output stream with reasoning and agent_message
       const codexOutputStream = [
         '{"type":"thread.started","thread_id":"019b1291-a763-74a1-bffe-39670dad4b6b"}',
         '{"type":"turn.started"}',
@@ -257,12 +246,10 @@ describe('StreamProcessor', () => {
         '{"type":"turn.completed","usage":{"input_tokens":3482,"cached_input_tokens":3072,"output_tokens":13}}',
       ]
 
-      // When: Processing the entire stream
       for (const line of codexOutputStream) {
         processor.processLine(line)
       }
 
-      // Then: Result contains only the agent_message text
       expect(processor.getResult()).toEqual({
         type: 'result',
         result: 'Hello! How can I help you today?',
@@ -334,6 +321,61 @@ describe('StreamProcessor', () => {
         error_type: 'UnknownError',
         error_ref: 'err_c481aeec',
         session_id: 'ses_0a015ef55ffePMBqnSUUKOWwRG',
+      })
+    })
+
+    it('should normalize a Command Code success result', () => {
+      processor = new StreamProcessor('command-code')
+
+      expect(
+        processor.processLine(
+          '{"type":"event","event":{"type":"tool_running","toolName":"read_file"}}'
+        )
+      ).toBe(false)
+      expect(
+        processor.processLine(
+          '{"type":"result","subtype":"success","sessionId":"session-1","stopReason":"end_turn","finalText":"DONE","usage":{},"durationMs":12}'
+        )
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'DONE',
+        status: 'success',
+        stop_reason: 'end_turn',
+        session_id: 'session-1',
+      })
+    })
+
+    it('should normalize Command Code max_turns as partial', () => {
+      processor = new StreamProcessor('command-code')
+
+      expect(
+        processor.processLine(
+          '{"type":"result","subtype":"max_turns","stopReason":"max_turns","finalText":"progress","usage":{},"durationMs":12}'
+        )
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'progress',
+        status: 'partial',
+        stop_reason: 'max_turns',
+      })
+    })
+
+    it('should normalize a Command Code error for the MCP error contract', () => {
+      processor = new StreamProcessor('command-code')
+
+      expect(
+        processor.processLine(
+          '{"type":"result","subtype":"error","finalText":"","error":"Not authenticated","usage":{},"durationMs":2}'
+        )
+      ).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        status: 'error',
+        error: 'Not authenticated',
       })
     })
 
@@ -411,7 +453,6 @@ describe('StreamProcessor', () => {
 
     it('should concatenate multiple agent_messages with newlines', () => {
       processor = new StreamProcessor('codex')
-      // Given: Codex output with multiple agent_message items
       const codexOutputStream = [
         '{"type":"thread.started","thread_id":"019b1292-47b5-7bf3-8f7a-ef0986d5b982"}',
         '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Message 1"}}',
@@ -419,12 +460,10 @@ describe('StreamProcessor', () => {
         '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":20}}',
       ]
 
-      // When: Processing the stream
       for (const line of codexOutputStream) {
         processor.processLine(line)
       }
 
-      // Then: Messages are joined with newlines
       expect(processor.getResult()).toEqual({
         type: 'result',
         result: 'Message 1\nMessage 2',
@@ -435,7 +474,6 @@ describe('StreamProcessor', () => {
 
     it('should ignore command_execution items and only include agent_message', () => {
       processor = new StreamProcessor('codex')
-      // Given: Codex output with command execution (reasoning, command, then summary)
       const codexOutputStream = [
         '{"type":"thread.started","thread_id":"019b1292-e66c-7c61-bcc5-4262b08f3535"}',
         '{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Listing sandbox contents**"}}',
@@ -445,12 +483,10 @@ describe('StreamProcessor', () => {
         '{"type":"turn.completed","usage":{"input_tokens":500,"output_tokens":50}}',
       ]
 
-      // When: Processing the stream
       for (const line of codexOutputStream) {
         processor.processLine(line)
       }
 
-      // Then: Only agent_message content is in the result
       expect(processor.getResult()).toEqual({
         type: 'result',
         result: 'Files: file1, file2',
@@ -478,7 +514,6 @@ describe('StreamProcessor', () => {
     it('should handle malformed JSON gracefully', () => {
       expect(processor.processLine('{invalid json')).toBe(false)
       expect(processor.processLine('{"incomplete": ')).toBe(false)
-      // null is valid JSON but not an object with type field, so it's ignored
       expect(processor.processLine('null')).toBe(false)
       expect(processor.getResult()).toBeNull()
     })

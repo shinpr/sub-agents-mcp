@@ -1,18 +1,3 @@
-/**
- * MCP Server implementation using @modelcontextprotocol/sdk
- *
- * Provides the foundational MCP server functionality with StdioServerTransport
- * for stdin/stdout communication. This class serves as the entry point for
- * the MCP server and handles basic server lifecycle operations.
- *
- * @example
- * ```typescript
- * const config = await ServerConfig.fromEnvironment()
- * const server = new McpServer(config)
- * await server.start()
- * ```
- */
-
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
@@ -34,17 +19,11 @@ import { RunAgentTool } from '../tools/RunAgentTool.js'
 import { AppError, ValidationError } from '../utils/ErrorHandler.js'
 import { Logger, type LogLevel } from '../utils/Logger.js'
 
-/**
- * Server information interface for MCP server identification
- */
 interface ServerInfo {
   name: string
   version: string
 }
 
-/**
- * MCP Server class providing foundational server functionality
- */
 export class McpServer {
   private server: Server
   private transport: StdioServerTransport | null = null
@@ -55,11 +34,6 @@ export class McpServer {
   private agentResources: AgentResources
   private sessionManager?: SessionManager
 
-  /**
-   * Create a new MCP server instance
-   * @param config Server configuration object
-   * @throws {Error} When server name is empty
-   */
   constructor(config: ServerConfig) {
     this.validateConfig(config)
     this.config = config
@@ -69,10 +43,7 @@ export class McpServer {
       version: config.serverVersion,
     })
 
-    // Initialize agent management components
     this.agentManager = new AgentManager(config)
-
-    // Create ExecutionConfig with the agent type from server config
     const executionConfig = createExecutionConfig(config.agentType, {
       executionTimeout: config.executionTimeoutMs,
       permission: config.agentPermission,
@@ -84,12 +55,10 @@ export class McpServer {
       ...(config.kimiApiKey && { kimiApiKey: config.kimiApiKey }),
     })
 
-    // Create logger with log level from config
     const executorLogger = new Logger(config.logLevel)
 
     this.agentExecutor = new AgentExecutor(executionConfig, executorLogger)
 
-    // Initialize SessionManager if session management is enabled
     if (config.sessionEnabled) {
       this.sessionManager = new SessionManager({
         enabled: config.sessionEnabled,
@@ -107,7 +76,6 @@ export class McpServer {
     this.runAgentTool = new RunAgentTool(this.agentExecutor, this.agentManager, this.sessionManager)
     this.agentResources = new AgentResources(this.agentManager)
 
-    // Initialize MCP server with capabilities
     this.server = new Server(
       {
         name: config.serverName,
@@ -121,20 +89,12 @@ export class McpServer {
       }
     )
 
-    // Setup StdioServerTransport for stdin/stdout communication
     this.setupTransport()
-
-    // Setup MCP handlers
     this.setupHandlers()
 
     this.log('info', 'MCP server initialized successfully')
   }
 
-  /**
-   * Validate server configuration
-   * @param config Configuration to validate
-   * @throws {Error} When configuration is invalid
-   */
   private validateConfig(config: ServerConfig): void {
     if (!config.serverName || config.serverName.trim() === '') {
       throw new Error('Server name cannot be empty')
@@ -144,12 +104,6 @@ export class McpServer {
     }
   }
 
-  /**
-   * Log message with structured format
-   * @param level Log level
-   * @param message Log message
-   * @param metadata Additional metadata
-   */
   private log(level: LogLevel, message: string, metadata?: Record<string, unknown>): void {
     const logLevels: Record<LogLevel, number> = {
       debug: 0,
@@ -171,9 +125,6 @@ export class McpServer {
     }
   }
 
-  /**
-   * Setup StdioServerTransport for MCP communication
-   */
   private setupTransport(): void {
     try {
       this.transport = new StdioServerTransport()
@@ -184,12 +135,8 @@ export class McpServer {
     }
   }
 
-  /**
-   * Setup MCP protocol handlers with performance monitoring
-   */
   private setupHandlers(): void {
     try {
-      // List tools handler
       this.server.setRequestHandler(ListToolsRequestSchema, async (): Promise<ListToolsResult> => {
         const startTime = Date.now()
         this.log('debug', 'Received list_tools request')
@@ -220,7 +167,6 @@ export class McpServer {
         }
       })
 
-      // Call tool handler
       this.server.setRequestHandler(
         CallToolRequestSchema,
         async (request): Promise<CallToolResult> => {
@@ -253,7 +199,6 @@ export class McpServer {
         }
       )
 
-      // List resources handler
       this.server.setRequestHandler(
         ListResourcesRequestSchema,
         async (): Promise<ListResourcesResult> => {
@@ -279,7 +224,6 @@ export class McpServer {
         }
       )
 
-      // Read resource handler
       this.server.setRequestHandler(
         ReadResourceRequestSchema,
         async (request): Promise<ReadResourceResult> => {
@@ -322,10 +266,6 @@ export class McpServer {
     }
   }
 
-  /**
-   * Get server information
-   * @returns Server name and version
-   */
   getServerInfo(): ServerInfo {
     return {
       name: this.config.serverName,
@@ -333,26 +273,14 @@ export class McpServer {
     }
   }
 
-  /**
-   * Check if transport is configured
-   * @returns True if transport is available
-   */
   hasTransport(): boolean {
     return this.transport !== null
   }
 
-  /**
-   * Check if server is ready to start
-   * @returns True if server is ready
-   */
   isReady(): boolean {
     return this.hasTransport() && this.server !== null
   }
 
-  /**
-   * Start the MCP server
-   * @throws {Error} When server is not ready or transport setup fails
-   */
   async start(): Promise<void> {
     try {
       if (!this.isReady()) {
@@ -365,7 +293,6 @@ export class McpServer {
 
       this.log('info', 'Starting MCP server...')
 
-      // Connect server to transport
       await this.server.connect(this.transport)
 
       this.log('info', 'MCP server started successfully', {
@@ -380,10 +307,6 @@ export class McpServer {
     }
   }
 
-  /**
-   * List available tools (for testing)
-   * @returns Promise resolving to array of tool definitions
-   */
   async listTools(): Promise<
     Array<{ name: string; description: string; inputSchema: RunAgentTool['inputSchema'] }>
   > {
@@ -396,10 +319,6 @@ export class McpServer {
     ]
   }
 
-  /**
-   * List available resources (for testing)
-   * @returns Promise resolving to array of resource definitions
-   */
   async listResources(): Promise<Array<{ uri: string; name: string; description: string }>> {
     const resources = await this.agentResources.listResources()
     return resources.map((resource) => ({
@@ -409,12 +328,6 @@ export class McpServer {
     }))
   }
 
-  /**
-   * Call a tool (for testing)
-   * @param toolName - Name of the tool to call
-   * @param params - Tool parameters
-   * @returns Promise resolving to tool response
-   */
   async callTool(
     toolName: string,
     params: unknown
@@ -425,11 +338,6 @@ export class McpServer {
     throw new ValidationError(`Unknown tool: ${toolName}`, 'UNKNOWN_TOOL')
   }
 
-  /**
-   * Read a resource (for testing)
-   * @param uri - Resource URI to read
-   * @returns Promise resolving to resource content
-   */
   async readResource(uri: string): Promise<Awaited<ReturnType<AgentResources['readResource']>>> {
     if (!this.agentResources.isValidResourceUri(uri)) {
       throw new ValidationError(`Invalid resource URI: ${uri}`, 'INVALID_RESOURCE_URI')
@@ -437,11 +345,6 @@ export class McpServer {
     return await this.agentResources.readResource(uri)
   }
 
-  /**
-   * Get server performance statistics
-   *
-   * @returns Performance and usage statistics
-   */
   getServerStats(): {
     serverInfo: { name: string; version: string }
     executionStats: Map<string, { count: number; totalTime: number; lastUsed: Date }>
@@ -452,21 +355,14 @@ export class McpServer {
     }
   }
 
-  /**
-   * Reset statistics
-   */
   resetStats(): void {
     this.log('info', 'Server statistics reset')
   }
 
-  /**
-   * Close the server and cleanup resources
-   */
   async close(): Promise<void> {
     try {
       this.log('info', 'Shutting down MCP server...')
 
-      // Log final statistics before shutdown
       const stats = this.getServerStats()
       this.log('info', 'Final server statistics', {
         executionCount: Array.from(stats.executionStats.values()).reduce(

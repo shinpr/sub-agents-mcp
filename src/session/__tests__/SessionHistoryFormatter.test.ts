@@ -5,7 +5,6 @@ import { formatSessionHistory } from '../SessionHistoryFormatter.js'
 describe('SessionHistoryFormatter', () => {
   describe('formatSessionHistory', () => {
     it('should format session history as Markdown', () => {
-      // Arrange
       const sessionData: SessionData = {
         sessionId: 'test-session-123',
         agentType: 'rule-advisor',
@@ -29,10 +28,8 @@ describe('SessionHistoryFormatter', () => {
         lastUpdatedAt: new Date('2025-01-21T12:00:00.000Z'),
       }
 
-      // Act
       const result = formatSessionHistory(sessionData)
 
-      // Assert
       expect(result).toContain('# Session History: rule-advisor')
       expect(result).toContain('## 1. User Request')
       expect(result).toContain('Task: Fix TypeScript type errors')
@@ -41,7 +38,6 @@ describe('SessionHistoryFormatter', () => {
     })
 
     it('should handle multiple history entries', () => {
-      // Arrange
       const sessionData: SessionData = {
         sessionId: 'multi-session',
         agentType: 'rule-advisor',
@@ -90,10 +86,8 @@ describe('SessionHistoryFormatter', () => {
         lastUpdatedAt: new Date('2025-01-21T12:10:00.000Z'),
       }
 
-      // Act
       const result = formatSessionHistory(sessionData)
 
-      // Assert
       expect(result).toContain('## 1. User Request')
       expect(result).toContain('First question')
       expect(result).toContain('## 1. Agent Response')
@@ -111,7 +105,6 @@ describe('SessionHistoryFormatter', () => {
     })
 
     it('should handle empty history', () => {
-      // Arrange
       const sessionData: SessionData = {
         sessionId: 'empty-session',
         agentType: 'rule-advisor',
@@ -120,16 +113,13 @@ describe('SessionHistoryFormatter', () => {
         lastUpdatedAt: new Date('2025-01-21T12:00:00.000Z'),
       }
 
-      // Act
       const result = formatSessionHistory(sessionData)
 
-      // Assert
       expect(result).toContain('# Session History: rule-advisor')
       expect(result).not.toContain('## 1')
     })
 
     it('should preserve multiline prompts and responses', () => {
-      // Arrange
       const sessionData: SessionData = {
         sessionId: 'multiline-session',
         agentType: 'rule-advisor',
@@ -152,16 +142,13 @@ describe('SessionHistoryFormatter', () => {
         lastUpdatedAt: new Date('2025-01-21T12:00:00.000Z'),
       }
 
-      // Act
       const result = formatSessionHistory(sessionData)
 
-      // Assert
       expect(result).toContain('Line 1\nLine 2\nLine 3')
       expect(result).toContain('Response line 1\nResponse line 2\nResponse line 3')
     })
 
     it('should not include metadata (sessionId, timestamp, cwd, exitCode, etc.)', () => {
-      // Arrange
       const sessionData: SessionData = {
         sessionId: 'metadata-test',
         agentType: 'rule-advisor',
@@ -185,11 +172,8 @@ describe('SessionHistoryFormatter', () => {
         lastUpdatedAt: new Date('2025-01-21T12:00:00.000Z'),
       }
 
-      // Act
       const result = formatSessionHistory(sessionData)
 
-      // Assert
-      // Should NOT contain metadata
       expect(result).not.toContain('metadata-test')
       expect(result).not.toContain('2025-01-21T12:00:00.000Z')
       expect(result).not.toContain('/some/path')
@@ -197,13 +181,11 @@ describe('SessionHistoryFormatter', () => {
       expect(result).not.toContain('1234')
       expect(result).not.toContain('exitCode')
 
-      // Should contain only essential conversation
       expect(result).toContain('Question')
       expect(result).toContain('Answer')
     })
 
     it('should be significantly shorter than JSON', () => {
-      // Arrange
       const sessionData: SessionData = {
         sessionId: 'token-reduction-test',
         agentType: 'rule-advisor',
@@ -227,17 +209,13 @@ describe('SessionHistoryFormatter', () => {
         lastUpdatedAt: new Date('2025-01-21T12:00:00.000Z'),
       }
 
-      // Act
       const markdownFormat = formatSessionHistory(sessionData)
       const jsonFormat = JSON.stringify(sessionData)
 
-      // Assert
       expect(markdownFormat.length).toBeLessThan(jsonFormat.length)
 
-      // Calculate reduction rate
       const reductionRate = ((jsonFormat.length - markdownFormat.length) / jsonFormat.length) * 100
 
-      // Should achieve at least 30% reduction
       expect(reductionRate).toBeGreaterThan(30)
     })
   })

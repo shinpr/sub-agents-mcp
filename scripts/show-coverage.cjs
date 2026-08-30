@@ -7,7 +7,7 @@ const coverageFile = path.join(__dirname, '..', 'coverage', 'coverage-final.json
 
 if (!fs.existsSync(coverageFile)) {
   console.error('❌ Coverage report not found.')
-  console.error('   Please run npm run test:coverage first.')
+  console.error('   Please run pnpm run test:coverage first.')
   process.exit(1)
 }
 
@@ -50,7 +50,6 @@ try {
   console.log(`  Lines      : ${linesCoverage.padStart(6)}% (${coveredLines}/${totalLines})`)
   console.log('═══════════════════════════════════════')
 
-  // Assessment against 80% target
   const allMetrics = [
     parseFloat(statementsCoverage),
     parseFloat(branchesCoverage),

@@ -1,17 +1,7 @@
-/**
- * AgentResources implementation for publishing agent definitions via MCP
- *
- * Provides MCP resources for agent discovery including a list of all
- * available agents and individual agent definition resources.
- */
-
 import type { AgentManager } from '../agents/AgentManager.js'
 import type { AgentDefinition } from '../types/AgentDefinition.js'
 import { Logger } from '../utils/Logger.js'
 
-/**
- * MCP resource content type for text responses
- */
 interface McpResourceContent {
   [x: string]: unknown
   type: 'text'
@@ -19,17 +9,11 @@ interface McpResourceContent {
   uri: string
 }
 
-/**
- * MCP resource response format
- */
 interface McpResourceResponse {
   [x: string]: unknown
   contents: McpResourceContent[]
 }
 
-/**
- * MCP resource definition for publication
- */
 interface McpResource {
   [x: string]: unknown
   uri: string
@@ -38,12 +22,6 @@ interface McpResource {
   mimeType?: string
 }
 
-/**
- * AgentResources class for managing agent definition resources in MCP
- *
- * Publishes agent information as MCP resources that clients can discover
- * and read to understand available agents and their capabilities.
- */
 export class AgentResources {
   private logger: Logger
 
@@ -51,11 +29,6 @@ export class AgentResources {
     this.logger = new Logger('info')
   }
 
-  /**
-   * Get list of all published agent resources
-   *
-   * @returns Promise resolving to array of MCP resource definitions
-   */
   async listResources(): Promise<McpResource[]> {
     const startTime = Date.now()
 
@@ -65,7 +38,6 @@ export class AgentResources {
 
     const resources: McpResource[] = []
 
-    // Add agent list resource
     resources.push({
       uri: 'agents://list',
       name: 'Agent List',
@@ -73,7 +45,6 @@ export class AgentResources {
       mimeType: 'text/plain',
     })
 
-    // Add individual agent resources if agent manager is available
     if (this.agentManager) {
       try {
         const agents = await this.agentManager.listAgents()
@@ -99,7 +70,6 @@ export class AgentResources {
             loadTime: Date.now() - startTime,
           }
         )
-        // If we can't load agents, just return the list resource
       }
     } else {
       this.logger.warn('Agent manager not available for resource listing')
@@ -113,13 +83,6 @@ export class AgentResources {
     return resources
   }
 
-  /**
-   * Read content of a specific agent resource
-   *
-   * @param uri - Resource URI to read
-   * @returns Promise resolving to resource content
-   * @throws {Error} When resource URI is invalid or not found
-   */
   async readResource(uri: string): Promise<McpResourceResponse> {
     const startTime = Date.now()
     const requestId = this.generateRequestId()
@@ -136,7 +99,6 @@ export class AgentResources {
       if (uri === 'agents://list') {
         result = await this.getAgentListContent()
       } else {
-        // Check for individual agent resource
         const agentNameMatch = uri.match(/^agents:\/\/(.+)$/)
         if (agentNameMatch?.[1]) {
           const agentName = agentNameMatch[1]
@@ -164,12 +126,6 @@ export class AgentResources {
     }
   }
 
-  /**
-   * Get content for the agent list resource
-   *
-   * @private
-   * @returns Promise resolving to agent list content
-   */
   private async getAgentListContent(): Promise<McpResourceResponse> {
     if (!this.agentManager) {
       return {
@@ -230,13 +186,6 @@ export class AgentResources {
     }
   }
 
-  /**
-   * Get content for a specific agent resource
-   *
-   * @private
-   * @param agentName - Name of the agent to get content for
-   * @returns Promise resolving to agent content
-   */
   private async getAgentContent(agentName: string): Promise<McpResourceResponse> {
     if (!this.agentManager) {
       return {
@@ -294,13 +243,6 @@ export class AgentResources {
     }
   }
 
-  /**
-   * Format agent definition content for display
-   *
-   * @private
-   * @param agent - Agent definition to format
-   * @returns Formatted content string
-   */
   private formatAgentContent(agent: AgentDefinition): string {
     let content = `# Agent: ${agent.name}\n\n`
     content += `**Description:** ${agent.description}\n`
@@ -313,12 +255,6 @@ export class AgentResources {
     return content
   }
 
-  /**
-   * Get list of available agent names
-   *
-   * @private
-   * @returns Promise resolving to array of agent names
-   */
   private async getAvailableAgentNames(): Promise<string[]> {
     if (!this.agentManager) {
       return []
@@ -332,22 +268,10 @@ export class AgentResources {
     }
   }
 
-  /**
-   * Generate unique request ID for tracking
-   *
-   * @private
-   * @returns Unique request identifier
-   */
   private generateRequestId(): string {
     return `resource_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
-  /**
-   * Check if a resource URI is valid with enhanced validation
-   *
-   * @param uri - Resource URI to validate
-   * @returns True if URI is valid
-   */
   isValidResourceUri(uri: string): boolean {
     if (!uri || typeof uri !== 'string') {
       return false
@@ -364,12 +288,10 @@ export class AgentResources {
 
     const agentName = agentNameMatch[1]
 
-    // Validate agent name format
     if (agentName.length === 0 || agentName.length > 100) {
       return false
     }
 
-    // Check for valid characters (same as RunAgentTool validation)
     if (!/^[a-zA-Z0-9_-]+$/.test(agentName)) {
       return false
     }

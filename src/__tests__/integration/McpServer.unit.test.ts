@@ -1,10 +1,3 @@
-/**
- * Tests for McpServer class
- *
- * Tests basic MCP server functionality including initialization,
- * configuration integration, and transport setup.
- */
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ServerConfig } from '../../config/ServerConfig.js'
 import { McpServer } from '../../server/McpServer.js'
@@ -14,7 +7,6 @@ describe('McpServer', () => {
   let mockConfig: ServerConfig
 
   beforeEach(() => {
-    // Set required environment variables for ServerConfig
     process.env['AGENTS_DIR'] = './test-agents'
     process.env['AGENT_TYPE'] = 'cursor'
     process.env['SESSION_ENABLED'] = 'false'
@@ -36,7 +28,6 @@ describe('McpServer', () => {
     })
 
     it('should throw error with invalid configuration', () => {
-      // Create a config with empty server name by mocking
       const invalidConfig = {
         ...mockConfig,
         serverName: '',

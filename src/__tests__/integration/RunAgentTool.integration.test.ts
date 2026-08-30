@@ -1,10 +1,3 @@
-/**
- * Unit tests for RunAgentTool class
- *
- * Tests the run_agent tool implementation including parameter validation,
- * agent execution integration, and MCP response formatting.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentManager } from '../../agents/AgentManager.js'
 import type { ServerConfig } from '../../config/ServerConfig.js'
@@ -41,7 +34,6 @@ describe('RunAgentTool', () => {
     mockAgentExecutor = new AgentExecutor(executionConfig)
     mockAgentManager = new AgentManager(mockConfig)
 
-    // This will fail initially as RunAgentTool is not implemented
     runAgentTool = new RunAgentTool(mockAgentExecutor, mockAgentManager)
   })
 
@@ -49,7 +41,6 @@ describe('RunAgentTool', () => {
     it('should validate required agent parameter', async () => {
       const params = {
         prompt: 'Test prompt',
-        // Missing agent parameter
       }
 
       const result = (await runAgentTool.execute(params)) as any
@@ -61,7 +52,6 @@ describe('RunAgentTool', () => {
     it('should validate required prompt parameter', async () => {
       const params = {
         agent: 'test-agent',
-        // Missing prompt parameter
       }
 
       const result = (await runAgentTool.execute(params)) as any
@@ -102,7 +92,6 @@ describe('RunAgentTool', () => {
         extra_args: ['--verbose', '--debug'],
       }
 
-      // Mock the execution to avoid actual agent execution
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
         stdout: 'Test output',
         stderr: '',
@@ -124,7 +113,6 @@ describe('RunAgentTool', () => {
         session_id: 'test-session-123',
       }
 
-      // Mock agent existence check
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
         name: 'test-agent',
         description: 'Test agent',
@@ -133,7 +121,6 @@ describe('RunAgentTool', () => {
         lastModified: new Date(),
       })
 
-      // Mock the execution to avoid actual agent execution
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
         stdout: 'Test output with session',
         stderr: '',
@@ -195,10 +182,8 @@ describe('RunAgentTool', () => {
         agent: 'test-agent',
         prompt: 'Test prompt without session',
         cwd: process.cwd(),
-        // No session_id provided
       }
 
-      // Mock agent existence check
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
         name: 'test-agent',
         description: 'Test agent',
@@ -207,7 +192,6 @@ describe('RunAgentTool', () => {
         lastModified: new Date(),
       })
 
-      // Mock the execution to avoid actual agent execution
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
         stdout: 'Test output without session',
         stderr: '',
@@ -225,7 +209,6 @@ describe('RunAgentTool', () => {
 
   describe('agent execution', () => {
     beforeEach(() => {
-      // Mock agent existence check
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
         name: 'test-agent',
         description: 'Test agent',
@@ -286,14 +269,11 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      // content[0].text is now JSON string (ADR-0003)
       const parsedContent = JSON.parse(textContent?.text || '{}')
       expect(parsedContent.result).toContain('Warning output')
 
-      // structuredContent should have result field (ADR-0003)
       expect(result.structuredContent).toHaveProperty('result')
       expect((result.structuredContent as any).result).toContain('Warning output')
-      // stderr is agent implementation detail and should NOT be in structuredContent
       expect(result.structuredContent).not.toHaveProperty('stderr')
     })
 
@@ -318,10 +298,8 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      // content[0].text is now JSON string (ADR-0003)
       const parsedContent = JSON.parse(textContent?.text || '{}')
       expect(parsedContent.result).toContain('failed')
-      // exit code is in structured content with snake_case naming (ADR-0003)
       expect(result.structuredContent).toHaveProperty('exit_code', 1)
     })
 
@@ -394,6 +372,35 @@ describe('RunAgentTool', () => {
       })
     })
 
+    it('should preserve a Command Code max-turn result as partial despite exit code 8', async () => {
+      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        stdout: '{"type":"result","status":"partial"}',
+        stderr: 'Maximum turns reached',
+        exitCode: 8,
+        executionTime: 50,
+        hasResult: true,
+        resultJson: {
+          type: 'result',
+          result: 'Work in progress',
+          status: 'partial',
+          stop_reason: 'max_turns',
+        },
+      })
+
+      const result = await runAgentTool.execute({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: process.cwd(),
+      })
+
+      expect(result.isError).toBe(false)
+      expect(result.structuredContent).toMatchObject({
+        result: 'Work in progress',
+        exit_code: 8,
+        status: 'partial',
+      })
+    })
+
     it('should include execution metadata in response', async () => {
       const params = {
         agent: 'test-agent',
@@ -415,10 +422,8 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      // content[0].text is now JSON string (ADR-0003)
       const parsedContent = JSON.parse(textContent?.text || '{}')
       expect(parsedContent.result).toContain('Success')
-      // Metadata is in structured content with snake_case naming (ADR-0003)
       expect(result.structuredContent).toHaveProperty('execution_time', 300)
       expect(result.structuredContent).toHaveProperty('exit_code', 0)
     })
@@ -432,7 +437,6 @@ describe('RunAgentTool', () => {
         cwd: process.cwd(),
       }
 
-      // Mock agent not found
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue(undefined)
 
       const result = await runAgentTool.execute(params)
@@ -441,7 +445,6 @@ describe('RunAgentTool', () => {
       expect(result.content).toBeDefined()
 
       const textContent = result.content.find((c) => c.type === 'text')
-      // content[0].text is now JSON string (ADR-0003)
       const parsedContent = JSON.parse(textContent?.text || '{}')
       expect(parsedContent.error).toMatch(/agent.*not found|nonexistent.*agent/i)
     })
@@ -453,7 +456,6 @@ describe('RunAgentTool', () => {
         cwd: process.cwd(),
       }
 
-      // Mock agent not found
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue(undefined)
       vi.spyOn(mockAgentManager, 'listAgents').mockResolvedValue([
         {
@@ -475,7 +477,6 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      // content[0].text is now JSON string (ADR-0003)
       const parsedContent = JSON.parse(textContent?.text || '{}')
       expect(parsedContent.available_agents).toContain('agent1')
       expect(parsedContent.available_agents).toContain('agent2')
@@ -544,15 +545,12 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
 
       const textContent = result.content.find((c) => c.type === 'text')
-      // content[0].text is now JSON string (ADR-0003)
       const parsedContent = JSON.parse(textContent?.text || '{}')
       expect(parsedContent.result).toContain('Detailed output')
-      // MCP-managed metadata with snake_case naming (ADR-0003)
       expect(result.structuredContent).toHaveProperty('agent', 'test-agent')
       expect(result.structuredContent).toHaveProperty('exit_code', 0)
       expect(result.structuredContent).toHaveProperty('execution_time', 250)
       expect(result.structuredContent).toHaveProperty('result')
-      // Agent implementation details should NOT be in structuredContent
       expect(result.structuredContent).not.toHaveProperty('stderr')
     })
   })
@@ -573,7 +571,6 @@ describe('RunAgentTool', () => {
         lastModified: new Date(),
       })
 
-      // Mock executor throwing an error
       vi.spyOn(mockAgentExecutor, 'executeAgent').mockRejectedValue(
         new Error('Execution failed unexpectedly')
       )
@@ -592,7 +589,6 @@ describe('RunAgentTool', () => {
         cwd: process.cwd(),
       }
 
-      // Mock agent manager throwing an error
       vi.spyOn(mockAgentManager, 'getAgent').mockRejectedValue(new Error('Failed to load agent'))
 
       const result = await runAgentTool.execute(params)
@@ -621,7 +617,6 @@ describe('RunAgentTool', () => {
         cwd: process.cwd(),
       }
 
-      // Mock complete timeout without any result
       const mockResult = {
         stdout: '',
         stderr: 'Execution timeout: 300000ms',
@@ -636,12 +631,10 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
       const textContent = result.content.find((c) => c.type === 'text')
 
-      // content[0].text is now JSON string (ADR-0003)
       const parsedContent = JSON.parse(textContent?.text || '{}')
       expect(parsedContent.result).toBe('Execution timeout: 300000ms')
       expect(parsedContent.exit_code).toBe(124)
       expect(parsedContent.status).toBe('error')
-      // Check error status in structuredContent with snake_case naming
       expect(result.structuredContent).toMatchObject({
         status: 'error',
         exit_code: 124,
@@ -655,7 +648,6 @@ describe('RunAgentTool', () => {
         cwd: process.cwd(),
       }
 
-      // Mock normal completion
       const mockResult = {
         stdout: 'Normal output',
         stderr: '',
@@ -670,12 +662,10 @@ describe('RunAgentTool', () => {
       const result = await runAgentTool.execute(params)
       const textContent = result.content.find((c) => c.type === 'text')
 
-      // content[0].text is now JSON string (ADR-0003)
       const parsedContent = JSON.parse(textContent?.text || '{}')
       expect(parsedContent.result).toBe('Normal output')
       expect(parsedContent.exit_code).toBe(0)
       expect(parsedContent.status).toBe('success')
-      // Check success status in structuredContent with snake_case naming
       expect(result.structuredContent).toMatchObject({
         status: 'success',
         exit_code: 0,
@@ -765,7 +755,6 @@ describe('RunAgentTool', () => {
         agent: 'test-agent',
         prompt: 'Test prompt',
         cwd: process.cwd(),
-        // No session_id provided
       }
 
       const mockResult = {
@@ -777,7 +766,6 @@ describe('RunAgentTool', () => {
         resultJson: undefined,
       }
 
-      // Mock agent existence
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
         name: 'test-agent',
         description: 'Test agent',
@@ -788,7 +776,6 @@ describe('RunAgentTool', () => {
 
       const result = await toolWithSession.execute(params)
 
-      // Should have _meta.session_id in response
       expect(result).toHaveProperty('_meta')
       expect(result._meta).toHaveProperty('session_id')
       expect(typeof result._meta?.session_id).toBe('string')
@@ -796,7 +783,6 @@ describe('RunAgentTool', () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
       )
 
-      // Should have saved session with auto-generated ID
       expect(mockSessionManager.saveSession).toHaveBeenCalledWith(
         expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
         expect.anything(),
@@ -832,7 +818,6 @@ describe('RunAgentTool', () => {
         resultJson: undefined,
       }
 
-      // Mock agent existence
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
         name: 'test-agent',
         description: 'Test agent',
@@ -843,10 +828,8 @@ describe('RunAgentTool', () => {
 
       const result = await toolWithSession.execute(params)
 
-      // Should return the provided session_id
       expect(result._meta?.session_id).toBe('my-custom-session')
 
-      // Should have saved with provided session_id
       expect(mockSessionManager.saveSession).toHaveBeenCalledWith(
         'my-custom-session',
         expect.anything(),
@@ -861,7 +844,6 @@ describe('RunAgentTool', () => {
         agent: 'test-agent',
         prompt: 'Test prompt',
         cwd: process.cwd(),
-        // No session_id provided
       }
 
       const mockResult = {
@@ -877,7 +859,6 @@ describe('RunAgentTool', () => {
 
       const result = await toolWithoutSession.execute(params)
 
-      // Should not have _meta.session_id when SessionManager is not available
       expect(result._meta).toBeUndefined()
     })
 
@@ -909,7 +890,6 @@ describe('RunAgentTool', () => {
         resultJson: undefined,
       }
 
-      // Mock agent existence
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
         name: 'test-agent',
         description: 'Test agent',
@@ -920,7 +900,6 @@ describe('RunAgentTool', () => {
 
       const result = await toolWithSession.execute(params)
 
-      // session_id in _meta and structuredContent (ADR-0003)
       expect(result._meta?.session_id).toBe('test-session-123')
       expect(result.structuredContent).toHaveProperty('session_id', 'test-session-123')
     })

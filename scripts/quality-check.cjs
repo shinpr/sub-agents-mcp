@@ -1,17 +1,10 @@
 #!/usr/bin/env node
 
-/**
- * Quality Check Script
- * 
- * Comprehensive quality assurance script that validates all acceptance criteria
- * and ensures production readiness of the MCP server implementation.
- */
 
 const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// ANSI color codes for output formatting
 const colors = {
   reset: '\x1b[0m',
   bright: '\x1b[1m',
@@ -81,7 +74,7 @@ class QualityChecker {
   async checkTypeScript() {
     this.section('TypeScript Compilation Check');
     
-    const result = await this.runCommand('npm run build');
+    const result = await this.runCommand('pnpm run build');
     if (result.success) {
       this.success('TypeScript compilation successful');
       return true;
@@ -94,7 +87,7 @@ class QualityChecker {
   async checkLinting() {
     this.section('Code Linting Check');
     
-    const result = await this.runCommand('npm run lint');
+    const result = await this.runCommand('pnpm run lint');
     if (result.success) {
       this.success('Code linting passed');
       return true;
@@ -107,7 +100,7 @@ class QualityChecker {
   async checkFormatting() {
     this.section('Code Formatting Check');
     
-    const result = await this.runCommand('npm run format:check');
+    const result = await this.runCommand('pnpm run format:check');
     if (result.success) {
       this.success('Code formatting is correct');
       return true;
@@ -120,13 +113,12 @@ class QualityChecker {
   async checkTestCoverage() {
     this.section('Test Coverage Check');
     
-    const result = await this.runCommand('npm run test:coverage');
+    const result = await this.runCommand('pnpm run test:coverage');
     if (!result.success) {
       this.error(`Test execution failed: ${result.error}`);
       return false;
     }
 
-    // Parse coverage report
     const coveragePath = path.join(__dirname, '../coverage/coverage-final.json');
     if (!fs.existsSync(coveragePath)) {
       this.error('Coverage report not found');
@@ -187,7 +179,7 @@ class QualityChecker {
   async checkDependencies() {
     this.section('Dependency Security Check');
     
-    const result = await this.runCommand('npm audit --audit-level moderate');
+    const result = await this.runCommand('pnpm audit --audit-level moderate');
     if (result.success || result.output.includes('found 0 vulnerabilities')) {
       this.success('No security vulnerabilities found in dependencies');
       return true;
@@ -200,7 +192,7 @@ class QualityChecker {
   async checkCircularDependencies() {
     this.section('Circular Dependencies Check');
     
-    const result = await this.runCommand('npm run check:deps');
+    const result = await this.runCommand('pnpm run check:deps');
     if (result.success) {
       this.success('No circular dependencies found');
       return true;
@@ -213,7 +205,6 @@ class QualityChecker {
   async checkAcceptanceCriteria() {
     this.section('Acceptance Criteria Verification');
     
-    // Check if all specific test suites pass
     const testSuites = [
       { name: 'E2E Integration Tests', path: '__tests__/integration/e2e.test.ts' },
       { name: 'Performance Tests', path: '__tests__/performance/startup.test.ts' },
@@ -224,7 +215,7 @@ class QualityChecker {
     let allPassed = true;
     for (const suite of testSuites) {
       if (fs.existsSync(path.join(__dirname, '..', suite.path))) {
-        const result = await this.runCommand(`npx vitest run ${suite.path}`);
+        const result = await this.runCommand(`pnpm exec vitest run ${suite.path}`);
         if (result.success) {
           this.success(`${suite.name} passed`);
         } else {
@@ -243,9 +234,7 @@ class QualityChecker {
   async checkPerformanceRequirements() {
     this.section('Performance Requirements Verification');
     
-    // This would ideally run actual performance benchmarks
-    // For now, we verify that performance tests exist and pass
-    const performanceTestResult = await this.runCommand('npx vitest run __tests__/performance/');
+    const performanceTestResult = await this.runCommand('pnpm exec vitest run __tests__/performance/');
     
     if (performanceTestResult.success) {
       this.success('Performance requirements verified');
@@ -259,7 +248,6 @@ class QualityChecker {
   async checkCodeQuality() {
     this.section('Code Quality Standards');
     
-    // Check TypeScript strict mode compliance
     const tsconfigPath = path.join(__dirname, '../tsconfig.json');
     if (fs.existsSync(tsconfigPath)) {
       const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf8'));
@@ -271,8 +259,7 @@ class QualityChecker {
       }
     }
 
-    // Check for any type violations
-    const result = await this.runCommand('npx tsc --noEmit');
+    const result = await this.runCommand('pnpm exec tsc --noEmit');
     if (result.success) {
       this.success('No TypeScript type errors');
       return true;
@@ -308,7 +295,6 @@ class QualityChecker {
   async checkLanguageCompliance() {
     this.section('English Language Compliance');
     
-    // Check for Japanese characters in source code (excluding comments that explain the requirement)
     const sourceFiles = this.getSourceFiles();
     let compliant = true;
 
@@ -318,10 +304,8 @@ class QualityChecker {
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        // Skip comment lines that are explaining the English requirement
         if (line.trim().startsWith('//') || line.trim().startsWith('*')) continue;
         
-        // Check for Japanese characters (Hiragana, Katakana, Kanji)
         if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(line)) {
           this.error(`Japanese characters found in ${file}:${i + 1}: ${line.trim()}`);
           compliant = false;
@@ -376,13 +360,11 @@ class QualityChecker {
       this.error('❌ Quality checks failed. Please address the issues above.');
     }
 
-    // Ensure tmp directory exists
     const tmpDir = path.join(__dirname, '../tmp');
     if (!fs.existsSync(tmpDir)) {
       fs.mkdirSync(tmpDir, { recursive: true });
     }
 
-    // Generate detailed report file in tmp directory
     const reportPath = path.join(tmpDir, 'quality-report.json');
     const report = {
       timestamp: new Date().toISOString(),
@@ -432,7 +414,6 @@ class QualityChecker {
   }
 }
 
-// Run quality check if this script is executed directly
 if (require.main === module) {
   const checker = new QualityChecker();
   checker.run().catch(error => {
