@@ -8,13 +8,13 @@
     "url": "https://github.com/shinpr/sub-agents-mcp",
     "source": "github"
   },
-  "version": "0.14.0",
+  "version": "0.14.1",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sub-agents-mcp",
-      "version": "0.14.0",
+      "version": "0.14.1",
       "transport": {
         "type": "stdio"
       },
@@ -70,7 +70,7 @@
         },
         {
           "name": "EXECUTION_TIMEOUT_MS",
-          "description": "Maximum execution time for agents in milliseconds (default: 300000, max: 600000)",
+          "description": "Agent execution timeout in milliseconds (default: 300000)",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -91,7 +91,7 @@
         },
         {
           "name": "SESSION_RETENTION_DAYS",
-          "description": "Number of days to retain session history before automatic cleanup (default: 7)",
+          "description": "Number of days to retain session history before automatic cleanup (default: 1)",
           "isRequired": false,
           "format": "string",
           "isSecret": false
