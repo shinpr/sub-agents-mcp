@@ -335,11 +335,12 @@ describe('AgentExecutor', () => {
 
   describe('OpenCode isolation and permissions', () => {
     it.each([
-      { permission: 'read-only', edit: 'deny', externalDirectory: 'deny' },
-      { permission: 'safe-edit', edit: 'allow', externalDirectory: 'deny' },
+      { permission: 'read-only', edit: 'deny', bash: undefined, externalDirectory: 'deny' },
+      { permission: 'safe-edit', edit: 'allow', bash: 'allow', externalDirectory: 'deny' },
     ] as const)('should map $permission permissions without changing the global backend model', async ({
       permission,
       edit,
+      bash,
       externalDirectory,
     }) => {
       const executor = new AgentExecutor(
@@ -355,6 +356,7 @@ describe('AgentExecutor', () => {
       }
       const permissionConfig = JSON.parse(permissionJson)
       expect(permissionConfig.edit).toBe(edit)
+      expect(permissionConfig.bash).toBe(bash)
       expect(permissionConfig.external_directory).toBe(externalDirectory)
       expect(mockSpawn.mock.calls[0][1]).toEqual(
         expect.arrayContaining(['--model', 'provider/model'])

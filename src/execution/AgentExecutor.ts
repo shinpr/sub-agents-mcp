@@ -171,7 +171,6 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
 const OPENCODE_PERMISSION_MAPPING: Record<AgentPermission, object | 'allow'> = {
   'read-only': {
     edit: 'deny',
-    bash: 'deny',
     task: 'deny',
     external_directory: 'deny',
     question: 'deny',
