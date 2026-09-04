@@ -315,53 +315,51 @@ describe('AgentExecutor', () => {
       expect(mockSpawn.mock.calls[0][1]).toEqual(expect.arrayContaining([...expected]))
     })
 
-    it.each([
-      'cursor',
-      'gemini',
-    ] as const)('should reject effort for %s when construction bypasses ServerConfig', async (agentType) => {
-      const executor = new AgentExecutor(createExecutionConfig(agentType, { effort: 'high' }))
+    it.each(['cursor', 'gemini'] as const)(
+      'should reject effort for %s when construction bypasses ServerConfig',
+      async (agentType) => {
+        const executor = new AgentExecutor(createExecutionConfig(agentType, { effort: 'high' }))
 
-      const result = await executor.executeAgent({
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: '/tmp',
-      })
+        const result = await executor.executeAgent({
+          agent: 'test-agent',
+          prompt: 'Test prompt',
+          cwd: '/tmp',
+        })
 
-      expect(result.exitCode).toBe(1)
-      expect(result.stderr).toMatch(/AGENT_EFFORT is not supported/)
-      expect(mockSpawn).not.toHaveBeenCalled()
-    })
+        expect(result.exitCode).toBe(1)
+        expect(result.stderr).toMatch(/AGENT_EFFORT is not supported/)
+        expect(mockSpawn).not.toHaveBeenCalled()
+      }
+    )
   })
 
   describe('OpenCode isolation and permissions', () => {
     it.each([
       { permission: 'read-only', edit: 'deny', bash: undefined, externalDirectory: 'deny' },
       { permission: 'safe-edit', edit: 'allow', bash: 'allow', externalDirectory: 'deny' },
-    ] as const)('should map $permission permissions without changing the global backend model', async ({
-      permission,
-      edit,
-      bash,
-      externalDirectory,
-    }) => {
-      const executor = new AgentExecutor(
-        createExecutionConfig('opencode', { permission, model: 'provider/model' })
-      )
+    ] as const)(
+      'should map $permission permissions without changing the global backend model',
+      async ({ permission, edit, bash, externalDirectory }) => {
+        const executor = new AgentExecutor(
+          createExecutionConfig('opencode', { permission, model: 'provider/model' })
+        )
 
-      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+        await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const options = mockSpawn.mock.calls[0][2]
-      const permissionJson = options.env.OPENCODE_PERMISSION
-      if (!permissionJson) {
-        throw new Error('Expected OpenCode permission configuration')
+        const options = mockSpawn.mock.calls[0][2]
+        const permissionJson = options.env.OPENCODE_PERMISSION
+        if (!permissionJson) {
+          throw new Error('Expected OpenCode permission configuration')
+        }
+        const permissionConfig = JSON.parse(permissionJson)
+        expect(permissionConfig.edit).toBe(edit)
+        expect(permissionConfig.bash).toBe(bash)
+        expect(permissionConfig.external_directory).toBe(externalDirectory)
+        expect(mockSpawn.mock.calls[0][1]).toEqual(
+          expect.arrayContaining(['--model', 'provider/model'])
+        )
       }
-      const permissionConfig = JSON.parse(permissionJson)
-      expect(permissionConfig.edit).toBe(edit)
-      expect(permissionConfig.bash).toBe(bash)
-      expect(permissionConfig.external_directory).toBe(externalDirectory)
-      expect(mockSpawn.mock.calls[0][1]).toEqual(
-        expect.arrayContaining(['--model', 'provider/model'])
-      )
-    })
+    )
 
     it('should isolate and clean OpenCode data and state directories per run', async () => {
       const executor = new AgentExecutor(createExecutionConfig('opencode'))
@@ -1194,24 +1192,23 @@ describe('AgentExecutor', () => {
       { agent: 'command-code', perm: 'yolo', expected: ['--yolo'] },
     ]
 
-    it.each(cases)('should prepend $expected for agent=$agent permission=$perm', async ({
-      agent,
-      perm,
-      expected,
-    }) => {
-      const executor = new AgentExecutor(
-        createExecutionConfig(agent, {
-          permission: perm,
-          glmApiKey: 'zai-secret',
-          kimiApiKey: 'kimi-secret',
-        })
-      )
+    it.each(cases)(
+      'should prepend $expected for agent=$agent permission=$perm',
+      async ({ agent, perm, expected }) => {
+        const executor = new AgentExecutor(
+          createExecutionConfig(agent, {
+            permission: perm,
+            glmApiKey: 'zai-secret',
+            kimiApiKey: 'kimi-secret',
+          })
+        )
 
-      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+        await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
-      expect(args.slice(0, expected.length)).toEqual(expected)
-    })
+        const args = mockSpawn.mock.calls[0][1] as string[]
+        expect(args.slice(0, expected.length)).toEqual(expected)
+      }
+    )
 
     it('should default to safe-edit when permission is not specified in createExecutionConfig', async () => {
       const executor = new AgentExecutor(createExecutionConfig('claude'))

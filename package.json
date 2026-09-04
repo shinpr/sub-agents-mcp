@@ -75,18 +75,18 @@
     "@modelcontextprotocol/sdk": "^1.30.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.2",
-    "@types/node": "^26.1.0",
-    "@vitest/ui": "^4.1.10",
-    "dpdm": "^4.2.0",
+    "@biomejs/biome": "^2.5.12",
+    "@types/node": "^26.4.1",
+    "@vitest/ui": "^4.1.11",
+    "dpdm": "^4.3.0",
     "husky": "^9.1.7",
-    "knip": "^6.25.0",
-    "lint-staged": "^17.0.8",
-    "tsx": "^4.23.0",
+    "knip": "^6.34.0",
+    "lint-staged": "^17.4.1",
+    "tsx": "^4.23.13",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@11.25.0",
   "engines": {
     "node": ">=22.22.2"
   },
