@@ -132,18 +132,17 @@ describe('ServerConfig', () => {
     expect(() => new ServerConfig()).toThrow('AGENT_TYPE environment variable is required')
   })
 
-  it.each([
-    'read-only',
-    'safe-edit',
-    'yolo',
-  ] as const)('should accept AGENT_PERMISSION=%s', (permission) => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('AGENT_PERMISSION', permission)
+  it.each(['read-only', 'safe-edit', 'yolo'] as const)(
+    'should accept AGENT_PERMISSION=%s',
+    (permission) => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('AGENT_PERMISSION', permission)
 
-    const config = new ServerConfig()
+      const config = new ServerConfig()
 
-    expect(config.agentPermission).toBe(permission)
-  })
+      expect(config.agentPermission).toBe(permission)
+    }
+  )
 
   it('should default AGENT_PERMISSION to safe-edit when not set', () => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
@@ -204,16 +203,16 @@ describe('ServerConfig', () => {
       expect(config.agentEffort).toBeUndefined()
     })
 
-    it.each([
-      'cursor',
-      'gemini',
-    ] as const)('should reject AGENT_EFFORT for AGENT_TYPE=%s', (agentType) => {
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-      vi.stubEnv('AGENT_TYPE', agentType)
-      vi.stubEnv('AGENT_EFFORT', 'high')
+    it.each(['cursor', 'gemini'] as const)(
+      'should reject AGENT_EFFORT for AGENT_TYPE=%s',
+      (agentType) => {
+        vi.stubEnv('AGENTS_DIR', testAgentsDir)
+        vi.stubEnv('AGENT_TYPE', agentType)
+        vi.stubEnv('AGENT_EFFORT', 'high')
 
-      expect(() => new ServerConfig()).toThrow(/AGENT_EFFORT is not supported/)
-    })
+        expect(() => new ServerConfig()).toThrow(/AGENT_EFFORT is not supported/)
+      }
+    )
   })
 
   it('should throw error when LOG_LEVEL is an unsupported value', () => {

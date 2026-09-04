@@ -124,25 +124,23 @@ describe('StreamProcessor', () => {
       })
     })
 
-    it.each([
-      'CANCELED',
-      'INTERRUPTED',
-      'WAITING',
-      'RUNNING',
-    ])('should normalize Antigravity %s as partial', (status) => {
-      processor = new StreamProcessor('antigravity')
+    it.each(['CANCELED', 'INTERRUPTED', 'WAITING', 'RUNNING'])(
+      'should normalize Antigravity %s as partial',
+      (status) => {
+        processor = new StreamProcessor('antigravity')
 
-      expect(
-        processor.processLine(
-          JSON.stringify({ event: 'result', result: { status, response: 'Progress' } })
-        )
-      ).toBe(true)
-      expect(processor.getResult()).toEqual({
-        type: 'result',
-        result: 'Progress',
-        status: 'partial',
-      })
-    })
+        expect(
+          processor.processLine(
+            JSON.stringify({ event: 'result', result: { status, response: 'Progress' } })
+          )
+        ).toBe(true)
+        expect(processor.getResult()).toEqual({
+          type: 'result',
+          result: 'Progress',
+          status: 'partial',
+        })
+      }
+    )
 
     it('should normalize an Antigravity error for the MCP error contract', () => {
       processor = new StreamProcessor('antigravity')
@@ -394,19 +392,19 @@ describe('StreamProcessor', () => {
       })
     })
 
-    it.each([
-      'codex',
-      'grok',
-    ] as const)('should normalize top-level %s error events', (agentType) => {
-      processor = new StreamProcessor(agentType)
-      expect(processor.processLine('{"type":"error","message":"Unknown model id"}')).toBe(true)
-      expect(processor.getResult()).toEqual({
-        type: 'result',
-        subtype: 'error',
-        is_error: true,
-        error: 'Unknown model id',
-      })
-    })
+    it.each(['codex', 'grok'] as const)(
+      'should normalize top-level %s error events',
+      (agentType) => {
+        processor = new StreamProcessor(agentType)
+        expect(processor.processLine('{"type":"error","message":"Unknown model id"}')).toBe(true)
+        expect(processor.getResult()).toEqual({
+          type: 'result',
+          subtype: 'error',
+          is_error: true,
+          error: 'Unknown model id',
+        })
+      }
+    )
 
     it('should normalize Gemini result errors', () => {
       processor = new StreamProcessor('gemini')
