@@ -8,13 +8,13 @@
     "url": "https://github.com/shinpr/sub-agents-mcp",
     "source": "github"
   },
-  "version": "0.14.1",
+  "version": "0.14.2",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sub-agents-mcp",
-      "version": "0.14.1",
+      "version": "0.14.2",
       "transport": {
         "type": "stdio"
       },
@@ -70,7 +70,7 @@
         },
         {
           "name": "EXECUTION_TIMEOUT_MS",
-          "description": "Agent execution timeout in milliseconds (default: 300000)",
+          "description": "Agent execution timeout in milliseconds, as a positive whole number (default: 300000). The server refuses to start on an invalid value such as \"5min\".",
           "isRequired": false,
           "format": "string",
           "isSecret": false

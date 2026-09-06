@@ -6,17 +6,29 @@ import { AgentManager } from '../../agents/AgentManager.js'
 import { ServerConfig } from '../../config/ServerConfig.js'
 import { AgentExecutor, createExecutionConfig } from '../../execution/AgentExecutor.js'
 import { McpServer } from '../../server/McpServer.js'
+import type { SpawnMock } from '../helpers/child-process-mock.js'
+
+const mockSpawn: SpawnMock = vi.hoisted(() => vi.fn())
 
 vi.mock('node:child_process', () => ({
-  spawn: vi.fn(),
+  spawn: mockSpawn,
 }))
 
-import { spawn } from 'node:child_process'
-
-const mockSpawn = vi.mocked(spawn)
+/**
+ * Calls a method the way an untyped MCP client would, so tests can exercise the
+ * runtime guards that the TypeScript signatures alone would forbid reaching.
+ */
+async function callUntyped(target: object, method: string, ...args: unknown[]): Promise<unknown> {
+  const fn: unknown = Reflect.get(target, method)
+  if (typeof fn !== 'function') {
+    throw new Error(`${method} is not callable`)
+  }
+  return Reflect.apply(fn, target, args)
+}
 
 describe('Security Validation Tests', () => {
   let testAgentsDir: string
+  let outsideAgentsDir: string
   let server: McpServer
   let config: ServerConfig
   let agentManager: AgentManager
@@ -25,7 +37,9 @@ describe('Security Validation Tests', () => {
   beforeAll(async () => {
     vi.clearAllMocks()
 
-    mockSpawn.mockImplementation((_cmd: string, args: readonly string[], options: any) => {
+    mockSpawn.mockImplementation((_cmd, args, options) => {
+      const spawnCwd = typeof options.cwd === 'string' ? options.cwd : (options.cwd?.pathname ?? '')
+      const isTraversalCwd = spawnCwd.includes('../../../etc')
       const promptIndex = args.indexOf('-p')
       const _prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''
 
@@ -50,7 +64,7 @@ describe('Security Validation Tests', () => {
         stderr: {
           on: vi.fn((event, callback) => {
             if (event === 'data') {
-              if (options?.cwd?.includes('../../../etc')) {
+              if (isTraversalCwd) {
                 callback(Buffer.from('Invalid directory path'))
               }
             }
@@ -58,7 +72,7 @@ describe('Security Validation Tests', () => {
         },
         on: vi.fn((event, callback) => {
           if (event === 'close') {
-            if (options?.cwd?.includes('../../../etc')) {
+            if (isTraversalCwd) {
               callback(1) // Error exit code for invalid cwd
             } else {
               callback(0) // Success
@@ -70,11 +84,10 @@ describe('Security Validation Tests', () => {
         killed: false,
       }
 
-      return mockProcess as any
+      return mockProcess
     })
 
-    testAgentsDir = path.join(tmpdir(), 'mcp-security-test-agents')
-    await fs.mkdir(testAgentsDir, { recursive: true })
+    testAgentsDir = await fs.mkdtemp(path.join(tmpdir(), 'mcp-security-test-agents-'))
 
     await fs.writeFile(
       path.join(testAgentsDir, 'valid-agent.md'),
@@ -86,10 +99,9 @@ describe('Security Validation Tests', () => {
       `# Secure Agent\n\nAgent for security testing.\n\nUsage: echo "Security test"`
     )
 
-    const outsideDir = path.join(tmpdir(), 'mcp-outside-agents')
-    await fs.mkdir(outsideDir, { recursive: true })
+    outsideAgentsDir = await fs.mkdtemp(path.join(tmpdir(), 'mcp-outside-agents-'))
     await fs.writeFile(
-      path.join(outsideDir, 'malicious-agent.md'),
+      path.join(outsideAgentsDir, 'malicious-agent.md'),
       '# Malicious Agent\n\nShould not be accessible.\n\nUsage: rm -rf /'
     )
 
@@ -111,8 +123,7 @@ describe('Security Validation Tests', () => {
     await server.close()
 
     await fs.rm(testAgentsDir, { recursive: true, force: true })
-    const outsideDir = path.join(tmpdir(), 'mcp-outside-agents')
-    await fs.rm(outsideDir, { recursive: true, force: true }).catch(() => {})
+    await fs.rm(outsideAgentsDir, { recursive: true, force: true }).catch(() => {})
   })
 
   describe('Input Validation Security', () => {
@@ -121,9 +132,11 @@ describe('Security Validation Tests', () => {
     })
 
     test('rejects null/undefined agent name', async () => {
-      await expect(agentManager.getAgent(null as any)).rejects.toThrow(/invalid|null|agent name/i)
+      await expect(callUntyped(agentManager, 'getAgent', null)).rejects.toThrow(
+        /invalid|null|agent name/i
+      )
 
-      await expect(agentManager.getAgent(undefined as any)).rejects.toThrow(
+      await expect(callUntyped(agentManager, 'getAgent', undefined)).rejects.toThrow(
         /invalid|undefined|agent name/i
       )
     })
@@ -158,7 +171,7 @@ describe('Security Validation Tests', () => {
     })
 
     test('validates execution parameters', async () => {
-      await expect(agentExecutor.executeAgent(null as any)).rejects.toThrow(
+      await expect(callUntyped(agentExecutor, 'executeAgent', null)).rejects.toThrow(
         /invalid|null|parameters/i
       )
 
@@ -166,7 +179,6 @@ describe('Security Validation Tests', () => {
         agent: 'valid-agent',
         prompt: 'Test',
         cwd: '../../../etc',
-        extra_args: [],
       })
 
       expect(result.exitCode).toBeGreaterThan(0)
@@ -215,24 +227,30 @@ describe('Security Validation Tests', () => {
       ]
 
       for (const maliciousPath of pathTraversalAttempts) {
+        // Rejection is what matters; the shared naming rule is what rejects these.
         await expect(agentManager.getAgent(maliciousPath)).rejects.toThrow(
-          /not found|forbidden|invalid path/i
+          /invalid agent name|not found|forbidden|invalid path/i
         )
       }
     })
 
     test('prevents symbolic link traversal', async () => {
       const linkPath = path.join(testAgentsDir, 'malicious-link.md')
-      const outsidePath = path.join(tmpdir(), 'mcp-outside-agents', 'malicious-agent.md')
+      const outsidePath = path.join(outsideAgentsDir, 'malicious-agent.md')
 
+      // Creating the link is setup, not the assertion: only that may be skipped
+      // (some filesystems disallow it). Wrapping the expectation itself would let
+      // a real traversal pass as a caught AssertionError.
       try {
         await fs.symlink(outsidePath, linkPath)
+      } catch {
+        return
+      }
 
+      try {
         await expect(agentManager.getAgent('malicious-link')).rejects.toThrow(
-          /forbidden|symlink|traversal/i
+          /forbidden|symlink|traversal|outside/i
         )
-      } catch (_error) {
-        expect(true).toBe(true)
       } finally {
         await fs.unlink(linkPath).catch(() => {})
       }
@@ -387,10 +405,12 @@ describe('Security Validation Tests', () => {
       }
     })
 
-    test('prevents command injection through extra_args', async () => {
+    // The prompt is the caller-controlled value that reaches argv, so shell
+    // metacharacters in it must stay inert (the executor spawns with shell: false).
+    test('prevents command injection through the prompt', async () => {
       const _agent = await agentManager.getAgent('valid-agent')
 
-      const maliciousArgs = [
+      const maliciousPrompts = [
         '; echo "INJECTION_SUCCESSFUL"',
         '&& echo "INJECTION_SUCCESSFUL"',
         '| echo "INJECTION_SUCCESSFUL"',
@@ -398,12 +418,11 @@ describe('Security Validation Tests', () => {
         '$(echo "INJECTION_SUCCESSFUL")',
       ]
 
-      for (const maliciousArg of maliciousArgs) {
+      for (const maliciousPrompt of maliciousPrompts) {
         const result = await agentExecutor.executeAgent({
           agent: 'valid-agent',
-          prompt: 'Command injection test',
+          prompt: maliciousPrompt,
           cwd: process.cwd(),
-          extra_args: [maliciousArg],
         })
 
         expect(result).toBeDefined()

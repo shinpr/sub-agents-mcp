@@ -12,8 +12,7 @@ describe('ServerConfig', () => {
     vi.unstubAllEnvs()
     vi.stubEnv('AGENT_TYPE', 'cursor')
 
-    testAgentsDir = path.join(tmpdir(), `test-agents-${Date.now()}`)
-    fs.mkdirSync(testAgentsDir, { recursive: true })
+    testAgentsDir = fs.mkdtempSync(path.join(tmpdir(), 'test-agents-'))
   })
 
   afterEach(() => {
@@ -91,13 +90,32 @@ describe('ServerConfig', () => {
     expect(config.kimiApiKey).toBeUndefined()
   })
 
-  it('should treat blank CURSOR_API_KEY as missing for cursorApiKey', () => {
+  it('should not fall back to CLI_API_KEY when CURSOR_API_KEY is blank but present', () => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
     vi.stubEnv('CURSOR_API_KEY', '   ')
+    vi.stubEnv('CLI_API_KEY', 'cli-secret')
 
     const config = new ServerConfig()
 
+    // A present-but-blank CURSOR_API_KEY wins the `||` and is then rejected as
+    // blank, so the CLI_API_KEY fallback is deliberately never reached.
     expect(config.cursorApiKey).toBeUndefined()
+    expect(config.glmApiKey).toBe('cli-secret')
+    expect(config.kimiApiKey).toBe('cli-secret')
+  })
+
+  it('should preserve surrounding whitespace in the adopted API key values', () => {
+    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('CURSOR_API_KEY', '  cursor-secret  ')
+    vi.stubEnv('CLI_API_KEY', '  cli-secret  ')
+
+    const config = new ServerConfig()
+
+    // trim() only decides whether a value counts as blank; the adopted value is
+    // never rewritten.
+    expect(config.cursorApiKey).toBe('  cursor-secret  ')
+    expect(config.glmApiKey).toBe('  cli-secret  ')
+    expect(config.kimiApiKey).toBe('  cli-secret  ')
   })
 
   it('should treat blank CLI_API_KEY fallback as missing for cursorApiKey', () => {
@@ -369,15 +387,6 @@ describe('ServerConfig', () => {
   })
 
   describe('execution timeout validation', () => {
-    it('should use default timeout when EXECUTION_TIMEOUT_MS is not set', () => {
-      vi.stubEnv('EXECUTION_TIMEOUT_MS', undefined)
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-
-      const config = new ServerConfig()
-
-      expect(config.executionTimeoutMs).toBe(300000) // 5 minutes default
-    })
-
     it('should use valid timeout from environment variable', () => {
       vi.stubEnv('EXECUTION_TIMEOUT_MS', '120000') // 2 minutes
       vi.stubEnv('AGENTS_DIR', testAgentsDir)
@@ -387,18 +396,35 @@ describe('ServerConfig', () => {
       expect(config.executionTimeoutMs).toBe(120000)
     })
 
-    it('should use default timeout for invalid values', () => {
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    it.each([undefined, '', '   '])(
+      'should use the default timeout when EXECUTION_TIMEOUT_MS is %s',
+      (unset) => {
+        vi.stubEnv('AGENTS_DIR', testAgentsDir)
+        vi.stubEnv('EXECUTION_TIMEOUT_MS', unset)
 
-      const invalidValues = ['invalid', 'not-a-number', '']
+        expect(new ServerConfig().executionTimeoutMs).toBe(300000)
+      }
+    )
 
-      for (const invalidValue of invalidValues) {
+    it.each(['invalid', 'not-a-number', '5min', '0', '-1', '3.9', '1e6', '0x10'])(
+      'should reject %s rather than silently mis-reading it as a millisecond value',
+      (invalidValue) => {
+        vi.stubEnv('AGENTS_DIR', testAgentsDir)
         vi.stubEnv('EXECUTION_TIMEOUT_MS', invalidValue)
 
-        const config = new ServerConfig()
-
-        expect(config.executionTimeoutMs).toBe(300000) // Should use default
+        // Partial parsing used to turn these into a few milliseconds, so every
+        // execution timed out instantly with nothing pointing at the setting.
+        expect(() => new ServerConfig()).toThrow(/EXECUTION_TIMEOUT_MS/)
       }
+    )
+
+    it('should name the variable, the value and the fix in the failure message', () => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('EXECUTION_TIMEOUT_MS', '5min')
+
+      expect(() => new ServerConfig()).toThrow(
+        /Invalid EXECUTION_TIMEOUT_MS: "5min".*positive whole number of milliseconds.*300000/s
+      )
     })
 
     it('should accept timeout values within valid range', () => {

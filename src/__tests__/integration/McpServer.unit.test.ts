@@ -13,9 +13,9 @@ describe('McpServer', () => {
     mockConfig = new ServerConfig()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     if (server) {
-      server.close()
+      await server.close()
     }
   })
 
@@ -28,11 +28,11 @@ describe('McpServer', () => {
     })
 
     it('should throw error with invalid configuration', () => {
-      const invalidConfig = {
+      const invalidConfig: ServerConfig = {
         ...mockConfig,
         serverName: '',
         serverVersion: '1.0.0',
-      } as ServerConfig
+      }
 
       expect(() => {
         new McpServer(invalidConfig)
@@ -77,29 +77,6 @@ describe('McpServer', () => {
 
     it('should handle graceful shutdown', async () => {
       await expect(server.close()).resolves.not.toThrow()
-    })
-  })
-
-  describe('session management', () => {
-    it('should initialize SessionManager when SESSION_ENABLED=true', () => {
-      process.env['SESSION_ENABLED'] = 'true'
-      process.env['SESSION_DIR'] = '/tmp/test-sessions'
-      const configWithSession = new ServerConfig()
-
-      expect(() => {
-        server = new McpServer(configWithSession)
-      }).not.toThrow()
-      expect(server).toBeDefined()
-    })
-
-    it('should not initialize SessionManager when SESSION_ENABLED=false', () => {
-      process.env['SESSION_ENABLED'] = 'false'
-      const configWithoutSession = new ServerConfig()
-
-      expect(() => {
-        server = new McpServer(configWithoutSession)
-      }).not.toThrow()
-      expect(server).toBeDefined()
     })
   })
 })

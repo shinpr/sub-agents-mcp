@@ -1,5 +1,15 @@
 import type { AgentType } from './AgentExecutor.js'
 
+/** Returns the first candidate that is a non-empty string, or undefined when there is none. */
+function firstNonEmptyString(...candidates: unknown[]): string | undefined {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate !== '') {
+      return candidate
+    }
+  }
+  return undefined
+}
+
 export class StreamProcessor {
   private resultJson: unknown = null
   private geminiResponseParts: string[] = []
@@ -16,7 +26,7 @@ export class StreamProcessor {
 
     let json: unknown
     try {
-      json = JSON.parse(trimmedLine) as unknown
+      json = JSON.parse(trimmedLine)
     } catch {
       return false
     }
@@ -71,7 +81,7 @@ export class StreamProcessor {
     }
 
     try {
-      const json = JSON.parse(output.trim()) as unknown
+      const json: unknown = JSON.parse(output.trim())
       return this.isRecord(json) && this.processGrokLine(json)
     } catch {
       return false
@@ -310,27 +320,25 @@ export class StreamProcessor {
     const error = this.isRecord(json['error']) ? json['error'] : undefined
     const errorData = error && this.isRecord(error['data']) ? error['data'] : undefined
     const message =
-      (typeof json['message'] === 'string' && json['message']) ||
-      (error && typeof error['message'] === 'string' && error['message']) ||
-      (errorData && typeof errorData['message'] === 'string' && errorData['message']) ||
-      (typeof json['error'] === 'string' && json['error']) ||
-      (typeof json['result'] === 'string' && json['result']) ||
-      (typeof json['subtype'] === 'string' && json['subtype']) ||
-      'Agent execution failed'
-    const errorType =
-      (error && typeof error['name'] === 'string' && error['name']) ||
-      (error && typeof error['type'] === 'string' && error['type'])
-    const errorRef =
-      (errorData && typeof errorData['ref'] === 'string' && errorData['ref']) ||
-      (error && typeof error['ref'] === 'string' && error['ref']) ||
-      (typeof json['ref'] === 'string' && json['ref'])
-    const sessionId =
-      (typeof json['sessionID'] === 'string' && json['sessionID']) ||
-      (typeof json['session_id'] === 'string' && json['session_id'])
+      firstNonEmptyString(
+        json['message'],
+        error?.['message'],
+        errorData?.['message'],
+        json['error'],
+        json['result'],
+        json['subtype']
+      ) ?? 'Agent execution failed'
+    const errorType = firstNonEmptyString(error?.['name'], error?.['type'])
+    const errorRef = firstNonEmptyString(errorData?.['ref'], error?.['ref'], json['ref'])
+    const sessionId = firstNonEmptyString(json['sessionID'], json['session_id'])
 
     const context: string[] = []
-    if (errorRef) context.push(`ref: ${errorRef}`)
-    if (sessionId) context.push(`sessionID: ${sessionId}`)
+    if (errorRef) {
+      context.push(`ref: ${errorRef}`)
+    }
+    if (sessionId) {
+      context.push(`sessionID: ${sessionId}`)
+    }
     const formattedMessage = `${errorType ? `${errorType}: ` : ''}${message}${
       context.length > 0 ? ` (${context.join(', ')})` : ''
     }`

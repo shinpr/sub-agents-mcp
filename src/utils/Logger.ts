@@ -6,7 +6,7 @@ export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const
 export type LogLevel = (typeof LOG_LEVELS)[number]
 
 export function isLogLevel(value: unknown): value is LogLevel {
-  return typeof value === 'string' && (LOG_LEVELS as readonly string[]).includes(value)
+  return typeof value === 'string' && LOG_LEVELS.some((logLevel) => logLevel === value)
 }
 
 export interface LogEntry {
@@ -20,7 +20,7 @@ export interface LogEntry {
 export class Logger {
   private currentLevel: LogLevel
   private readonly logFilePath?: string
-  private fileWriteErrorShown = false
+  private fileWriteErrorShown: boolean = false
 
   private static readonly levelPriority: Record<LogLevel, number> = {
     debug: 0,
@@ -100,7 +100,9 @@ export class Logger {
   }
 
   private async performFileWrite(entry: LogEntry): Promise<void> {
-    if (!this.logFilePath) return
+    if (!this.logFilePath) {
+      return
+    }
 
     const dir = dirname(this.logFilePath)
     await fs.mkdir(dir, { recursive: true })

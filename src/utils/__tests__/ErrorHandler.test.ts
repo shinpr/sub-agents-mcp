@@ -3,7 +3,7 @@ import { AppError, ValidationError } from '../ErrorHandler.js'
 
 describe('AppError', () => {
   it('should create error with message, code, and statusCode', () => {
-    const error = new AppError('Test error message', 'TEST_ERROR', 400)
+    const error = new AppError('Test error message', { code: 'TEST_ERROR', statusCode: 400 })
 
     expect(error.message).toBe('Test error message')
     expect(error.code).toBe('TEST_ERROR')
@@ -13,7 +13,7 @@ describe('AppError', () => {
   })
 
   it('should use default statusCode 500 when not provided', () => {
-    const error = new AppError('Server error', 'SERVER_ERROR')
+    const error = new AppError('Server error', { code: 'SERVER_ERROR' })
 
     expect(error.statusCode).toBe(500)
   })
@@ -21,7 +21,7 @@ describe('AppError', () => {
 
 describe('ValidationError', () => {
   it('should create validation error with 400 status code', () => {
-    const error = new ValidationError('Invalid input data', 'VALIDATION_FAILED')
+    const error = new ValidationError('Invalid input data', { code: 'VALIDATION_FAILED' })
 
     expect(error.message).toBe('Invalid input data')
     expect(error.code).toBe('VALIDATION_FAILED')
@@ -31,7 +31,7 @@ describe('ValidationError', () => {
   })
 
   it('should support field-specific validation errors', () => {
-    const error = new ValidationError('Email format is invalid', 'INVALID_EMAIL_FORMAT')
+    const error = new ValidationError('Email format is invalid', { code: 'INVALID_EMAIL_FORMAT' })
 
     expect(error.message).toBe('Email format is invalid')
     expect(error.code).toBe('INVALID_EMAIL_FORMAT')
@@ -39,8 +39,9 @@ describe('ValidationError', () => {
   })
 
   it('should include context information', () => {
-    const error = new ValidationError('Email format is invalid', 'INVALID_EMAIL_FORMAT', {
-      metadata: { field: 'email', value: 'invalid-email' },
+    const error = new ValidationError('Email format is invalid', {
+      code: 'INVALID_EMAIL_FORMAT',
+      context: { metadata: { field: 'email', value: 'invalid-email' } },
     })
 
     expect(error.context.metadata).toEqual({ field: 'email', value: 'invalid-email' })
@@ -50,7 +51,7 @@ describe('ValidationError', () => {
 
 describe('Error Context', () => {
   it('should include timestamp by default', () => {
-    const error = new AppError('Test error', 'TEST')
+    const error = new AppError('Test error', { code: 'TEST' })
 
     expect(error.context.timestamp).toBeInstanceOf(Date)
   })
@@ -62,7 +63,7 @@ describe('Error Context', () => {
       component: 'TestComponent',
     }
 
-    const error = new AppError('Test error', 'TEST', 500, customContext)
+    const error = new AppError('Test error', { code: 'TEST', context: customContext })
 
     expect(error.context.requestId).toBe('req_123')
     expect(error.context.operation).toBe('test_operation')
@@ -71,8 +72,9 @@ describe('Error Context', () => {
   })
 
   it('should preserve metadata in context', () => {
-    const error = new AppError('Test error', 'TEST', 500, {
-      metadata: { key1: 'value1', key2: 42 },
+    const error = new AppError('Test error', {
+      code: 'TEST',
+      context: { metadata: { key1: 'value1', key2: 42 } },
     })
 
     expect(error.context.metadata).toEqual({ key1: 'value1', key2: 42 })
@@ -81,9 +83,10 @@ describe('Error Context', () => {
 
 describe('Error JSON Serialization', () => {
   it('should convert AppError to JSON', () => {
-    const error = new AppError('Test error', 'TEST_ERROR', 400, {
-      requestId: 'req_123',
-      metadata: { foo: 'bar' },
+    const error = new AppError('Test error', {
+      code: 'TEST_ERROR',
+      statusCode: 400,
+      context: { requestId: 'req_123', metadata: { foo: 'bar' } },
     })
 
     const json = error.toJSON()
@@ -101,7 +104,7 @@ describe('Error JSON Serialization', () => {
   })
 
   it('should generate user-friendly message', () => {
-    const error = new AppError('Internal server error', 'INTERNAL_ERROR', 500)
+    const error = new AppError('Internal server error', { code: 'INTERNAL_ERROR', statusCode: 500 })
     const userMessage = error.toUserMessage()
 
     expect(userMessage).toBe('Internal server error (Error Code: INTERNAL_ERROR)')

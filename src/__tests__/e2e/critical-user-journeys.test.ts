@@ -4,14 +4,13 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import { ServerConfig } from '../../config/ServerConfig.js'
 import { McpServer } from '../../server/McpServer.js'
+import type { SpawnMock } from '../helpers/child-process-mock.js'
+
+const mockSpawn: SpawnMock = vi.hoisted(() => vi.fn())
 
 vi.mock('node:child_process', () => ({
-  spawn: vi.fn(),
+  spawn: mockSpawn,
 }))
-
-import { spawn } from 'node:child_process'
-
-const mockSpawn = vi.mocked(spawn)
 
 describe('Critical User Journeys - E2E Tests', () => {
   let server: McpServer
@@ -21,8 +20,8 @@ describe('Critical User Journeys - E2E Tests', () => {
   beforeAll(async () => {
     vi.clearAllMocks()
 
-    mockSpawn.mockImplementation((_cmd: string, args: readonly string[], _options: any) => {
-      const prompt = args.includes('-p') ? args[args.indexOf('-p') + 1] : ''
+    mockSpawn.mockImplementation((_cmd, args) => {
+      const prompt = (args.includes('-p') ? args[args.indexOf('-p') + 1] : '') ?? ''
       const isTestAgent = prompt.includes('test-agent') || args.includes('test-agent')
       const isPerformanceAgent =
         prompt.includes('performance-agent') || args.includes('performance-agent')
@@ -51,11 +50,10 @@ describe('Critical User Journeys - E2E Tests', () => {
           }
         }),
         kill: vi.fn(),
-      } as any
+      }
     })
 
-    testAgentsDir = path.join(tmpdir(), 'mcp-e2e-test-agents')
-    await fs.mkdir(testAgentsDir, { recursive: true })
+    testAgentsDir = await fs.mkdtemp(path.join(tmpdir(), 'mcp-e2e-test-agents-'))
 
     await fs.writeFile(
       path.join(testAgentsDir, 'test-agent.md'),
@@ -107,21 +105,16 @@ describe('Critical User Journeys - E2E Tests', () => {
     expect(agentListResource?.name).toBe('Agent List')
   })
 
-  test('User Journey 3: Execute an agent with a prompt', async () => {
+  test('User Journey 3: Execute an agent without leaking its API key into argv', async () => {
     const result = await server.callTool('run_agent', {
       agent: 'test-agent',
       prompt: 'Help me with this task',
       cwd: process.cwd(),
-      extra_args: ['--verbose'],
     })
 
-    expect(result).toBeDefined()
-    expect(result.content).toBeDefined()
-    expect(Array.isArray(result.content)).toBe(true)
-
-    const textContent = result.content.find((c) => c.type === 'text')
-    expect(textContent).toBeDefined()
-    expect(textContent?.text).toBeTruthy()
+    // An error response also has content, so success is asserted explicitly.
+    expect(result.isError).toBe(false)
+    expect(result.structuredContent).toMatchObject({ status: 'success' })
 
     const spawnCall = mockSpawn.mock.calls.at(-1)
     expect(spawnCall).toBeDefined()
@@ -138,22 +131,6 @@ describe('Critical User Journeys - E2E Tests', () => {
     expect(options.env['ANTHROPIC_BASE_URL']).toBe('https://api.kimi.com/coding/')
     expect(options.env['ANTHROPIC_API_KEY']).toBe('kimi-e2e-secret')
     expect(options.env['ANTHROPIC_AUTH_TOKEN']).toBeUndefined()
-  })
-
-  test('User Journey 4: Retrieve execution results', async () => {
-    const result = await server.callTool('run_agent', {
-      agent: 'test-agent',
-      prompt: 'Analyze this code',
-      cwd: process.cwd(),
-    })
-
-    expect(result.content).toBeDefined()
-    expect(Array.isArray(result.content)).toBe(true)
-    expect(result.content.length).toBeGreaterThan(0)
-
-    const textContent = result.content.find((c) => c.type === 'text')
-    expect(textContent).toBeDefined()
-    expect(textContent?.text).toBeTruthy()
   })
 
   test('User Journey 5: Handle errors gracefully when things go wrong', async () => {

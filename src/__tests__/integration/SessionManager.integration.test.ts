@@ -10,7 +10,7 @@ describe('SessionManager', () => {
   let sessionConfig: SessionConfig
 
   beforeEach(async () => {
-    testSessionDir = path.join(os.tmpdir(), `test-sessions-${Date.now()}`)
+    testSessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'test-sessions-'))
     sessionConfig = {
       enabled: true,
       sessionDir: testSessionDir,
@@ -34,7 +34,9 @@ describe('SessionManager', () => {
     })
 
     it('should create session directory if it does not exist', async () => {
-      const newDir = path.join(os.tmpdir(), `new-session-dir-${Date.now()}`)
+      // Must not exist yet: a unique parent, with the target path still uncreated.
+      const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'new-session-parent-'))
+      const newDir = path.join(parent, 'sessions')
       const newConfig: SessionConfig = {
         enabled: true,
         sessionDir: newDir,
@@ -46,7 +48,7 @@ describe('SessionManager', () => {
       const dirExists = await fs.stat(newDir)
       expect(dirExists.isDirectory()).toBe(true)
 
-      await fs.rm(newDir, { recursive: true, force: true })
+      await fs.rm(parent, { recursive: true, force: true })
     })
   })
 
@@ -188,7 +190,8 @@ describe('SessionManager', () => {
       expect(sessionFiles.length).toBeGreaterThan(0)
 
       const latestFile = sessionFiles.sort().pop()
-      const filePath = path.join(testSessionDir, latestFile!)
+      expect(latestFile).toBeDefined()
+      const filePath = path.join(testSessionDir, latestFile ?? '')
       const fileContent = await fs.readFile(filePath, 'utf-8')
       const sessionData = JSON.parse(fileContent)
 
@@ -219,25 +222,6 @@ describe('SessionManager', () => {
       const stats = await fs.stat(filePath)
       const mode = stats.mode & 0o777
       expect(mode).toBe(0o600)
-    })
-
-    it('should not throw error when session save fails', async () => {
-      const manager = new SessionManager(sessionConfig)
-      const invalidSessionId = '../invalid/session'
-      const request = {
-        agent: 'rule-advisor',
-        prompt: 'Test prompt',
-      }
-      const response = {
-        stdout: 'Test output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-      }
-
-      await expect(
-        manager.saveSession(invalidSessionId, request, response)
-      ).resolves.toBeUndefined()
     })
 
     it('should log error when session save fails', async () => {
@@ -416,6 +400,29 @@ describe('SessionManager', () => {
       const files = await fs.readdir(testSessionDir)
       expect(files).not.toContain(oldFileName)
       expect(files).toContain(recentFileName)
+    })
+
+    it('should never log to stdout, which carries the MCP protocol stream', async () => {
+      const manager = new SessionManager(sessionConfig)
+      // console.log is the stdout path; vitest intercepts it, so the spy has to sit
+      // on console itself rather than on process.stdout.write.
+      const stdoutLog = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      try {
+        const oldFilePath = path.join(testSessionDir, 'stdout-probe_rule-advisor.json')
+        await fs.writeFile(oldFilePath, JSON.stringify({ test: 'data' }), 'utf-8')
+        const eightDaysAgo = new Date()
+        eightDaysAgo.setDate(eightDaysAgo.getDate() - 8)
+        await fs.utimes(oldFilePath, eightDaysAgo, eightDaysAgo)
+
+        await manager.cleanupOldSessions()
+
+        // A successful deletion is the path that used to log to stdout.
+        expect(await fs.readdir(testSessionDir)).not.toContain('stdout-probe_rule-advisor.json')
+        expect(stdoutLog).not.toHaveBeenCalled()
+      } finally {
+        stdoutLog.mockRestore()
+      }
     })
 
     it('should not delete files within retention period', async () => {

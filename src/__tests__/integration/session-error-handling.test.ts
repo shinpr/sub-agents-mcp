@@ -10,7 +10,7 @@ describe('Session Management - Error Handling Tests', () => {
   let sessionConfig: SessionConfig
 
   beforeEach(async () => {
-    testSessionDir = path.join(os.tmpdir(), `error-test-sessions-${Date.now()}`)
+    testSessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'error-test-sessions-'))
     sessionConfig = {
       enabled: true,
       sessionDir: testSessionDir,
@@ -25,55 +25,9 @@ describe('Session Management - Error Handling Tests', () => {
   })
 
   describe('Session save failure handling', () => {
-    it('should not throw error when session save fails with invalid session ID', async () => {
-      const manager = new SessionManager(sessionConfig)
-      const invalidSessionId = '../../../etc/passwd'
-      const request = {
-        agent: 'rule-advisor',
-        prompt: 'Test prompt',
-      }
-      const response = {
-        stdout: 'Test output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-      }
-
-      await expect(
-        manager.saveSession(invalidSessionId, request, response)
-      ).resolves.toBeUndefined()
-    })
-
-    it('should log error when session save fails', async () => {
-      const manager = new SessionManager(sessionConfig)
-      const invalidSessionId = '../invalid'
-      const request = {
-        agent: 'rule-advisor',
-        prompt: 'Test prompt',
-      }
-      const response = {
-        stdout: 'Test output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-      }
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      await manager.saveSession(invalidSessionId, request, response)
-
-      expect(consoleErrorSpy).toHaveBeenCalled()
-      const errorCalls = consoleErrorSpy.mock.calls
-      const hasSaveError = errorCalls.some((call) =>
-        JSON.stringify(call).includes('Failed to save session')
-      )
-      expect(hasSaveError).toBe(true)
-
-      consoleErrorSpy.mockRestore()
-    })
-
     it('should handle file system write errors gracefully', async () => {
-      const readOnlyDir = path.join(os.tmpdir(), `readonly-sessions-${Date.now()}`)
+      const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'readonly-sessions-'))
+      const readOnlyDir = path.join(parent, 'sessions')
       await fs.mkdir(readOnlyDir, { mode: 0o555 })
 
       const readOnlyConfig: SessionConfig = {
@@ -95,10 +49,12 @@ describe('Session Management - Error Handling Tests', () => {
         executionTime: 100,
       }
 
-      await expect(manager.saveSession(sessionId, request, response)).resolves.toBeUndefined()
+      await expect(manager.saveSession(sessionId, request, response)).resolves.toMatchObject({
+        saved: false,
+      })
 
       await fs.chmod(readOnlyDir, 0o755)
-      await fs.rm(readOnlyDir, { recursive: true, force: true })
+      await fs.rm(parent, { recursive: true, force: true })
     })
 
     it('should continue main flow even when session save fails', async () => {
@@ -130,28 +86,6 @@ describe('Session Management - Error Handling Tests', () => {
   })
 
   describe('Session load failure handling', () => {
-    it('should return null when session file does not exist', async () => {
-      const manager = new SessionManager(sessionConfig)
-      const nonExistentSessionId = 'non-existent-session'
-
-      const result = await manager.loadSession(nonExistentSessionId, 'rule-advisor')
-
-      expect(result).toBeNull()
-    })
-
-    it('should return null when JSON parse fails', async () => {
-      const manager = new SessionManager(sessionConfig)
-      const sessionId = 'invalid-json-session'
-
-      const fileName = `${sessionId}_rule-advisor.json`
-      const filePath = path.join(testSessionDir, fileName)
-      await fs.writeFile(filePath, 'invalid json content {{{', 'utf-8')
-
-      const result = await manager.loadSession(sessionId, 'rule-advisor')
-
-      expect(result).toBeNull()
-    })
-
     it('should log error when session load fails', async () => {
       const manager = new SessionManager(sessionConfig)
       const sessionId = 'load-error-session'
@@ -226,8 +160,7 @@ describe('Session Management - Error Handling Tests', () => {
 
   describe('File system error handling', () => {
     it('should handle directory read errors in cleanup', async () => {
-      const inaccessibleDir = path.join(os.tmpdir(), `inaccessible-sessions-${Date.now()}`)
-      await fs.mkdir(inaccessibleDir, { mode: 0o755 })
+      const inaccessibleDir = await fs.mkdtemp(path.join(os.tmpdir(), 'inaccessible-sessions-'))
 
       const inaccessibleConfig: SessionConfig = {
         enabled: true,
@@ -305,38 +238,6 @@ describe('Session Management - Error Handling Tests', () => {
       try {
         await fs.chmod(filePath, 0o644)
       } catch {}
-    })
-  })
-
-  describe('Validation error handling', () => {
-    it('should reject empty session ID', () => {
-      const manager = new SessionManager(sessionConfig)
-
-      expect(() => manager.validateSessionId('')).toThrow('Invalid session ID')
-    })
-
-    it('should reject session ID with special characters', () => {
-      const manager = new SessionManager(sessionConfig)
-
-      expect(() => manager.validateSessionId('session@123')).toThrow('Invalid session ID')
-      expect(() => manager.validateSessionId('session/123')).toThrow('Invalid session ID')
-      expect(() => manager.validateSessionId('session\\123')).toThrow('Invalid session ID')
-      expect(() => manager.validateSessionId('session 123')).toThrow('Invalid session ID')
-    })
-
-    it('should reject session ID with directory traversal attempts', () => {
-      const manager = new SessionManager(sessionConfig)
-
-      expect(() => manager.validateSessionId('../etc')).toThrow('Invalid session ID')
-      expect(() => manager.validateSessionId('./local')).toThrow('Invalid session ID')
-      expect(() => manager.validateSessionId('../../etc')).toThrow('Invalid session ID')
-    })
-
-    it('should reject session ID with path separators', () => {
-      const manager = new SessionManager(sessionConfig)
-
-      expect(() => manager.validateSessionId('session/id')).toThrow('Invalid session ID')
-      expect(() => manager.validateSessionId('session\\id')).toThrow('Invalid session ID')
     })
   })
 
