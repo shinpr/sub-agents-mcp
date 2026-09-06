@@ -4,8 +4,15 @@ import os from 'node:os'
 import path from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { ExecutionParams } from '../types/ExecutionParams.js'
-import { Logger, type LogLevel } from '../utils/Logger.js'
+import { toErrorMessage } from '../utils/ErrorHandler.js'
+import { isLogLevel, Logger, type LogLevel } from '../utils/Logger.js'
 import { StreamProcessor } from './StreamProcessor.js'
+
+/**
+ * A machine-readable reason for failures whose remedy is not obvious from the
+ * exit code alone, so callers can give the user an actionable next step.
+ */
+type ExecutionFailureReason = 'argv_too_long'
 
 export interface AgentExecutionResult {
   stdout: string
@@ -19,6 +26,8 @@ export interface AgentExecutionResult {
   hasResult?: boolean
 
   resultJson?: unknown
+
+  failureReason?: ExecutionFailureReason
 }
 
 export interface ExecutionConfig {
@@ -81,7 +90,7 @@ export const AGENT_TYPES = [
 export type AgentType = (typeof AGENT_TYPES)[number]
 
 export function isAgentType(value: unknown): value is AgentType {
-  return typeof value === 'string' && (AGENT_TYPES as readonly string[]).includes(value)
+  return typeof value === 'string' && AGENT_TYPES.some((agentType) => agentType === value)
 }
 
 export const AGENT_EFFORT_SUPPORTED_TYPES = [
@@ -98,7 +107,7 @@ export const AGENT_EFFORT_SUPPORTED_TYPES = [
 export function supportsAgentEffort(
   agentType: AgentType
 ): agentType is (typeof AGENT_EFFORT_SUPPORTED_TYPES)[number] {
-  return (AGENT_EFFORT_SUPPORTED_TYPES as readonly AgentType[]).includes(agentType)
+  return AGENT_EFFORT_SUPPORTED_TYPES.some((supported) => supported === agentType)
 }
 
 export const AGENT_PERMISSIONS = ['read-only', 'safe-edit', 'yolo'] as const
@@ -106,7 +115,7 @@ export const AGENT_PERMISSIONS = ['read-only', 'safe-edit', 'yolo'] as const
 export type AgentPermission = (typeof AGENT_PERMISSIONS)[number]
 
 export function isAgentPermission(value: unknown): value is AgentPermission {
-  return typeof value === 'string' && (AGENT_PERMISSIONS as readonly string[]).includes(value)
+  return typeof value === 'string' && AGENT_PERMISSIONS.some((permission) => permission === value)
 }
 
 export const DEFAULT_AGENT_PERMISSION: AgentPermission = 'safe-edit'
@@ -201,16 +210,304 @@ export function createExecutionConfig(
   }
 }
 
+/** Reads LOG_LEVEL from the environment, falling back to `info` when unset or invalid. */
+function resolveLogLevelFromEnv(): LogLevel {
+  const value = process.env['LOG_LEVEL']
+  return isLogLevel(value) ? value : 'info'
+}
+
+export interface SpawnOutcome {
+  stdout: string
+  stderr: string
+  exitCode: number
+  hasResult?: boolean
+  resultJson?: unknown
+  failureReason?: ExecutionFailureReason
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return undefined
+  }
+  return typeof error.code === 'string' ? error.code : undefined
+}
+
+function signalNumber(signal: NodeJS.Signals): number {
+  if (signal === 'SIGTERM') {
+    return 15
+  }
+  if (signal === 'SIGKILL') {
+    return 9
+  }
+  return 1
+}
+
+/**
+ * Owns the lifecycle of one spawned agent process: output capture with a byte
+ * cap, incremental stream parsing, timeout-driven termination, and settlement
+ * into a single {@link SpawnOutcome}.
+ */
+class SpawnSession {
+  private readonly streamProcessor: StreamProcessor
+  private readonly stdoutParts: string[] = []
+  private readonly stderrParts: string[] = []
+  private readonly stdoutDecoder = new StringDecoder('utf8')
+  private readonly stderrDecoder = new StringDecoder('utf8')
+  private stdoutLineParts: string[] = []
+  private stdoutTruncated: boolean = false
+  private stderrTruncated: boolean = false
+  private capturedBytes: number = 0
+  private timedOut: boolean = false
+  private cancelled: boolean = false
+  private outputExceeded: boolean = false
+  private processError: Error | undefined
+  private settled: boolean = false
+  private forceKillTimer: NodeJS.Timeout | undefined
+  private executionTimeout: NodeJS.Timeout | undefined
+
+  constructor(
+    private readonly childProcess: ChildProcess,
+    private readonly config: ExecutionConfig,
+    private readonly logger: Logger,
+    private readonly cleanup: () => Promise<void>
+  ) {
+    this.streamProcessor = new StreamProcessor(config.agentType)
+  }
+
+  run(cancelSignal?: AbortSignal): Promise<SpawnOutcome> {
+    return new Promise<SpawnOutcome>((resolve) => {
+      if (cancelSignal) {
+        // Reuses the same graceful SIGTERM -> SIGKILL path as a timeout, so a
+        // cancelled request cannot leave the CLI running.
+        if (cancelSignal.aborted) {
+          queueMicrotask(() => this.cancel())
+        } else {
+          cancelSignal.addEventListener('abort', () => this.cancel(), { once: true })
+        }
+      }
+
+      const settle = (code: number | null, signal?: NodeJS.Signals | null): void => {
+        if (this.settled) {
+          return
+        }
+        this.settled = true
+        this.finish(code, signal).then(resolve, (error: unknown) => {
+          resolve({
+            stdout: '',
+            stderr: toErrorMessage(error),
+            exitCode: 1,
+            hasResult: false,
+          })
+        })
+      }
+
+      this.executionTimeout = setTimeout(() => {
+        this.timedOut = true
+        this.logger.warn('Execution timeout reached', { timeout: this.config.executionTimeout })
+        this.requestTermination()
+      }, this.config.executionTimeout)
+
+      this.childProcess.stdout?.on('data', (data: Buffer) => {
+        this.consumeStdout(data)
+      })
+
+      this.childProcess.stderr?.on('data', (data: Buffer) => {
+        this.stderrParts.push(
+          this.captureChunk(data, this.stderrDecoder, () => {
+            this.stderrTruncated = true
+          })
+        )
+      })
+
+      this.childProcess.on('close', (code: number | null, signal?: NodeJS.Signals | null) => {
+        settle(code, signal)
+      })
+
+      this.childProcess.on('error', (error: Error) => {
+        this.processError = error
+        settle(null)
+      })
+    })
+  }
+
+  /**
+   * Stops the agent process, whether the client cancelled the request or the
+   * server is shutting down. Reuses the graceful SIGTERM -> SIGKILL escalation.
+   */
+  cancel(): void {
+    if (this.settled || this.cancelled) {
+      return
+    }
+    this.cancelled = true
+    this.logger.info('Execution cancelled before the agent finished')
+    this.requestTermination()
+  }
+
+  private clearTimers(): void {
+    if (this.executionTimeout) {
+      clearTimeout(this.executionTimeout)
+    }
+    if (this.forceKillTimer) {
+      clearTimeout(this.forceKillTimer)
+    }
+  }
+
+  private requestTermination(): void {
+    this.childProcess.kill('SIGTERM')
+    if (this.forceKillTimer) {
+      return
+    }
+    this.forceKillTimer = setTimeout(() => {
+      this.childProcess.kill('SIGKILL')
+    }, TERMINATION_GRACE_MS)
+  }
+
+  /**
+   * Copies at most the remaining byte budget out of `data`, flagging truncation
+   * and terminating the process once the cap is reached.
+   */
+  private captureChunk(data: Buffer, decoder: StringDecoder, markTruncated: () => void): string {
+    const remaining = this.config.maxOutputBytes - this.capturedBytes
+    if (remaining <= 0) {
+      this.outputExceeded = true
+      markTruncated()
+      this.requestTermination()
+      return ''
+    }
+
+    const captured = data.length <= remaining ? data : data.subarray(0, remaining)
+    this.capturedBytes += captured.length
+    if (captured.length < data.length) {
+      this.outputExceeded = true
+      markTruncated()
+      this.requestTermination()
+    }
+    return decoder.write(captured)
+  }
+
+  private consumeStdout(data: Buffer): void {
+    const chunk = this.captureChunk(data, this.stdoutDecoder, () => {
+      this.stdoutTruncated = true
+    })
+    this.stdoutParts.push(chunk)
+
+    let chunkOffset = 0
+    while (chunkOffset < chunk.length) {
+      const newlineIndex = chunk.indexOf('\n', chunkOffset)
+      if (newlineIndex < 0) {
+        this.stdoutLineParts.push(chunk.slice(chunkOffset))
+        break
+      }
+
+      this.stdoutLineParts.push(chunk.slice(chunkOffset, newlineIndex))
+      const line = this.stdoutLineParts.join('')
+      this.stdoutLineParts = []
+      chunkOffset = newlineIndex + 1
+      if (this.streamProcessor.processLine(line)) {
+        this.requestTermination()
+        break
+      }
+    }
+  }
+
+  /** Flushes both decoders and parses any line left without a trailing newline. */
+  private flushStreams(): void {
+    if (!this.stdoutTruncated) {
+      const tail = this.stdoutDecoder.end()
+      this.stdoutParts.push(tail)
+      this.stdoutLineParts.push(tail)
+    }
+    if (!this.stderrTruncated) {
+      this.stderrParts.push(this.stderrDecoder.end())
+    }
+
+    const trailingLine = this.stdoutLineParts.join('')
+    if (trailingLine.trim()) {
+      this.streamProcessor.processLine(trailingLine)
+    }
+    this.stdoutLineParts = []
+  }
+
+  private resolveExitCode(code: number | null, signal?: NodeJS.Signals | null): number {
+    if (this.outputExceeded || this.processError) {
+      return errorCode(this.processError) === 'ENOENT' ? 127 : 1
+    }
+    if (this.timedOut) {
+      return 124
+    }
+    if (this.cancelled) {
+      return 130
+    }
+    return code ?? (signal ? 128 + signalNumber(signal) : 1)
+  }
+
+  private collectErrors(stderr: string): string[] {
+    const errors: string[] = []
+    if (stderr) {
+      errors.push(stderr)
+    }
+    if (this.timedOut) {
+      errors.push(`Execution timeout: ${this.config.executionTimeout}ms`)
+    }
+    if (this.cancelled) {
+      errors.push('Execution was cancelled by the client before the agent finished.')
+    }
+    if (this.outputExceeded) {
+      errors.push(`Sub-agent output exceeded ${this.config.maxOutputBytes} bytes`)
+    }
+    if (this.processError && !stderr) {
+      errors.push(this.processError.message)
+    }
+    return errors
+  }
+
+  private async finish(code: number | null, signal?: NodeJS.Signals | null): Promise<SpawnOutcome> {
+    this.clearTimers()
+    this.flushStreams()
+
+    const stdout = this.stdoutParts.join('')
+    const stderr = this.stderrParts.join('')
+
+    let result = this.streamProcessor.getResult()
+    if (result === null) {
+      this.streamProcessor.processCompleteOutput(stdout)
+      result = this.streamProcessor.getResult()
+    }
+
+    await this.cleanup()
+
+    return {
+      stdout: result ? JSON.stringify(result) : stdout,
+      stderr: this.collectErrors(stderr).join('\n'),
+      exitCode: this.resolveExitCode(code, signal),
+      hasResult: result !== null,
+      resultJson: result !== null ? result : undefined,
+    }
+  }
+}
+
+interface ClaudeRedirectTarget {
+  baseUrl: string
+  apiKey: string
+  credentialEnv: 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN'
+}
+
 export class AgentExecutor {
   private readonly config: ExecutionConfig
   private readonly logger: Logger
 
   constructor(config: ExecutionConfig, logger?: Logger) {
     this.config = config
-    this.logger = logger || new Logger((process.env['LOG_LEVEL'] as LogLevel) || 'info')
+    this.logger = logger || new Logger(resolveLogLevelFromEnv())
   }
 
-  async executeAgent(params: ExecutionParams): Promise<AgentExecutionResult> {
+  /**
+   * Guards against untrusted callers that bypass the declared parameter type
+   * (for example MCP requests deserialized as `unknown`).
+   */
+  private assertExecutableParams(
+    params: ExecutionParams | null | undefined
+  ): asserts params is ExecutionParams {
     if (!params?.agent || !params.prompt) {
       const error = 'Invalid execution parameters: agent and prompt are required'
       this.logger.error('Agent execution failed during validation', undefined, { error, params })
@@ -222,6 +519,20 @@ export class AgentExecutor {
       this.logger.error('Agent execution failed during validation', undefined, { error, params })
       throw new Error(error)
     }
+  }
+
+  /** Sessions still running, so shutdown does not orphan agent processes. */
+  private readonly activeSessions = new Set<SpawnSession>()
+
+  /** Terminates every agent process this executor still has running. */
+  terminateAll(): void {
+    for (const session of this.activeSessions) {
+      session.cancel()
+    }
+  }
+
+  async executeAgent(params: ExecutionParams, signal?: AbortSignal): Promise<AgentExecutionResult> {
+    this.assertExecutableParams(params)
 
     const startTime = Date.now()
     const requestId = this.generateRequestId()
@@ -231,13 +542,10 @@ export class AgentExecutor {
       agent: params.agent,
       promptLength: params.prompt.length,
       cwd: params.cwd,
-      extraArgs: params.extra_args?.length || 0,
     })
 
     try {
-      // Add minimal delay to ensure execution time is measurable
-      await new Promise((resolve) => setTimeout(resolve, 1))
-      const result = await this.executeWithSpawn(params)
+      const result = await this.executeWithSpawn(params, signal)
 
       const executionTime = Date.now() - startTime
 
@@ -255,6 +563,7 @@ export class AgentExecutor {
         executionTime,
         ...(result.hasResult !== undefined && { hasResult: result.hasResult }),
         ...(result.resultJson !== undefined && { resultJson: result.resultJson }),
+        ...(result.failureReason !== undefined && { failureReason: result.failureReason }),
       }
     } catch (error) {
       const executionTime = Date.now() - startTime
@@ -263,13 +572,6 @@ export class AgentExecutor {
         requestId,
         executionTime,
       })
-
-      if (
-        error instanceof Error &&
-        (error.message.includes('enhance') || error.message.includes('Enhancement'))
-      ) {
-        throw error
-      }
 
       return {
         stdout: '',
@@ -315,7 +617,9 @@ export class AgentExecutor {
 
   private buildSettingsPathEnv(): EnvOverrides {
     const env: EnvOverrides = {}
-    if (!this.config.agentsSettingsPath) return env
+    if (!this.config.agentsSettingsPath) {
+      return env
+    }
     switch (this.config.agentType) {
       case 'cursor':
         env['CURSOR_CONFIG_DIR'] = this.config.agentsSettingsPath
@@ -442,13 +746,11 @@ export class AgentExecutor {
       throw new Error(GLM_MISSING_API_KEY_ERROR)
     }
 
-    return this.buildRedirectedClaudeArgs(
-      params,
-      envOverrides,
-      GLM_BASE_URL,
+    return this.buildRedirectedClaudeArgs(params, envOverrides, {
+      baseUrl: GLM_BASE_URL,
       apiKey,
-      'ANTHROPIC_AUTH_TOKEN'
-    )
+      credentialEnv: 'ANTHROPIC_AUTH_TOKEN',
+    })
   }
 
   private buildKimiArgs(
@@ -460,22 +762,19 @@ export class AgentExecutor {
       throw new Error(KIMI_MISSING_API_KEY_ERROR)
     }
 
-    return this.buildRedirectedClaudeArgs(
-      params,
-      envOverrides,
-      KIMI_BASE_URL,
+    return this.buildRedirectedClaudeArgs(params, envOverrides, {
+      baseUrl: KIMI_BASE_URL,
       apiKey,
-      'ANTHROPIC_API_KEY'
-    )
+      credentialEnv: 'ANTHROPIC_API_KEY',
+    })
   }
 
   private buildRedirectedClaudeArgs(
     params: ExecutionParams,
     envOverrides: EnvOverrides,
-    baseUrl: string,
-    apiKey: string,
-    credentialEnv: 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN'
+    redirect: ClaudeRedirectTarget
   ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+    const { baseUrl, apiKey, credentialEnv } = redirect
     const flags = this.invocationFlags()
     const cwd = params.cwd || process.cwd()
     const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
@@ -604,7 +903,7 @@ export class AgentExecutor {
     cleanup: () => Promise<void>
   }> {
     if (this.config.agentType !== 'opencode') {
-      return { env: this.buildSpawnEnv(envOverrides), cleanup: async () => {} }
+      return { env: this.buildSpawnEnv(envOverrides), cleanup: async (): Promise<void> => {} }
     }
 
     const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'subagent-opencode-'))
@@ -624,10 +923,10 @@ export class AgentExecutor {
       try {
         await fs.promises.copyFile(authSource, authDestination)
       } catch (error) {
-        const code = this.errorCode(error)
+        const code = errorCode(error)
         if (code !== 'ENOENT') {
           this.logger.warn('Could not copy OpenCode authentication into isolated data home', {
-            error: error instanceof Error ? error.message : String(error),
+            error: toErrorMessage(error),
           })
         }
       }
@@ -638,7 +937,7 @@ export class AgentExecutor {
           XDG_DATA_HOME: dataHome,
           XDG_STATE_HOME: stateHome,
         }),
-        cleanup: async () => {
+        cleanup: async (): Promise<void> => {
           await fs.promises.rm(tempDir, { recursive: true, force: true })
         },
       }
@@ -648,214 +947,68 @@ export class AgentExecutor {
     }
   }
 
-  private errorCode(error: unknown): string | undefined {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return undefined
-    }
-    return typeof error.code === 'string' ? error.code : undefined
-  }
-
-  private async executeWithSpawn(params: ExecutionParams): Promise<{
-    stdout: string
-    stderr: string
-    exitCode: number
-    hasResult?: boolean
-    resultJson?: unknown
-  }> {
+  private async executeWithSpawn(
+    params: ExecutionParams,
+    signal?: AbortSignal
+  ): Promise<SpawnOutcome> {
     const { command, args, envOverrides } = this.buildCommandArgs(params)
     const preparedEnvironment = await this.prepareSpawnEnvironment(envOverrides)
 
-    return new Promise((resolve) => {
-      this.logger.debug('Executing with spawn', {
-        command,
-        cwd: params.cwd || process.cwd(),
-      })
-
-      let childProcess: ChildProcess
-      try {
-        childProcess = spawn(command, args, {
-          cwd: params.cwd || process.cwd(),
-          stdio: ['ignore', 'pipe', 'pipe'],
-          shell: false,
-          env: preparedEnvironment.env,
-        })
-      } catch (error) {
-        void preparedEnvironment.cleanup().finally(() => {
-          resolve({
-            stdout: '',
-            stderr: error instanceof Error ? error.message : String(error),
-            exitCode: this.errorCode(error) === 'ENOENT' ? 127 : 1,
-            hasResult: false,
-          })
-        })
-        return
-      }
-
-      const streamProcessor = new StreamProcessor(this.config.agentType)
-      const stdoutParts: string[] = []
-      const stderrParts: string[] = []
-      let stdoutLineParts: string[] = []
-      const stdoutDecoder = new StringDecoder('utf8')
-      const stderrDecoder = new StringDecoder('utf8')
-      let stdoutTruncated = false
-      let stderrTruncated = false
-      let capturedBytes = 0
-      let timedOut = false
-      let outputExceeded = false
-      let processError: Error | undefined
-      let settled = false
-      let forceKillTimer: NodeJS.Timeout | undefined
-
-      const executionTimeout = setTimeout(() => {
-        timedOut = true
-        this.logger.warn('Execution timeout reached', {
-          timeout: this.config.executionTimeout,
-        })
-        requestTermination()
-      }, this.config.executionTimeout)
-
-      const clearTimers = () => {
-        clearTimeout(executionTimeout)
-        if (forceKillTimer) clearTimeout(forceKillTimer)
-      }
-
-      const finish = async (code: number | null, signal?: NodeJS.Signals | null) => {
-        if (settled) return
-        settled = true
-        clearTimers()
-
-        if (!stdoutTruncated) {
-          const tail = stdoutDecoder.end()
-          stdoutParts.push(tail)
-          stdoutLineParts.push(tail)
-        }
-        if (!stderrTruncated) {
-          stderrParts.push(stderrDecoder.end())
-        }
-
-        const trailingLine = stdoutLineParts.join('')
-        if (trailingLine.trim()) {
-          streamProcessor.processLine(trailingLine)
-        }
-        stdoutLineParts = []
-
-        const stdout = stdoutParts.join('')
-        const stderr = stderrParts.join('')
-
-        let result = streamProcessor.getResult()
-        if (result === null) {
-          streamProcessor.processCompleteOutput(stdout)
-          result = streamProcessor.getResult()
-        }
-
-        let exitCode = code ?? (signal ? 128 + this.signalNumber(signal) : 1)
-        if (timedOut) exitCode = 124
-        if (outputExceeded || processError)
-          exitCode = this.errorCode(processError) === 'ENOENT' ? 127 : 1
-        const errors: string[] = []
-        if (stderr) errors.push(stderr)
-        if (timedOut) errors.push(`Execution timeout: ${this.config.executionTimeout}ms`)
-        if (outputExceeded) {
-          errors.push(`Sub-agent output exceeded ${this.config.maxOutputBytes} bytes`)
-        }
-        if (processError && !stderr) errors.push(processError.message)
-
-        try {
-          await preparedEnvironment.cleanup()
-        } catch (error) {
-          this.logger.warn('Failed to clean up per-run environment', {
-            error: error instanceof Error ? error.message : String(error),
-          })
-        }
-
-        resolve({
-          stdout: result ? JSON.stringify(result) : stdout,
-          stderr: errors.join('\n'),
-          exitCode,
-          hasResult: result !== null,
-          resultJson: result !== null ? result : undefined,
-        })
-      }
-
-      const requestTermination = () => {
-        childProcess.kill('SIGTERM')
-        if (forceKillTimer) return
-        forceKillTimer = setTimeout(() => {
-          childProcess.kill('SIGKILL')
-        }, TERMINATION_GRACE_MS)
-      }
-
-      const captureChunk = (
-        data: Buffer,
-        decoder: StringDecoder,
-        markTruncated: () => void
-      ): string => {
-        const remaining = this.config.maxOutputBytes - capturedBytes
-        if (remaining <= 0) {
-          outputExceeded = true
-          markTruncated()
-          requestTermination()
-          return ''
-        }
-
-        const captured = data.length <= remaining ? data : data.subarray(0, remaining)
-        capturedBytes += captured.length
-        if (captured.length < data.length) {
-          outputExceeded = true
-          markTruncated()
-          requestTermination()
-        }
-        return decoder.write(captured)
-      }
-
-      childProcess.stdout?.on('data', (data: Buffer) => {
-        const chunk = captureChunk(data, stdoutDecoder, () => {
-          stdoutTruncated = true
-        })
-        stdoutParts.push(chunk)
-
-        let chunkOffset = 0
-        while (chunkOffset < chunk.length) {
-          const newlineIndex = chunk.indexOf('\n', chunkOffset)
-          if (newlineIndex < 0) {
-            stdoutLineParts.push(chunk.slice(chunkOffset))
-            break
-          }
-
-          stdoutLineParts.push(chunk.slice(chunkOffset, newlineIndex))
-          const line = stdoutLineParts.join('')
-          stdoutLineParts = []
-          chunkOffset = newlineIndex + 1
-          if (streamProcessor.processLine(line)) {
-            requestTermination()
-            break
-          }
-        }
-      })
-
-      childProcess.stderr?.on('data', (data: Buffer) => {
-        stderrParts.push(
-          captureChunk(data, stderrDecoder, () => {
-            stderrTruncated = true
-          })
-        )
-      })
-
-      childProcess.on('close', (code: number | null, signal?: NodeJS.Signals | null) => {
-        void finish(code, signal)
-      })
-
-      childProcess.on('error', (error: Error) => {
-        processError = error
-        void finish(null)
-      })
+    this.logger.debug('Executing with spawn', {
+      command,
+      cwd: params.cwd || process.cwd(),
     })
+
+    let childProcess: ChildProcess
+    try {
+      childProcess = spawn(command, args, {
+        cwd: params.cwd || process.cwd(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: false,
+        env: preparedEnvironment.env,
+      })
+    } catch (error) {
+      await this.cleanupQuietly(preparedEnvironment.cleanup)
+      if (errorCode(error) === 'E2BIG') {
+        const promptBytes = Buffer.byteLength(params.prompt, 'utf8')
+        return {
+          stdout: '',
+          stderr:
+            `The prompt is too large to pass to the "${command}" CLI: ` +
+            `${promptBytes} bytes exceeds this operating system's argument limit.`,
+          exitCode: 1,
+          hasResult: false,
+          failureReason: 'argv_too_long',
+        }
+      }
+      return {
+        stdout: '',
+        stderr: toErrorMessage(error),
+        exitCode: errorCode(error) === 'ENOENT' ? 127 : 1,
+        hasResult: false,
+      }
+    }
+
+    const session = new SpawnSession(childProcess, this.config, this.logger, () =>
+      this.cleanupQuietly(preparedEnvironment.cleanup)
+    )
+    this.activeSessions.add(session)
+    try {
+      return await session.run(signal)
+    } finally {
+      this.activeSessions.delete(session)
+    }
   }
 
-  private signalNumber(signal: NodeJS.Signals): number {
-    if (signal === 'SIGTERM') return 15
-    if (signal === 'SIGKILL') return 9
-    return 1
+  /** Runs a cleanup callback, logging rather than propagating its failures. */
+  private async cleanupQuietly(cleanup: () => Promise<void>): Promise<void> {
+    try {
+      await cleanup()
+    } catch (error) {
+      this.logger.warn('Failed to clean up per-run environment', {
+        error: toErrorMessage(error),
+      })
+    }
   }
 
   private generateRequestId(): string {

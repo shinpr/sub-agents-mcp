@@ -11,6 +11,119 @@ import {
 } from '../execution/AgentExecutor.js'
 import { isLogLevel, LOG_LEVELS, type LogLevel } from '../utils/Logger.js'
 
+const DEFAULT_EXECUTION_TIMEOUT_MS = 300000
+const DEFAULT_SESSION_RETENTION_DAYS = 1
+
+const MISSING_AGENTS_DIR_ERROR =
+  'AGENTS_DIR environment variable is required.\n' +
+  'Please set it to an absolute path in your MCP configuration.\n' +
+  'Example for Cursor IDE (~/.cursor/mcp.json):\n' +
+  '  "env": {\n' +
+  '    "AGENTS_DIR": "/Users/username/projects/my-app/agents"\n' +
+  '  }\n' +
+  'Example for Claude Desktop:\n' +
+  '  "env": {\n' +
+  '    "AGENTS_DIR": "/Users/username/claude-agents"\n' +
+  '  }'
+
+function readEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim()
+  return value ? value : undefined
+}
+
+function resolveAgentsDir(): string {
+  const agentsDir = process.env['AGENTS_DIR']
+  if (!agentsDir) {
+    throw new Error(MISSING_AGENTS_DIR_ERROR)
+  }
+  return agentsDir
+}
+
+function resolveAgentType(): AgentType {
+  const value = readEnv('AGENT_TYPE')
+  if (!value) {
+    throw new Error(
+      'AGENT_TYPE environment variable is required. ' +
+        `Set it to one of: ${AGENT_TYPES.join(', ')} in your MCP configuration, ` +
+        'then restart or reconnect the MCP server.'
+    )
+  }
+  if (!isAgentType(value)) {
+    throw new Error(`Invalid AGENT_TYPE: "${value}". Must be one of: ${AGENT_TYPES.join(', ')}.`)
+  }
+  return value
+}
+
+function resolveAgentPermission(): AgentPermission {
+  const value = readEnv('AGENT_PERMISSION')
+  if (!value) {
+    return DEFAULT_AGENT_PERMISSION
+  }
+  if (!isAgentPermission(value)) {
+    throw new Error(
+      `Invalid AGENT_PERMISSION: "${value}". Must be one of: ${AGENT_PERMISSIONS.join(', ')}.`
+    )
+  }
+  return value
+}
+
+function resolveAgentEffort(agentType: AgentType): string | undefined {
+  const value = readEnv('AGENT_EFFORT')
+  if (value && !supportsAgentEffort(agentType)) {
+    throw new Error(
+      `AGENT_EFFORT is not supported for AGENT_TYPE="${agentType}". ` +
+        `Supported types: ${AGENT_EFFORT_SUPPORTED_TYPES.join(', ')}.`
+    )
+  }
+  return value
+}
+
+function resolveLogLevel(): LogLevel {
+  const value = readEnv('LOG_LEVEL')
+  if (!value) {
+    return 'info'
+  }
+  if (!isLogLevel(value)) {
+    throw new Error(`Invalid LOG_LEVEL: "${value}". Must be one of: ${LOG_LEVELS.join(', ')}.`)
+  }
+  return value
+}
+
+/**
+ * Parses a duration in milliseconds. `Number.parseInt` alone would read "5min"
+ * as 5, silently turning every execution into an instant timeout, so the whole
+ * value has to be a positive integer.
+ */
+function resolveExecutionTimeoutMs(): number {
+  const value = readEnv('EXECUTION_TIMEOUT_MS')
+  if (!value) {
+    return DEFAULT_EXECUTION_TIMEOUT_MS
+  }
+
+  // Restricted to plain decimal digits: "1e6" and "0x10" are valid to Number()
+  // but are not what anyone means to write in a millisecond setting.
+  const parsed = /^\d+$/.test(value) ? Number(value) : Number.NaN
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `Invalid EXECUTION_TIMEOUT_MS: "${value}". ` +
+        'Expected a positive whole number of milliseconds. ' +
+        `"${value}" is not one, and a value like "5min" would be read as 5 milliseconds. ` +
+        `Use ${DEFAULT_EXECUTION_TIMEOUT_MS} for 5 minutes. ` +
+        'Update "env" in your MCP configuration and restart the server.'
+    )
+  }
+  return parsed
+}
+
+function resolveSessionRetentionDays(): number {
+  const value = readEnv('SESSION_RETENTION_DAYS')
+  if (!value) {
+    return DEFAULT_SESSION_RETENTION_DAYS
+  }
+  const parsed = Number.parseInt(value, 10)
+  return Number.isNaN(parsed) || parsed <= 0 ? DEFAULT_SESSION_RETENTION_DAYS : parsed
+}
+
 export class ServerConfig {
   public readonly serverName: string
 
@@ -47,92 +160,16 @@ export class ServerConfig {
   constructor() {
     this.serverName = process.env['SERVER_NAME'] || 'sub-agents-mcp'
     this.serverVersion = process.env['SERVER_VERSION'] || '0.1.0'
-
-    const agentsDir = process.env['AGENTS_DIR']
-    if (!agentsDir) {
-      throw new Error(
-        'AGENTS_DIR environment variable is required.\n' +
-          'Please set it to an absolute path in your MCP configuration.\n' +
-          'Example for Cursor IDE (~/.cursor/mcp.json):\n' +
-          '  "env": {\n' +
-          '    "AGENTS_DIR": "/Users/username/projects/my-app/agents"\n' +
-          '  }\n' +
-          'Example for Claude Desktop:\n' +
-          '  "env": {\n' +
-          '    "AGENTS_DIR": "/Users/username/claude-agents"\n' +
-          '  }'
-      )
-    }
-    this.agentsDir = agentsDir
-
-    const agentTypeEnv = process.env['AGENT_TYPE']?.trim()
-    if (!agentTypeEnv) {
-      throw new Error(
-        'AGENT_TYPE environment variable is required. ' +
-          `Set it to one of: ${AGENT_TYPES.join(', ')} in your MCP configuration, ` +
-          'then restart or reconnect the MCP server.'
-      )
-    } else if (isAgentType(agentTypeEnv)) {
-      this.agentType = agentTypeEnv
-    } else {
-      throw new Error(
-        `Invalid AGENT_TYPE: "${agentTypeEnv}". Must be one of: ${AGENT_TYPES.join(', ')}.`
-      )
-    }
-
-    const agentPermissionEnv = process.env['AGENT_PERMISSION']?.trim()
-    if (!agentPermissionEnv) {
-      this.agentPermission = DEFAULT_AGENT_PERMISSION
-    } else if (isAgentPermission(agentPermissionEnv)) {
-      this.agentPermission = agentPermissionEnv
-    } else {
-      throw new Error(
-        `Invalid AGENT_PERMISSION: "${agentPermissionEnv}". Must be one of: ${AGENT_PERMISSIONS.join(', ')}.`
-      )
-    }
-
-    const agentModelEnv = process.env['AGENT_MODEL']?.trim()
-    this.agentModel = agentModelEnv || undefined
-
-    const agentEffortEnv = process.env['AGENT_EFFORT']?.trim()
-    this.agentEffort = agentEffortEnv || undefined
-    if (this.agentEffort && !supportsAgentEffort(this.agentType)) {
-      throw new Error(
-        `AGENT_EFFORT is not supported for AGENT_TYPE="${this.agentType}". ` +
-          `Supported types: ${AGENT_EFFORT_SUPPORTED_TYPES.join(', ')}.`
-      )
-    }
-
-    const logLevelEnv = process.env['LOG_LEVEL']?.trim()
-    if (!logLevelEnv) {
-      this.logLevel = 'info'
-    } else if (isLogLevel(logLevelEnv)) {
-      this.logLevel = logLevelEnv
-    } else {
-      throw new Error(
-        `Invalid LOG_LEVEL: "${logLevelEnv}". Must be one of: ${LOG_LEVELS.join(', ')}.`
-      )
-    }
-
-    const timeoutEnv = process.env['EXECUTION_TIMEOUT_MS']
-    if (timeoutEnv?.trim()) {
-      const parsedTimeout = Number.parseInt(timeoutEnv, 10)
-      this.executionTimeoutMs = Number.isNaN(parsedTimeout) ? 300000 : parsedTimeout
-    } else {
-      this.executionTimeoutMs = 300000
-    }
-
+    this.agentsDir = resolveAgentsDir()
+    this.agentType = resolveAgentType()
+    this.agentPermission = resolveAgentPermission()
+    this.agentModel = readEnv('AGENT_MODEL')
+    this.agentEffort = resolveAgentEffort(this.agentType)
+    this.logLevel = resolveLogLevel()
+    this.executionTimeoutMs = resolveExecutionTimeoutMs()
     this.sessionEnabled = process.env['SESSION_ENABLED'] === 'true'
     this.sessionDir = process.env['SESSION_DIR'] || '.mcp-sessions'
-
-    const retentionDaysEnv = process.env['SESSION_RETENTION_DAYS']
-    if (retentionDaysEnv?.trim()) {
-      const parsedDays = Number.parseInt(retentionDaysEnv, 10)
-      this.sessionRetentionDays = Number.isNaN(parsedDays) || parsedDays <= 0 ? 1 : parsedDays
-    } else {
-      this.sessionRetentionDays = 1
-    }
-
+    this.sessionRetentionDays = resolveSessionRetentionDays()
     this.agentsSettingsPath = process.env['AGENTS_SETTINGS_PATH'] || undefined
 
     // Cursor API key: prefer CURSOR_API_KEY, fall back to CLI_API_KEY for backward compatibility

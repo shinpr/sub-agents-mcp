@@ -1,16 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+import type { PathLike } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerConfig } from '../../config/ServerConfig.js'
 import { AgentManager } from '../AgentManager.js'
 
+const fsMocks = vi.hoisted(() => ({
+  readdir: vi.fn<(directoryPath: PathLike) => Promise<string[]>>(),
+  readFile: vi.fn<(filePath: PathLike, encoding: string) => Promise<string>>(),
+  stat: vi.fn<(filePath: PathLike) => Promise<{ mtime: Date }>>(),
+  realpath: vi.fn<(filePath: PathLike) => Promise<string>>(),
+}))
+
 vi.mock('node:fs', () => ({
-  default: {
-    promises: {
-      readdir: vi.fn(),
-      readFile: vi.fn(),
-      stat: vi.fn(),
-      realpath: vi.fn(),
-    },
-  },
+  default: { promises: fsMocks },
 }))
 
 vi.mock('node:path', () => ({
@@ -30,22 +31,41 @@ vi.mock('node:path', () => ({
   sep: '/',
 }))
 
-import fs from 'node:fs'
 import path from 'node:path'
 
-const mockReaddir = fs.promises.readdir as unknown as Mock<
-  (directoryPath: fs.PathLike) => Promise<string[]>
->
-const mockReadFile = vi.mocked(fs.promises.readFile)
-const mockStat = vi.mocked(fs.promises.stat)
-const mockRealpath = fs.promises.realpath as unknown as Mock<
-  (filePath: fs.PathLike) => Promise<string>
->
+const {
+  readdir: mockReaddir,
+  readFile: mockReadFile,
+  stat: mockStat,
+  realpath: mockRealpath,
+} = fsMocks
 const mockResolve = vi.mocked(path.resolve)
 const mockJoin = vi.mocked(path.join)
 const mockBasename = vi.mocked(path.basename)
 const mockRelative = vi.mocked(path.relative)
 const mockIsAbsolute = vi.mocked(path.isAbsolute)
+
+function createMockConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
+  return {
+    agentsDir: '/test/agents',
+    serverName: 'test-server',
+    serverVersion: '1.0.0',
+    agentType: 'cursor',
+    agentPermission: 'safe-edit',
+    agentModel: undefined,
+    agentEffort: undefined,
+    logLevel: 'info',
+    executionTimeoutMs: 300000,
+    sessionEnabled: false,
+    sessionDir: '.mcp-sessions',
+    sessionRetentionDays: 1,
+    agentsSettingsPath: undefined,
+    cursorApiKey: undefined,
+    glmApiKey: undefined,
+    kimiApiKey: undefined,
+    ...overrides,
+  }
+}
 
 describe('AgentManager', () => {
   let agentManager: AgentManager
@@ -69,14 +89,7 @@ describe('AgentManager', () => {
     })
     mockIsAbsolute.mockImplementation((filePath) => filePath.startsWith('/'))
 
-    mockConfig = {
-      agentsDir: '/test/agents',
-      serverName: 'test-server',
-      serverVersion: '1.0.0',
-      agentType: 'cursor',
-      logLevel: 'info',
-      executionTimeoutMs: 300000,
-    } as ServerConfig
+    mockConfig = createMockConfig()
 
     agentManager = new AgentManager(mockConfig)
   })
@@ -100,7 +113,7 @@ describe('AgentManager', () => {
       const mockContent = '# Test Agent\nThis is a test agent.'
 
       mockReaddir.mockResolvedValue(mockFiles)
-      mockStat.mockResolvedValue(mockStats as fs.Stats)
+      mockStat.mockResolvedValue(mockStats)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
@@ -129,7 +142,7 @@ describe('AgentManager', () => {
 
     it('should prefer markdown when .md and .txt definitions share a name', async () => {
       mockReaddir.mockResolvedValue(['reviewer.txt', 'reviewer.md'])
-      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') } as fs.Stats)
+      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') })
       mockReadFile.mockResolvedValue('# Markdown Reviewer')
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
@@ -164,7 +177,7 @@ describe('AgentManager', () => {
         .mockResolvedValueOnce('/test/agents/reviewer.md')
       mockRelative.mockReturnValue('reviewer.md')
       mockReadFile.mockResolvedValue('# Reviewer')
-      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') } as fs.Stats)
+      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') })
 
       const agents = await agentManager.listAgents()
 
@@ -188,7 +201,7 @@ describe('AgentManager', () => {
         .mockResolvedValueOnce('/test/agents/healthy.md')
       mockRelative.mockReturnValue('healthy.md')
       mockReadFile.mockResolvedValue('# Healthy Agent')
-      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') } as fs.Stats)
+      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') })
 
       const agents = await agentManager.listAgents()
 
@@ -214,7 +227,7 @@ describe('AgentManager', () => {
       const mockContent = '# Test Agent\nThis is a comprehensive test agent for validation.'
 
       mockReaddir.mockResolvedValue(mockFiles)
-      mockStat.mockResolvedValue(mockStats as fs.Stats)
+      mockStat.mockResolvedValue(mockStats)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockReturnValue('/test/agents/test-agent.md')
@@ -223,11 +236,11 @@ describe('AgentManager', () => {
       const agent = await agentManager.getAgent('test-agent')
 
       expect(agent).toBeDefined()
-      expect(agent!.name).toBe('test-agent')
-      expect(agent!.description).toBe('Test Agent')
-      expect(agent!.content).toBe(mockContent)
-      expect(agent!.filePath).toBe('/test/agents/test-agent.md')
-      expect(agent!.lastModified).toEqual(mockStats.mtime)
+      expect(agent?.name).toBe('test-agent')
+      expect(agent?.description).toBe('Test Agent')
+      expect(agent?.content).toBe(mockContent)
+      expect(agent?.filePath).toBe('/test/agents/test-agent.md')
+      expect(agent?.lastModified).toEqual(mockStats.mtime)
     })
 
     it('should extract description from first heading in markdown', async () => {
@@ -238,7 +251,7 @@ describe('AgentManager', () => {
 This agent does amazing things.`
 
       mockReaddir.mockResolvedValue(mockFiles)
-      mockStat.mockResolvedValue(mockStats as fs.Stats)
+      mockStat.mockResolvedValue(mockStats)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockReturnValue('/test/agents/agent.md')
@@ -247,7 +260,7 @@ This agent does amazing things.`
       const agent = await agentManager.getAgent('agent')
 
       expect(agent).toBeDefined()
-      expect(agent!.description).toBe('My Custom Agent')
+      expect(agent?.description).toBe('My Custom Agent')
     })
 
     it('should fallback to first line if no heading found', async () => {
@@ -256,7 +269,7 @@ This agent does amazing things.`
       const mockContent = 'Simple agent for basic tasks\nWith some additional content.'
 
       mockReaddir.mockResolvedValue(mockFiles)
-      mockStat.mockResolvedValue(mockStats as fs.Stats)
+      mockStat.mockResolvedValue(mockStats)
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockReturnValue('/test/agents/simple-agent.txt')
@@ -265,7 +278,7 @@ This agent does amazing things.`
       const agent = await agentManager.getAgent('simple-agent')
 
       expect(agent).toBeDefined()
-      expect(agent!.description).toBe('Simple agent for basic tasks')
+      expect(agent?.description).toBe('Simple agent for basic tasks')
     })
 
     it('should handle file read errors gracefully', async () => {
@@ -298,8 +311,8 @@ This agent does amazing things.`
 
       expect(firstCall).toBeDefined()
       expect(secondCall).toBeDefined()
-      expect(firstCall!.name).toBe(secondCall!.name)
-      expect(firstCall!.content).toBe(secondCall!.content)
+      expect(firstCall?.name).toBe(secondCall?.name)
+      expect(firstCall?.content).toBe(secondCall?.content)
     })
 
     it('should return all agents from directory', async () => {
@@ -373,7 +386,7 @@ This agent does amazing things.`
       const otherContent = '# Other Agent\nThis is the other agent.'
 
       mockReaddir.mockResolvedValue(mockFiles)
-      mockStat.mockResolvedValue(mockStats as fs.Stats)
+      mockStat.mockResolvedValue(mockStats)
       mockReadFile.mockResolvedValueOnce(otherContent).mockResolvedValueOnce(targetContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
@@ -385,9 +398,31 @@ This agent does amazing things.`
       const agent = await agentManager.getAgent('target-agent')
 
       expect(agent).toBeDefined()
-      expect(agent!.name).toBe('target-agent')
-      expect(agent!.description).toBe('Target Agent')
-      expect(agent!.content).toBe(targetContent)
+      expect(agent?.name).toBe('target-agent')
+      expect(agent?.description).toBe('Target Agent')
+      expect(agent?.content).toBe(targetContent)
+    })
+  })
+
+  describe('unusable definition names', () => {
+    it('should skip files whose name cannot be used as an agent name', async () => {
+      mockReaddir.mockResolvedValue(['レビュー担当.md', 'review.v2.md', 'valid-agent.md'])
+      mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') })
+      mockReadFile.mockResolvedValue('# Valid Agent\nUsable.')
+      mockResolve.mockReturnValue('/test/agents')
+      mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
+      mockBasename.mockImplementation((filePath) => filePath.split('/').pop() ?? '')
+
+      const agents = await agentManager.listAgents()
+
+      // Only names that run_agent would also accept are exposed.
+      expect(agents.map((agent) => agent.name)).toEqual(['valid-agent'])
+
+      const skipped = agentManager.getSkippedDefinitions()
+      expect(skipped.map((entry) => entry.file).sort()).toEqual(['review.v2.md', 'レビュー担当.md'])
+      for (const entry of skipped) {
+        expect(entry.reason).toMatch(/letters, digits, hyphens and underscores/)
+      }
     })
   })
 })

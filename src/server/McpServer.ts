@@ -16,7 +16,7 @@ import { AgentExecutor, createExecutionConfig } from '../execution/AgentExecutor
 import { AgentResources } from '../resources/AgentResources.js'
 import { SessionManager } from '../session/SessionManager.js'
 import { RunAgentTool } from '../tools/RunAgentTool.js'
-import { AppError, ValidationError } from '../utils/ErrorHandler.js'
+import { AppError, toErrorMessage, ValidationError } from '../utils/ErrorHandler.js'
 import { Logger, type LogLevel } from '../utils/Logger.js'
 
 interface ServerInfo {
@@ -130,8 +130,11 @@ export class McpServer {
       this.transport = new StdioServerTransport()
       this.log('debug', 'StdioServerTransport configured successfully')
     } catch (error) {
-      this.log('error', 'Failed to setup transport', { error: String(error) })
-      throw new AppError('Failed to setup MCP transport', 'TRANSPORT_SETUP_FAILED')
+      this.log('error', 'Failed to setup transport', { error: toErrorMessage(error) })
+      throw new AppError('Failed to setup MCP transport', {
+        code: 'TRANSPORT_SETUP_FAILED',
+        cause: error,
+      })
     }
   }
 
@@ -161,7 +164,7 @@ export class McpServer {
         } catch (error) {
           this.log('error', 'List tools request failed', {
             responseTime: Date.now() - startTime,
-            error: error instanceof Error ? error.message : String(error),
+            error: toErrorMessage(error),
           })
           throw error
         }
@@ -169,14 +172,16 @@ export class McpServer {
 
       this.server.setRequestHandler(
         CallToolRequestSchema,
-        async (request): Promise<CallToolResult> => {
+        async (request, extra): Promise<CallToolResult> => {
           const startTime = Date.now()
           const { params } = request
           this.log('debug', 'Received call_tool request', { tool: params.name })
 
           try {
             if (params.name === 'run_agent') {
-              const result = await this.runAgentTool.execute(params.arguments)
+              // extra.signal aborts when the client cancels the request, which the
+              // executor turns into a SIGTERM for the agent process.
+              const result = await this.runAgentTool.execute(params.arguments, extra.signal)
 
               this.log('info', 'Tool execution completed', {
                 tool: params.name,
@@ -184,15 +189,15 @@ export class McpServer {
                 success: true,
               })
 
-              return result as CallToolResult
+              return result
             }
 
-            throw new ValidationError(`Unknown tool: ${params.name}`, 'UNKNOWN_TOOL')
+            throw new ValidationError(`Unknown tool: ${params.name}`, { code: 'UNKNOWN_TOOL' })
           } catch (error) {
             this.log('error', 'Tool execution failed', {
               tool: params.name,
               responseTime: Date.now() - startTime,
-              error: error instanceof Error ? error.message : String(error),
+              error: toErrorMessage(error),
             })
             throw error
           }
@@ -217,7 +222,7 @@ export class McpServer {
           } catch (error) {
             this.log('error', 'List resources request failed', {
               responseTime: Date.now() - startTime,
-              error: error instanceof Error ? error.message : String(error),
+              error: toErrorMessage(error),
             })
             throw error
           }
@@ -233,10 +238,9 @@ export class McpServer {
 
           try {
             if (!this.agentResources.isValidResourceUri(params.uri)) {
-              throw new ValidationError(
-                `Invalid resource URI: ${params.uri}`,
-                'INVALID_RESOURCE_URI'
-              )
+              throw new ValidationError(`Invalid resource URI: ${params.uri}`, {
+                code: 'INVALID_RESOURCE_URI',
+              })
             }
 
             const result = await this.agentResources.readResource(params.uri)
@@ -247,12 +251,12 @@ export class McpServer {
               contentLength: result.contents[0]?.text?.length || 0,
             })
 
-            return result as unknown as ReadResourceResult
+            return result
           } catch (error) {
             this.log('error', 'Read resource request failed', {
               uri: params.uri,
               responseTime: Date.now() - startTime,
-              error: error instanceof Error ? error.message : String(error),
+              error: toErrorMessage(error),
             })
             throw error
           }
@@ -261,8 +265,11 @@ export class McpServer {
 
       this.log('debug', 'MCP handlers configured successfully')
     } catch (error) {
-      this.log('error', 'Failed to setup MCP handlers', { error: String(error) })
-      throw new AppError('Failed to setup MCP handlers', 'HANDLERS_SETUP_FAILED')
+      this.log('error', 'Failed to setup MCP handlers', { error: toErrorMessage(error) })
+      throw new AppError('Failed to setup MCP handlers', {
+        code: 'HANDLERS_SETUP_FAILED',
+        cause: error,
+      })
     }
   }
 
@@ -284,11 +291,11 @@ export class McpServer {
   async start(): Promise<void> {
     try {
       if (!this.isReady()) {
-        throw new AppError('Server is not ready to start', 'SERVER_NOT_READY')
+        throw new AppError('Server is not ready to start', { code: 'SERVER_NOT_READY' })
       }
 
       if (!this.transport) {
-        throw new AppError('Transport not configured', 'TRANSPORT_NOT_CONFIGURED')
+        throw new AppError('Transport not configured', { code: 'TRANSPORT_NOT_CONFIGURED' })
       }
 
       this.log('info', 'Starting MCP server...')
@@ -300,10 +307,13 @@ export class McpServer {
         serverVersion: this.config.serverVersion,
       })
     } catch (error) {
-      this.log('error', 'Failed to start MCP server', { error: String(error) })
+      this.log('error', 'Failed to start MCP server', { error: toErrorMessage(error) })
       throw error instanceof AppError
         ? error
-        : new AppError('Failed to start MCP server', 'SERVER_START_FAILED')
+        : new AppError('Failed to start MCP server', {
+            code: 'SERVER_START_FAILED',
+            cause: error,
+          })
     }
   }
 
@@ -335,12 +345,12 @@ export class McpServer {
     if (toolName === 'run_agent') {
       return await this.runAgentTool.execute(params)
     }
-    throw new ValidationError(`Unknown tool: ${toolName}`, 'UNKNOWN_TOOL')
+    throw new ValidationError(`Unknown tool: ${toolName}`, { code: 'UNKNOWN_TOOL' })
   }
 
   async readResource(uri: string): Promise<Awaited<ReturnType<AgentResources['readResource']>>> {
     if (!this.agentResources.isValidResourceUri(uri)) {
-      throw new ValidationError(`Invalid resource URI: ${uri}`, 'INVALID_RESOURCE_URI')
+      throw new ValidationError(`Invalid resource URI: ${uri}`, { code: 'INVALID_RESOURCE_URI' })
     }
     return await this.agentResources.readResource(uri)
   }
@@ -371,14 +381,21 @@ export class McpServer {
         ),
       })
 
+      // Stop agent processes first: closing the transport alone would leave them
+      // running with nowhere to report back to.
+      this.agentExecutor.terminateAll()
+
       if (this.server) {
         await this.server.close()
       }
 
       this.log('info', 'MCP server shutdown completed')
     } catch (error) {
-      this.log('error', 'Error during server shutdown', { error: String(error) })
-      throw new AppError('Failed to shutdown MCP server gracefully', 'SERVER_SHUTDOWN_FAILED')
+      this.log('error', 'Error during server shutdown', { error: toErrorMessage(error) })
+      throw new AppError('Failed to shutdown MCP server gracefully', {
+        code: 'SERVER_SHUTDOWN_FAILED',
+        cause: error,
+      })
     }
   }
 }

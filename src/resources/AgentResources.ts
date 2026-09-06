@@ -1,4 +1,5 @@
 import type { AgentManager } from '../agents/AgentManager.js'
+import { isValidAgentName } from '../agents/AgentName.js'
 import type { AgentDefinition } from '../types/AgentDefinition.js'
 import { Logger } from '../utils/Logger.js'
 
@@ -286,16 +287,6 @@ export class AgentResources {
       return false
     }
 
-    const agentName = agentNameMatch[1]
-
-    if (agentName.length === 0 || agentName.length > 100) {
-      return false
-    }
-
-    if (!/^[a-zA-Z0-9_-]+$/.test(agentName)) {
-      return false
-    }
-
-    return true
+    return isValidAgentName(agentNameMatch[1])
   }
 }

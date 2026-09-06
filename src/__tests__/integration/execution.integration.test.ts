@@ -1,14 +1,76 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentExecutor, createExecutionConfig } from '../../execution/AgentExecutor.js'
-import type { ExecutionParams } from '../../types/ExecutionParams.js'
+import type { MockChildProcess, SpawnMock } from '../helpers/child-process-mock.js'
+
+const mockSpawn: SpawnMock = vi.hoisted(() => vi.fn())
 
 vi.mock('node:child_process', () => ({
-  spawn: vi.fn(),
+  spawn: mockSpawn,
 }))
 
-import { spawn } from 'node:child_process'
+type MockListener = (...eventArgs: unknown[]) => void
 
-const mockSpawn = vi.mocked(spawn)
+function resultChunk(result: string): Buffer {
+  return Buffer.from(`${JSON.stringify({ type: 'result', result })}\n`)
+}
+
+/** Picks the stdout payload the fake CLI should emit for a given prompt. */
+function stdoutFor(prompt: string): Buffer | null {
+  if (prompt.includes('test-agent') || prompt.includes('integration-test-agent')) {
+    return resultChunk('Integration test execution success')
+  }
+  if (prompt.includes('nonexistent-agent')) {
+    return null
+  }
+  return resultChunk('Default integration execution')
+}
+
+function promptFromArgs(args: readonly string[]): string {
+  const promptIndex = args.indexOf('-p')
+  if (promptIndex < 0 || promptIndex >= args.length - 1) {
+    return ''
+  }
+  return args[promptIndex + 1] ?? ''
+}
+
+function createMockProcess(prompt: string): MockChildProcess {
+  const isNonexistentAgent = prompt.includes('nonexistent-agent')
+  const stdoutPayload = stdoutFor(prompt)
+
+  const mockProcess = {
+    stdin: { end: vi.fn() },
+    stdout: {
+      on: vi.fn((event: string, callback: MockListener) => {
+        if (event === 'data' && stdoutPayload) {
+          callback(stdoutPayload)
+        }
+      }),
+    },
+    stderr: {
+      on: vi.fn((event: string, callback: MockListener) => {
+        if (event === 'data' && isNonexistentAgent) {
+          callback(Buffer.from('Agent not found'))
+        }
+      }),
+    },
+    on: vi.fn((event: string, callback: MockListener) => {
+      if (event === 'close') {
+        callback(isNonexistentAgent ? 1 : 0)
+        return
+      }
+      if (event === 'error' && isNonexistentAgent) {
+        callback(new Error('Integration execution failed'))
+        return
+      }
+      if (event === 'exit') {
+        callback()
+      }
+    }),
+    kill: vi.fn(),
+  }
+
+  return mockProcess
+}
 
 describe('AgentExecutor Integration', () => {
   let executor: AgentExecutor
@@ -18,63 +80,7 @@ describe('AgentExecutor Integration', () => {
     const testConfig = createExecutionConfig('cursor')
     executor = new AgentExecutor(testConfig)
 
-    mockSpawn.mockImplementation((_cmd: string, args: readonly string[], _options: any) => {
-      const promptIndex = args.indexOf('-p')
-      const prompt = promptIndex >= 0 && promptIndex < args.length - 1 ? args[promptIndex + 1] : ''
-      const isNonexistentAgent = prompt.includes('nonexistent-agent')
-      const isTestAgent = prompt.includes('test-agent') || prompt.includes('integration-test-agent')
-
-      const mockProcess = {
-        stdin: {
-          end: vi.fn(),
-        },
-        stdout: {
-          on: vi.fn((event, callback) => {
-            if (event === 'data') {
-              if (isTestAgent) {
-                callback(
-                  Buffer.from(
-                    `${JSON.stringify({
-                      type: 'result',
-                      result: 'Integration test execution success',
-                    })}\n`
-                  )
-                )
-              } else if (isNonexistentAgent) {
-              } else {
-                callback(
-                  Buffer.from(
-                    `${JSON.stringify({
-                      type: 'result',
-                      result: 'Default integration execution',
-                    })}\n`
-                  )
-                )
-              }
-            }
-          }),
-        },
-        stderr: {
-          on: vi.fn((event, callback) => {
-            if (event === 'data' && isNonexistentAgent) {
-              callback(Buffer.from('Agent not found'))
-            }
-          }),
-        },
-        on: vi.fn((event, callback) => {
-          if (event === 'close') {
-            const exitCode = isNonexistentAgent ? 1 : 0
-            callback(exitCode)
-          } else if (event === 'error' && isNonexistentAgent) {
-            callback(new Error('Integration execution failed'))
-          } else if (event === 'exit') {
-            callback()
-          }
-        }),
-        kill: vi.fn(),
-      }
-      return mockProcess as any
-    })
+    mockSpawn.mockImplementation((_cmd, args) => createMockProcess(promptFromArgs(args)))
   })
 
   afterEach(() => {
@@ -82,15 +88,12 @@ describe('AgentExecutor Integration', () => {
   })
 
   describe('end-to-end execution flow', () => {
-    it('should execute complete flow from params enhancement to result collection', async () => {
-      const originalParams: ExecutionParams = {
+    it('should execute complete flow from params to result collection', async () => {
+      const result = await executor.executeAgent({
         agent: 'integration-test-agent',
         prompt: 'Perform integration test task',
         cwd: '/tmp/integration',
-        extra_args: ['--verbose'],
-      }
-
-      const result = await executor.executeAgent(originalParams)
+      })
 
       expect(result).toEqual({
         stdout: expect.any(String),
@@ -100,130 +103,36 @@ describe('AgentExecutor Integration', () => {
         hasResult: expect.any(Boolean),
         resultJson: expect.any(Object),
       })
-
-      expect(result.exitCode).toBeDefined()
-
-      expect(result.executionTime).toBeGreaterThanOrEqual(0)
-      expect(result.executionTime).toBeGreaterThanOrEqual(0)
+      expect(result.exitCode).toBe(0)
+      expect(result.resultJson).toMatchObject({ result: 'Integration test execution success' })
     })
 
-    it('should use spawn method for all prompt sizes', async () => {
-      const smallPromptParams: ExecutionParams = {
-        agent: 'test-agent',
-        prompt: 'Small task',
-        cwd: '/tmp',
-      }
+    it('should pass a large prompt to the CLI without truncating it', async () => {
+      const largePrompt = 'Large complex task requiring extensive output'.repeat(100)
 
-      const largePromptParams: ExecutionParams = {
-        agent: 'test-agent',
-        prompt: 'Large complex task requiring extensive output and detailed analysis'.repeat(100),
-        cwd: '/tmp',
-      }
+      await executor.executeAgent({ agent: 'test-agent', prompt: largePrompt, cwd: '/tmp' })
 
-      const smallResult = await executor.executeAgent(smallPromptParams)
-      const largeResult = await executor.executeAgent(largePromptParams)
-
-      expect(smallResult.exitCode).toBeDefined()
-      expect(largeResult.exitCode).toBeDefined()
+      // cursor concatenates the system context with the prompt, so the prompt is
+      // carried inside one argument rather than passed verbatim as its own.
+      const args = mockSpawn.mock.calls.at(-1)?.[1] ?? []
+      expect(args.some((arg) => arg.includes(largePrompt))).toBe(true)
     })
 
-    it('should handle execution errors', async () => {
-      const params: ExecutionParams = {
+    it('should report a failing agent through the result rather than throwing', async () => {
+      const result = await executor.executeAgent({
         agent: 'nonexistent-agent',
         prompt: 'This will fail',
         cwd: '/invalid/path',
-      }
-
-      const result = await executor.executeAgent(params)
+      })
 
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toBeTruthy()
-
-      expect(result.executionTime).toBeGreaterThanOrEqual(0)
-      expect(result.exitCode).toBeDefined()
-    })
-  })
-
-  describe('execution method selection integration', () => {
-    it('should use spawn method for all prompts', async () => {
-      const params: ExecutionParams = {
-        agent: 'quick-helper',
-        prompt: 'Quick help',
-        cwd: '/tmp',
-      }
-
-      const result = await executor.executeAgent(params)
-
-      expect(result.exitCode).toBeDefined()
-      expect(result.executionTime).toBeGreaterThanOrEqual(0)
     })
 
-    it('should use spawn method for large prompts with recursion prevention', async () => {
-      const params: ExecutionParams = {
-        agent: 'detailed-analyzer',
-        prompt:
-          'Provide comprehensive analysis with detailed explanations and code examples'.repeat(200),
-        cwd: '/tmp',
-      }
-
-      const result = await executor.executeAgent(params)
-
-      expect(result.exitCode).toBeDefined()
-      expect(result.executionTime).toBeGreaterThanOrEqual(0)
-    })
-  })
-
-  describe('performance monitoring integration', () => {
-    it('should track performance across different prompt sizes', async () => {
-      const smallParams: ExecutionParams = {
-        agent: 'fast-agent',
-        prompt: 'Quick task',
-        cwd: '/tmp',
-      }
-
-      const largeParams: ExecutionParams = {
-        agent: 'thorough-agent',
-        prompt: 'Detailed analysis requiring large output'.repeat(300),
-        cwd: '/tmp',
-      }
-
-      const smallResult = await executor.executeAgent(smallParams)
-      const largeResult = await executor.executeAgent(largeParams)
-
-      expect(smallResult.executionTime).toBeGreaterThanOrEqual(0)
-      expect(largeResult.executionTime).toBeGreaterThanOrEqual(0)
-
-      expect(smallResult.exitCode).toBeDefined()
-      expect(largeResult.exitCode).toBeDefined()
-
-      expect(smallResult.executionTime).toBeGreaterThanOrEqual(0)
-      expect(largeResult.executionTime).toBeGreaterThanOrEqual(0)
-    })
-  })
-
-  describe('error boundary integration', () => {
-    it('should handle direct execution without enhancement errors', async () => {
-      const params: ExecutionParams = {
-        agent: 'test-agent',
-        prompt: 'Test direct execution',
-        cwd: '/tmp',
-      }
-
-      const result = await executor.executeAgent(params)
-
-      expect(result).toBeDefined()
-      expect(result.exitCode).toBeDefined()
-      expect(typeof result.executionTime).toBe('number')
-    })
-
-    it('should handle both enhancement and execution errors appropriately', async () => {
-      const invalidParams: ExecutionParams = {
-        agent: '',
-        prompt: '',
-        cwd: '/tmp',
-      }
-
-      await expect(executor.executeAgent(invalidParams)).rejects.toThrow()
+    it('should reject empty execution parameters', async () => {
+      await expect(executor.executeAgent({ agent: '', prompt: '', cwd: '/tmp' })).rejects.toThrow(
+        /agent and prompt/i
+      )
     })
   })
 })

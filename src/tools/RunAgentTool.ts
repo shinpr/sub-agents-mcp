@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentManager } from '../agents/AgentManager.js'
+import { AGENT_NAME_PATTERN, agentNameProblem } from '../agents/AgentName.js'
 import type { AgentExecutionResult, AgentExecutor } from '../execution/AgentExecutor.js'
 import { formatSessionHistory } from '../session/SessionHistoryFormatter.js'
 import type { SessionManager } from '../session/SessionManager.js'
 import type { AgentDefinition } from '../types/AgentDefinition.js'
 import type { ExecutionParams } from '../types/ExecutionParams.js'
-import { Logger, type LogLevel } from '../utils/Logger.js'
+import { toErrorMessage } from '../utils/ErrorHandler.js'
+import { isLogLevel, Logger, type LogLevel } from '../utils/Logger.js'
 
 const COMMAND_CODE_MAX_TURNS_EXIT_CODE = 8
 const TIMEOUT_EXIT_CODE = 124
@@ -22,13 +24,14 @@ interface McpToolResponse {
   [x: string]: unknown
   content: McpTextContent[]
   isError?: boolean
-  structuredContent?: unknown
+  structuredContent?: Record<string, unknown>
   _meta?: {
     session_id: string
   }
 }
 
 interface McpResponseData {
+  [x: string]: unknown
   result: string
   session_id?: string
   agent: string
@@ -36,6 +39,9 @@ interface McpResponseData {
   execution_time: number
   status: 'success' | 'partial' | 'error'
   request_id?: string
+
+  /** Present only when a session was in use and the history could not be stored. */
+  session_saved?: false
 }
 
 interface RunAgentInputSchema {
@@ -55,11 +61,6 @@ interface RunAgentInputSchema {
       type: 'string'
       description: string
     }
-    extra_args: {
-      type: 'array'
-      items: { type: 'string' }
-      description: string
-    }
     session_id: {
       type: 'string'
       description: string
@@ -72,8 +73,83 @@ interface RunAgentParams {
   agent: string
   prompt: string
   cwd: string
-  extra_args?: string[] | undefined
   session_id?: string | undefined
+}
+
+const MAX_PROMPT_LENGTH = 50000
+const MAX_CWD_LENGTH = 1000
+const MAX_SESSION_ID_LENGTH = 100
+
+function validateAgentName(value: unknown): string {
+  if (!value || typeof value !== 'string') {
+    throw new Error('Agent parameter is required and must be a string')
+  }
+
+  const agentName = value.trim()
+  const problem = agentNameProblem(agentName)
+  if (problem) {
+    throw new Error(`Invalid agent parameter: ${problem}`)
+  }
+  return agentName
+}
+
+function validatePrompt(value: unknown): string {
+  if (!value || typeof value !== 'string') {
+    throw new Error('Prompt parameter is required and must be a string')
+  }
+
+  const prompt = value.trim()
+  if (prompt === '') {
+    throw new Error('Invalid prompt parameter: cannot be empty')
+  }
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    throw new Error('Prompt too long (max 50,000 characters)')
+  }
+  return prompt
+}
+
+function validateCwd(value: unknown): string {
+  if (value === undefined || value === null) {
+    throw new Error('CWD parameter is required')
+  }
+  if (typeof value !== 'string') {
+    throw new Error('CWD parameter must be a string')
+  }
+
+  const cwd = value.trim()
+  if (cwd === '') {
+    throw new Error('CWD parameter cannot be empty')
+  }
+  if (cwd.length > MAX_CWD_LENGTH) {
+    throw new Error('Working directory path too long (max 1000 characters)')
+  }
+  if (cwd.includes('..') || cwd.includes('\0')) {
+    throw new Error('Invalid working directory path')
+  }
+  return cwd
+}
+
+function validateSessionId(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== 'string') {
+    throw new Error('Session ID parameter must be a string if provided')
+  }
+
+  const sessionId = value.trim()
+  if (sessionId === '') {
+    throw new Error('Invalid session ID parameter: cannot be empty')
+  }
+  if (sessionId.length > MAX_SESSION_ID_LENGTH) {
+    throw new Error('Session ID too long (max 100 characters)')
+  }
+  if (!AGENT_NAME_PATTERN.test(sessionId)) {
+    throw new Error(
+      'Session ID contains invalid characters (only alphanumeric, underscore, and dash allowed)'
+    )
+  }
+  return value
 }
 
 export class RunAgentTool {
@@ -101,11 +177,6 @@ export class RunAgentTool {
         description:
           'Working directory path for agent execution context. Must be an absolute path to a valid directory.',
       },
-      extra_args: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Additional configuration parameters for agent execution (optional)',
-      },
       session_id: {
         type: 'string',
         description:
@@ -120,11 +191,181 @@ export class RunAgentTool {
     private agentManager?: AgentManager,
     private sessionManager?: SessionManager
   ) {
-    const logLevel = (process.env['LOG_LEVEL'] as LogLevel) || 'info'
+    const envLogLevel = process.env['LOG_LEVEL']
+    const logLevel: LogLevel = isLogLevel(envLogLevel) ? envLogLevel : 'info'
     this.logger = new Logger(logLevel)
   }
 
-  async execute(params: unknown): Promise<McpToolResponse> {
+  /** Prunes expired session files without blocking the current request. */
+  private startBackgroundSessionCleanup(requestId: string): void {
+    const sessionManager = this.sessionManager
+    if (!sessionManager) {
+      return
+    }
+
+    Promise.resolve()
+      .then(() => sessionManager.cleanupOldSessions())
+      .catch((error: unknown) => {
+        this.logger.warn('Session cleanup failed (best-effort)', {
+          requestId,
+          error: toErrorMessage(error),
+        })
+      })
+  }
+
+  /**
+   * Prefixes the request with the stored conversation history when a session is
+   * active. History retrieval is best-effort: failures fall back to the raw prompt.
+   */
+  private async buildPromptWithHistory(
+    validatedParams: RunAgentParams,
+    sessionId: string | undefined,
+    requestId: string
+  ): Promise<string> {
+    if (!sessionId || !this.sessionManager) {
+      return validatedParams.prompt
+    }
+
+    try {
+      // Session history is partitioned by agent name.
+      const sessionData = await this.sessionManager.loadSession(sessionId, validatedParams.agent)
+      if (!sessionData || sessionData.history.length === 0) {
+        this.logger.debug('No session history found', { requestId, sessionId })
+        return validatedParams.prompt
+      }
+
+      const historyMarkdown = formatSessionHistory(sessionData)
+      this.logger.info('Session history loaded and merged', {
+        requestId,
+        sessionId,
+        historyEntries: sessionData.history.length,
+      })
+      return `Previous conversation history:\n\n${historyMarkdown}\n\n---\n\nCurrent request:\n${validatedParams.prompt}`
+    } catch (error) {
+      this.logger.warn('Failed to load session history', {
+        requestId,
+        sessionId,
+        error: toErrorMessage(error),
+      })
+      return validatedParams.prompt
+    }
+  }
+
+  /**
+   * Appends the exchange to the session store. Never throws; returns whether the
+   * history was actually persisted so the caller can say so in its response.
+   */
+  private async persistSession(
+    validatedParams: RunAgentParams,
+    sessionId: string | undefined,
+    requestId: string,
+    result: AgentExecutionResult
+  ): Promise<boolean> {
+    if (!sessionId || !this.sessionManager) {
+      return false
+    }
+
+    try {
+      const sessionRequest: {
+        agent: string
+        prompt: string
+        cwd?: string
+      } = {
+        agent: validatedParams.agent,
+        prompt: validatedParams.prompt,
+        cwd: validatedParams.cwd,
+      }
+
+      const saveResult = await this.sessionManager.saveSession(sessionId, sessionRequest, {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        executionTime: result.executionTime,
+      })
+
+      if (!saveResult.saved) {
+        this.logger.warn('Failed to save session', {
+          requestId,
+          sessionId,
+          error: saveResult.reason,
+        })
+        return false
+      }
+
+      this.logger.info('Session saved successfully', { requestId, sessionId })
+      return true
+    } catch (error) {
+      this.logger.warn('Failed to save session', {
+        requestId,
+        sessionId,
+        error: toErrorMessage(error),
+      })
+      return false
+    }
+  }
+
+  /** Runs the agent and records the exchange, returning the formatted MCP response. */
+  private async runAgent(
+    agentExecutor: AgentExecutor,
+    context: {
+      validatedParams: RunAgentParams
+      agentDefinition: AgentDefinition | undefined
+      sessionId: string | undefined
+      requestId: string
+      startTime: number
+      signal?: AbortSignal | undefined
+    }
+  ): Promise<McpToolResponse> {
+    const { validatedParams, agentDefinition, sessionId, requestId, startTime, signal } = context
+
+    const executionParams: ExecutionParams = {
+      agent: agentDefinition?.content ?? validatedParams.agent,
+      prompt: await this.buildPromptWithHistory(validatedParams, sessionId, requestId),
+      cwd: validatedParams.cwd,
+      ...(agentDefinition?.filePath !== undefined && {
+        agentFilePath: agentDefinition.filePath,
+      }),
+    }
+
+    const result = await agentExecutor.executeAgent(executionParams, signal)
+    this.updateExecutionStats(validatedParams.agent, result.executionTime)
+
+    this.logger.info('Agent execution completed successfully', {
+      requestId,
+      agent: validatedParams.agent,
+      exitCode: result.exitCode,
+      executionTime: result.executionTime,
+      totalTime: Date.now() - startTime,
+    })
+
+    const sessionSaved = await this.persistSession(validatedParams, sessionId, requestId, result)
+
+    return this.formatExecutionResponse(result, {
+      agentName: validatedParams.agent,
+      requestId,
+      sessionId,
+      sessionSaved,
+    })
+  }
+
+  /**
+   * Without a session store nothing is persisted, so no session_id is issued —
+   * echoing one back would invite the caller to reuse an id that continues nothing.
+   */
+  private resolveSessionId(validatedParams: RunAgentParams, requestId: string): string | undefined {
+    if (!this.sessionManager) {
+      if (validatedParams.session_id !== undefined) {
+        this.logger.warn('session_id was provided but session management is disabled', {
+          requestId,
+          requestedSessionId: validatedParams.session_id,
+        })
+      }
+      return undefined
+    }
+    return validatedParams.session_id || randomUUID()
+  }
+
+  async execute(params: unknown, signal?: AbortSignal): Promise<McpToolResponse> {
     const startTime = Date.now()
     const requestId = this.generateRequestId()
 
@@ -133,28 +374,19 @@ export class RunAgentTool {
       timestamp: new Date().toISOString(),
     })
 
-    if (this.sessionManager) {
-      Promise.resolve()
-        .then(() => this.sessionManager!.cleanupOldSessions())
-        .catch((error) => {
-          this.logger.warn('Session cleanup failed (best-effort)', {
-            requestId,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        })
-    }
+    this.startBackgroundSessionCleanup(requestId)
 
     try {
       const validatedParams = this.validateParams(params)
-      const sessionId =
-        validatedParams.session_id || (this.sessionManager ? randomUUID() : undefined)
+      // Without a session store nothing is persisted, so echoing a session_id back
+      // would invite the caller to reuse an id that continues nothing.
+      const sessionId = this.resolveSessionId(validatedParams, requestId)
 
       this.logger.debug('Parameters validated successfully', {
         requestId,
         agent: validatedParams.agent,
         promptLength: validatedParams.prompt.length,
         cwd: validatedParams.cwd,
-        extraArgsCount: validatedParams.extra_args?.length || 0,
         sessionId: sessionId,
         sessionIdGenerated: !validatedParams.session_id && !!sessionId,
       })
@@ -170,7 +402,8 @@ export class RunAgentTool {
 
           return this.createErrorResponse(
             `Agent '${validatedParams.agent}' not found`,
-            await this.getAvailableAgentsList()
+            await this.getAvailableAgentsList(),
+            this.agentManager.getSkippedDefinitions()
           )
         }
 
@@ -181,103 +414,16 @@ export class RunAgentTool {
         })
       }
 
-      if (this.agentExecutor) {
-        const agentContext = agentDefinition?.content ?? validatedParams.agent
-        let promptWithHistory = validatedParams.prompt
-        if (sessionId && this.sessionManager) {
-          try {
-            // Session history is partitioned by agent name.
-            const sessionData = await this.sessionManager.loadSession(
-              sessionId,
-              validatedParams.agent
-            )
-            if (sessionData && sessionData.history.length > 0) {
-              const historyMarkdown = formatSessionHistory(sessionData)
-              promptWithHistory = `Previous conversation history:\n\n${historyMarkdown}\n\n---\n\nCurrent request:\n${validatedParams.prompt}`
-
-              this.logger.info('Session history loaded and merged', {
-                requestId,
-                sessionId: sessionId,
-                historyEntries: sessionData.history.length,
-              })
-            } else {
-              this.logger.debug('No session history found', {
-                requestId,
-                sessionId: sessionId,
-              })
-            }
-          } catch (error) {
-            this.logger.warn('Failed to load session history', {
-              requestId,
-              sessionId: sessionId,
-              error: error instanceof Error ? error.message : String(error),
-            })
-          }
-        }
-
-        const executionParams: ExecutionParams = {
-          agent: agentContext,
-          prompt: promptWithHistory,
-          ...(validatedParams.cwd !== undefined && { cwd: validatedParams.cwd }),
-          ...(validatedParams.extra_args !== undefined && {
-            extra_args: validatedParams.extra_args,
-          }),
-          ...(agentDefinition?.filePath !== undefined && {
-            agentFilePath: agentDefinition.filePath,
-          }),
-        }
-
-        const result = await this.agentExecutor.executeAgent(executionParams)
-        this.updateExecutionStats(validatedParams.agent, result.executionTime)
-
-        this.logger.info('Agent execution completed successfully', {
+      const agentExecutor = this.agentExecutor
+      if (agentExecutor) {
+        return await this.runAgent(agentExecutor, {
+          validatedParams,
+          agentDefinition,
+          sessionId,
           requestId,
-          agent: validatedParams.agent,
-          exitCode: result.exitCode,
-          executionTime: result.executionTime,
-          totalTime: Date.now() - startTime,
+          startTime,
+          signal,
         })
-
-        if (sessionId && this.sessionManager) {
-          try {
-            const sessionRequest: {
-              agent: string
-              prompt: string
-              cwd?: string
-              extra_args?: string[]
-            } = {
-              agent: validatedParams.agent,
-              prompt: validatedParams.prompt,
-            }
-
-            if (validatedParams.cwd !== undefined) {
-              sessionRequest.cwd = validatedParams.cwd
-            }
-            if (validatedParams.extra_args !== undefined) {
-              sessionRequest.extra_args = validatedParams.extra_args
-            }
-
-            await this.sessionManager.saveSession(sessionId, sessionRequest, {
-              stdout: result.stdout,
-              stderr: result.stderr,
-              exitCode: result.exitCode,
-              executionTime: result.executionTime,
-            })
-
-            this.logger.info('Session saved successfully', {
-              requestId,
-              sessionId: sessionId,
-            })
-          } catch (error) {
-            this.logger.warn('Failed to save session', {
-              requestId,
-              sessionId: sessionId,
-              error: error instanceof Error ? error.message : String(error),
-            })
-          }
-        }
-
-        return this.formatExecutionResponse(result, validatedParams.agent, requestId, sessionId)
       }
 
       this.logger.warn('Agent executor not available', { requestId })
@@ -310,108 +456,13 @@ export class RunAgentTool {
       throw new Error('Invalid parameters: expected object')
     }
 
-    const p = params as Record<string, unknown>
-
-    if (!p['agent'] || typeof p['agent'] !== 'string') {
-      throw new Error('Agent parameter is required and must be a string')
-    }
-
-    const agentName = p['agent'].trim()
-    if (agentName === '') {
-      throw new Error('Invalid agent parameter: cannot be empty')
-    }
-
-    if (agentName.length > 100) {
-      throw new Error('Agent name too long (max 100 characters)')
-    }
-
-    if (!/^[a-zA-Z0-9_-]+$/.test(agentName)) {
-      throw new Error(
-        'Agent name contains invalid characters (only alphanumeric, underscore, and dash allowed)'
-      )
-    }
-
-    if (!p['prompt'] || typeof p['prompt'] !== 'string') {
-      throw new Error('Prompt parameter is required and must be a string')
-    }
-
-    const prompt = p['prompt'].trim()
-    if (prompt === '') {
-      throw new Error('Invalid prompt parameter: cannot be empty')
-    }
-
-    if (prompt.length > 50000) {
-      throw new Error('Prompt too long (max 50,000 characters)')
-    }
-
-    if (p['cwd'] === undefined || p['cwd'] === null) {
-      throw new Error('CWD parameter is required')
-    }
-
-    if (typeof p['cwd'] !== 'string') {
-      throw new Error('CWD parameter must be a string')
-    }
-
-    const cwd = p['cwd'].trim()
-    if (cwd === '') {
-      throw new Error('CWD parameter cannot be empty')
-    }
-
-    if (cwd.length > 1000) {
-      throw new Error('Working directory path too long (max 1000 characters)')
-    }
-
-    if (cwd.includes('..') || cwd.includes('\0')) {
-      throw new Error('Invalid working directory path')
-    }
-
-    if (p['extra_args'] !== undefined) {
-      if (!Array.isArray(p['extra_args'])) {
-        throw new Error('Extra args parameter must be an array if provided')
-      }
-
-      if (p['extra_args'].length > 20) {
-        throw new Error('Too many extra arguments (max 20 allowed)')
-      }
-
-      for (const [index, arg] of p['extra_args'].entries()) {
-        if (typeof arg !== 'string') {
-          throw new Error(`Extra argument at index ${index} must be a string`)
-        }
-
-        if (arg.length > 1000) {
-          throw new Error(`Extra argument at index ${index} too long (max 1000 characters)`)
-        }
-      }
-    }
-
-    if (p['session_id'] !== undefined) {
-      if (typeof p['session_id'] !== 'string') {
-        throw new Error('Session ID parameter must be a string if provided')
-      }
-
-      const sessionId = p['session_id'].trim()
-      if (sessionId === '') {
-        throw new Error('Invalid session ID parameter: cannot be empty')
-      }
-
-      if (sessionId.length > 100) {
-        throw new Error('Session ID too long (max 100 characters)')
-      }
-
-      if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
-        throw new Error(
-          'Session ID contains invalid characters (only alphanumeric, underscore, and dash allowed)'
-        )
-      }
-    }
+    const p: Record<string, unknown> = { ...params }
 
     return {
-      agent: agentName,
-      prompt: prompt,
-      cwd: cwd,
-      extra_args: p['extra_args'] as string[] | undefined,
-      session_id: p['session_id'] as string | undefined,
+      agent: validateAgentName(p['agent']),
+      prompt: validatePrompt(p['prompt']),
+      cwd: validateCwd(p['cwd']),
+      session_id: validateSessionId(p['session_id']),
     }
   }
 
@@ -421,6 +472,73 @@ export class RunAgentTool {
 
   private isStringField(value: unknown): value is string {
     return typeof value === 'string'
+  }
+
+  /**
+   * Derives the single execution outcome that both `status` and `isError` are
+   * built from. Keeping one derivation prevents the two fields from disagreeing.
+   */
+  private resolveOutcome(result: AgentExecutionResult): McpResponseData['status'] {
+    if (this.isAgentError(result.resultJson, result.exitCode)) {
+      return 'error'
+    }
+
+    const isPartial =
+      this.isPartialResult(result.resultJson) ||
+      (result.exitCode === TIMEOUT_EXIT_CODE && result.hasResult === true)
+
+    if (!isPartial) {
+      if (result.exitCode === 0) {
+        return 'success'
+      }
+      // Terminated by a signal, but only after a structured result arrived.
+      if (
+        (result.exitCode === SIGTERM_EXIT_CODE || result.exitCode === SIGKILL_EXIT_CODE) &&
+        result.hasResult === true
+      ) {
+        return 'success'
+      }
+    }
+
+    return isPartial ? 'partial' : 'error'
+  }
+
+  /**
+   * Builds the text shown to the caller. On a non-success outcome the failure
+   * reason on stderr must survive even when the agent also produced stdout,
+   * otherwise the caller sees partial output and no explanation.
+   */
+  private buildResultText(
+    outcome: McpResponseData['status'],
+    result: AgentExecutionResult,
+    sessionId: string | undefined
+  ): string {
+    const content = this.extractAgentContent(
+      result.resultJson,
+      outcome === 'error',
+      result.stdout,
+      result.stderr
+    )
+
+    // A partial outcome carries a coherent agent result, and `status`/`exit_code`
+    // already say it was cut short. Only a failure needs its reason spelled out.
+    if (outcome !== 'error') {
+      return content
+    }
+
+    const notes: string[] = []
+    if (result.stderr && !content.includes(result.stderr)) {
+      notes.push(result.stderr)
+    }
+    if (result.failureReason === 'argv_too_long' && sessionId) {
+      notes.push(
+        `The conversation history stored for session "${sessionId}" is replayed with every ` +
+          'call, and it has grown past what the CLI accepts. Start a new session by calling ' +
+          'run_agent without session_id.'
+      )
+    }
+
+    return notes.length > 0 ? [content, ...notes].join('\n\n') : content
   }
 
   private extractAgentContent(
@@ -474,35 +592,32 @@ export class RunAgentTool {
 
   private formatExecutionResponse(
     result: AgentExecutionResult,
-    agentName: string,
-    requestId?: string,
-    sessionId?: string
+    context: {
+      agentName: string
+      requestId?: string | undefined
+      sessionId?: string | undefined
+      sessionSaved?: boolean | undefined
+    }
   ): McpToolResponse {
-    const isError = this.isAgentError(result.resultJson, result.exitCode)
-    const contentText = this.extractAgentContent(
-      result.resultJson,
-      isError,
-      result.stdout,
-      result.stderr
-    )
+    const { agentName, requestId, sessionId, sessionSaved } = context
+    const outcome = this.resolveOutcome(result)
+    const isError = outcome === 'error'
+    let contentText = this.buildResultText(outcome, result, sessionId)
 
-    const isPartialSuccess =
-      this.isPartialResult(result.resultJson) ||
-      (result.exitCode === TIMEOUT_EXIT_CODE && result.hasResult === true)
-
-    const isSuccess =
-      (!isError && !isPartialSuccess && result.exitCode === 0) || // Normal completion
-      (!isError &&
-        !isPartialSuccess &&
-        (result.exitCode === SIGTERM_EXIT_CODE || result.exitCode === SIGKILL_EXIT_CODE) &&
-        result.hasResult === true) // Terminated after receiving a result
+    // The agent's own result still stands, but a caller told to reuse session_id
+    // has to know the history behind it was not written.
+    const historyLost = sessionId !== undefined && sessionSaved === false
+    if (historyLost) {
+      contentText = `${contentText}\n\nThis exchange was not saved to session "${sessionId}", so it will not be part of the history on the next call.`
+    }
 
     const responseData: McpResponseData = {
       result: contentText,
+      ...(historyLost && { session_saved: false }),
       agent: agentName,
       exit_code: result.exitCode,
       execution_time: result.executionTime,
-      status: isError ? 'error' : isSuccess ? 'success' : isPartialSuccess ? 'partial' : 'error',
+      status: outcome,
       ...(sessionId && { session_id: sessionId }),
       ...(requestId && { request_id: requestId }),
     }
@@ -529,12 +644,15 @@ export class RunAgentTool {
 
   private createErrorResponse(
     errorMessage: string,
-    availableAgents: string[] | null
+    availableAgents: string[] | null,
+    skippedDefinitions: { file: string; reason: string }[] = []
   ): McpToolResponse {
     const errorData: Record<string, unknown> = {
       status: 'error',
       error: errorMessage,
       ...(availableAgents && { available_agents: availableAgents }),
+      // Explains "the file exists but the agent is missing" without a log dive.
+      ...(skippedDefinitions.length > 0 && { skipped_definitions: skippedDefinitions }),
     }
 
     return {

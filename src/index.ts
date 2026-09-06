@@ -18,7 +18,13 @@ async function main(): Promise<void> {
       process.exit(0)
     })
   } catch (error) {
-    console.error('Failed to start MCP server:', error)
+    // A misconfiguration is user input, not a crash: the stack trace would bury
+    // the one line that says what to change.
+    if (error instanceof Error) {
+      console.error(`Failed to start MCP server: ${error.message}`)
+    } else {
+      console.error('Failed to start MCP server:', error)
+    }
     process.exit(1)
   }
 }

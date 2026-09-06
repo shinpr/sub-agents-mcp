@@ -10,6 +10,14 @@ export interface ErrorContext {
   component?: string
 }
 
+export interface AppErrorOptions extends ErrorOptions {
+  code: string
+
+  statusCode?: number
+
+  context?: ErrorContext
+}
+
 export class AppError extends Error {
   public readonly code: string
 
@@ -17,14 +25,14 @@ export class AppError extends Error {
 
   public readonly context: ErrorContext
 
-  constructor(message: string, code: string, statusCode = 500, context: ErrorContext = {}) {
-    super(message)
+  constructor(message: string, options: AppErrorOptions) {
+    super(message, { cause: options.cause })
     this.name = this.constructor.name
-    this.code = code
-    this.statusCode = statusCode
+    this.code = options.code
+    this.statusCode = options.statusCode ?? 500
     this.context = {
       timestamp: new Date(),
-      ...context,
+      ...options.context,
     }
 
     // Maintains proper stack trace for where error was thrown (Node.js only)
@@ -49,11 +57,46 @@ export class AppError extends Error {
   }
 }
 
+export type ValidationErrorOptions = Omit<AppErrorOptions, 'statusCode'>
+
 export class ValidationError extends AppError {
-  constructor(message: string, code: string, context: ErrorContext = {}) {
-    super(message, code, 400, {
-      component: 'Validation',
-      ...context,
+  constructor(message: string, options: ValidationErrorOptions) {
+    super(message, {
+      ...options,
+      statusCode: 400,
+      context: {
+        component: 'Validation',
+        ...options.context,
+      },
     })
+  }
+}
+
+/**
+ * Safely converts an unknown thrown value into a human-readable message.
+ * Avoids relying on the default `Object.prototype.toString` (`[object Object]`)
+ * for values that do not define a meaningful string representation.
+ */
+export function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+  if (typeof error === 'string') {
+    return error
+  }
+  if (
+    typeof error === 'number' ||
+    typeof error === 'boolean' ||
+    typeof error === 'bigint' ||
+    typeof error === 'symbol' ||
+    error === null ||
+    error === undefined
+  ) {
+    return String(error)
+  }
+  try {
+    return JSON.stringify(error) ?? 'Unknown error'
+  } catch {
+    return 'Unknown error'
   }
 }

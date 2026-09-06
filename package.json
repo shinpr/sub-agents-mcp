@@ -1,6 +1,6 @@
 {
   "name": "sub-agents-mcp",
-  "version": "0.14.1",
+  "version": "0.14.2",
   "mcpName": "io.github.shinpr/sub-agents-mcp",
   "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude Code, Codex, Command Code, Google Antigravity, Gemini, GLM, Kimi, Grok, and OpenCode",
   "type": "module",
@@ -65,10 +65,6 @@
     "check:deps": "dpdm --no-warning --no-tree --circular --exclude \"node_modules|__tests__|\\.test\\.ts$|\\.spec\\.ts$\" --tsconfig ./tsconfig.json --transform --exit-code circular:1 src/index.ts",
     "check:knip": "knip",
     "check:all": "pnpm run check && pnpm run lint && pnpm run format:check && pnpm run check:deps && pnpm run check:knip && pnpm run build && pnpm run typecheck:test && pnpm run test",
-    "cleanup:processes": "bash ./scripts/cleanup-test-processes.sh",
-    "test:safe": "pnpm test && pnpm run cleanup:processes",
-    "lang:ja": "node scripts/set-language.js ja",
-    "lang:en": "node scripts/set-language.js en",
     "prepare": "husky"
   },
   "dependencies": {

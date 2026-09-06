@@ -12,14 +12,19 @@ export interface SessionData {
 export interface SessionEntry {
   timestamp: Date
 
+  /**
+   * Extra keys beyond the documented ones are preserved verbatim so a saved
+   * session stays fully inspectable when debugging.
+   */
   request: {
+    [key: string]: unknown
     agent: string
     prompt: string
     cwd?: string
-    extra_args?: string[]
   }
 
   response: {
+    [key: string]: unknown
     stdout: string
     stderr: string
     exitCode: number

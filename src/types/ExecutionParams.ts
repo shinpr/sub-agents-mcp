@@ -5,7 +5,5 @@ export interface ExecutionParams {
 
   cwd?: string
 
-  extra_args?: string[]
-
   agentFilePath?: string
 }

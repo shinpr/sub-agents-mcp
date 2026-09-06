@@ -1,7 +1,6 @@
-import type { ChildProcess, SpawnOptions } from 'node:child_process'
+import type { SpawnOptions } from 'node:child_process'
 import fs from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
-import type { ExecutionParams } from '../../types/ExecutionParams.js'
 import {
   AgentExecutor,
   type AgentPermission,
@@ -10,16 +9,33 @@ import {
   DEFAULT_EXECUTION_TIMEOUT,
 } from '../AgentExecutor.js'
 
+type SpawnMockOptions = SpawnOptions & { env: NodeJS.ProcessEnv }
+
+/** The subset of `ChildProcess` that {@link AgentExecutor} actually drives. */
+interface MockChildProcess {
+  stdin: { end: Mock }
+  stdout: { on: Mock }
+  stderr: { on: Mock }
+  on: Mock
+  kill: Mock
+}
+
+const mockSpawn = vi.hoisted(() =>
+  vi.fn<(command: string, args: string[], options: SpawnMockOptions) => MockChildProcess>()
+)
+
 vi.mock('node:child_process', () => ({
-  spawn: vi.fn(),
+  spawn: mockSpawn,
 }))
 
-import { spawn } from 'node:child_process'
-
-type SpawnMockOptions = SpawnOptions & { env: NodeJS.ProcessEnv }
-const mockSpawn = spawn as unknown as Mock<
-  (command: string, args: string[], options: SpawnMockOptions) => ChildProcess
->
+/** Arguments the executor passed to `spawn` on the given call. */
+function spawnArgs(callIndex = 0): string[] {
+  const call = mockSpawn.mock.calls[callIndex]
+  if (!call) {
+    throw new Error(`spawn was not called ${callIndex + 1} time(s)`)
+  }
+  return call[1]
+}
 
 function createMockProcess(options: {
   stdoutData?: string
@@ -30,7 +46,7 @@ function createMockProcess(options: {
   closeDelay?: number
   noClose?: boolean
   triggerError?: Error
-}) {
+}): MockChildProcess {
   const {
     stdoutData,
     stdoutChunks,
@@ -80,10 +96,10 @@ function createMockProcess(options: {
       }
       return true
     }),
-  } as any
+  }
 }
 
-function createSuccessMock(data = 'Test execution successful') {
+function createSuccessMock(data = 'Test execution successful'): MockChildProcess {
   return createMockProcess({
     stdoutData: `${JSON.stringify({ type: 'result', result: data })}\n`,
   })
@@ -493,7 +509,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const spawnEnv = mockSpawn.mock.calls[0][2].env
       expect(args).not.toContain(settingsPath)
       expect(Object.values(spawnEnv)).not.toContain(settingsPath)
@@ -510,7 +526,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const spawnEnv = mockSpawn.mock.calls[0][2].env
       expect(args).not.toContain(settingsPath)
       expect(Object.values(spawnEnv)).not.toContain(settingsPath)
@@ -563,7 +579,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       expect(args).not.toContain('-a')
       expect(args).not.toContain('secret-key-123')
     })
@@ -584,7 +600,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const spawnEnv = mockSpawn.mock.calls[0][2].env
       expect(spawnEnv['ANTHROPIC_BASE_URL']).toBe('https://api.z.ai/api/anthropic')
       expect(spawnEnv['ANTHROPIC_AUTH_TOKEN']).toBe('zai-secret')
@@ -640,7 +656,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const spawnEnv = mockSpawn.mock.calls[0][2].env
       expect(spawnEnv['ANTHROPIC_BASE_URL']).toBe('https://api.kimi.com/coding/')
       expect(spawnEnv['ANTHROPIC_API_KEY']).toBe('kimi-secret')
@@ -696,7 +712,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/test/cwd' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
 
       expect(args).toContain('--append-system-prompt')
       const spIdx = args.indexOf('--append-system-prompt')
@@ -715,7 +731,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const spIdx = args.indexOf('--append-system-prompt')
       const systemPrompt = args[spIdx + 1]
       expect(systemPrompt).toContain(`cwd: ${expectedCwd}`)
@@ -726,7 +742,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/test/cwd' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
 
       expect(args).toContain('--system-prompt')
       expect(args).not.toContain('--append-system-prompt')
@@ -746,7 +762,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/test/cwd' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
 
       expect(args).toContain('--system-prompt')
       expect(args).not.toContain('--append-system-prompt')
@@ -772,7 +788,7 @@ describe('AgentExecutor', () => {
       const spawnEnv = mockSpawn.mock.calls[0][2].env
       expect(spawnEnv['GEMINI_SYSTEM_MD']).toBe('/path/to/agent.md')
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const pIdx = args.indexOf('-p')
       expect(args[pIdx + 1]).toBe('Test prompt')
       expect(args[pIdx + 1]).not.toContain('[System Context]')
@@ -795,7 +811,7 @@ describe('AgentExecutor', () => {
       const spawnEnv = mockSpawn.mock.calls[0][2].env
       expect(spawnEnv['GEMINI_SYSTEM_MD']).toBe('/path/to/agent.md')
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const pIdx = args.indexOf('-p')
       expect(args[pIdx + 1]).toBe('Test prompt')
     })
@@ -805,7 +821,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const pIdx = args.indexOf('-p')
       const promptArg = args[pIdx + 1]
       expect(promptArg).toContain('[System Context]')
@@ -819,7 +835,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const promptArg = args[args.length - 1]
       expect(promptArg).toContain('[System Context]')
       expect(promptArg).toContain('test-agent')
@@ -832,7 +848,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const pIdx = args.indexOf('-p')
       const promptArg = args[pIdx + 1]
       expect(promptArg).toContain('[System Context]')
@@ -846,7 +862,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const pIdx = args.indexOf('-p')
       const promptArg = args[pIdx + 1]
       expect(promptArg).toContain('[System Context]')
@@ -860,7 +876,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const pIdx = args.indexOf('-p')
       const promptArg = args[pIdx + 1]
       expect(promptArg).toContain('[System Context]')
@@ -1065,30 +1081,11 @@ describe('AgentExecutor', () => {
     })
   })
 
-  describe('execution performance monitoring', () => {
-    it('should measure execution time accurately', async () => {
-      const executor = new AgentExecutor(createExecutionConfig('cursor'))
-
-      const startTime = Date.now()
-      const result = await executor.executeAgent({
-        agent: 'test-agent',
-        prompt: 'Quick task',
-        cwd: '/tmp',
-      })
-      const endTime = Date.now()
-
-      expect(result.executionTime).toBeGreaterThanOrEqual(0)
-      expect(result.executionTime).toBeLessThanOrEqual(endTime - startTime + 100)
-    })
-  })
-
   describe('error handling', () => {
     it('should handle invalid execution parameters', async () => {
       const executor = new AgentExecutor(createExecutionConfig('cursor'))
 
-      await expect(
-        executor.executeAgent({ agent: '', prompt: '', cwd: '/tmp' } as ExecutionParams)
-      ).rejects.toThrow()
+      await expect(executor.executeAgent({ agent: '', prompt: '', cwd: '/tmp' })).rejects.toThrow()
     })
 
     it('should handle timeout scenarios', async () => {
@@ -1205,7 +1202,7 @@ describe('AgentExecutor', () => {
 
         await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-        const args = mockSpawn.mock.calls[0][1] as string[]
+        const args = spawnArgs()
         expect(args.slice(0, expected.length)).toEqual(expected)
       }
     )
@@ -1215,18 +1212,16 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       expect(args.slice(0, 2)).toEqual(['--permission-mode', 'acceptEdits'])
     })
 
     it('should fall back to safe-edit when overrides.permission is undefined (mocks bypassing TS)', async () => {
-      const executor = new AgentExecutor(
-        createExecutionConfig('claude', { permission: undefined as unknown as AgentPermission })
-      )
+      const executor = new AgentExecutor(createExecutionConfig('claude', { permission: undefined }))
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       expect(args.slice(0, 2)).toEqual(['--permission-mode', 'acceptEdits'])
     })
 
@@ -1237,7 +1232,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       expect(args).toContain('--dangerously-skip-permissions')
       expect(args).not.toContain('--sandbox')
     })
@@ -1249,7 +1244,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       expect(args).toContain('--skip-git-repo-check')
     })
 
@@ -1258,7 +1253,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       expect(args).toContain('--skip-trust')
     })
 
@@ -1272,7 +1267,7 @@ describe('AgentExecutor', () => {
         agentFilePath: '/path/to/agent.md',
       })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       expect(args).toContain('--skip-trust')
     })
 
@@ -1281,7 +1276,7 @@ describe('AgentExecutor', () => {
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       expect(args).toEqual(
         expect.arrayContaining([
           '--permission-mode',
@@ -1307,7 +1302,7 @@ describe('AgentExecutor', () => {
           })
         )
         await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
-        const args = mockSpawn.mock.calls[0][1] as string[]
+        const args = spawnArgs()
         expect(args).not.toContain('--skip-git-repo-check')
       }
     })
@@ -1324,7 +1319,7 @@ describe('AgentExecutor', () => {
         agentFilePath: '/path/to/agent.md',
       })
 
-      const args = mockSpawn.mock.calls[0][1] as string[]
+      const args = spawnArgs()
       const promptArg = args[args.length - 1]
       expect(promptArg).toContain('[System Context]')
       expect(promptArg).toContain('test-agent')
@@ -1472,6 +1467,46 @@ describe('AgentExecutor', () => {
 
       expect(result.exitCode).toBe(127)
       expect(result.stderr).toContain('ENOENT')
+    })
+  })
+
+  describe('cancellation', () => {
+    it('should terminate the agent process when the request is aborted', async () => {
+      const controller = new AbortController()
+      // noClose keeps the process alive until it is killed, mirroring an agent
+      // that is still working when the client cancels.
+      mockSpawn.mockImplementationOnce(() => createMockProcess({ noClose: true }))
+
+      const executor = new AgentExecutor(createExecutionConfig('cursor'))
+      const pending = executor.executeAgent(
+        { agent: 'test-agent', prompt: 'Long task', cwd: '/tmp' },
+        controller.signal
+      )
+
+      controller.abort()
+      const result = await pending
+
+      const spawned = mockSpawn.mock.results[0]?.value
+      expect(spawned.kill).toHaveBeenCalledWith('SIGTERM')
+      expect(result.exitCode).toBe(130)
+      expect(result.stderr).toContain('cancelled')
+    })
+
+    it('should terminate the agent process when the executor is shut down', async () => {
+      mockSpawn.mockImplementationOnce(() => createMockProcess({ noClose: true }))
+
+      const executor = new AgentExecutor(createExecutionConfig('cursor'))
+      const pending = executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Long task',
+        cwd: '/tmp',
+      })
+
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
+      executor.terminateAll()
+      const result = await pending
+
+      expect(result.exitCode).toBe(130)
     })
   })
 })

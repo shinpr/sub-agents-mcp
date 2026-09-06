@@ -3,6 +3,24 @@ import path from 'node:path'
 import type { ServerConfig } from '../config/ServerConfig.js'
 import type { AgentDefinition } from '../types/AgentDefinition.js'
 import { type Logger, Logger as LoggerClass } from '../utils/Logger.js'
+import { agentNameProblem, suggestAgentName } from './AgentName.js'
+
+/** Sorts agent definition files by name, preferring `.md` over `.txt` on ties. */
+function compareAgentFiles(left: string, right: string): number {
+  const leftName = left.replace(/\.(md|txt)$/, '')
+  const rightName = right.replace(/\.(md|txt)$/, '')
+  const nameOrder = leftName.localeCompare(rightName)
+  if (nameOrder !== 0) {
+    return nameOrder
+  }
+  if (left.endsWith('.md') && right.endsWith('.txt')) {
+    return -1
+  }
+  if (left.endsWith('.txt') && right.endsWith('.md')) {
+    return 1
+  }
+  return left.localeCompare(right)
+}
 
 export class AgentManager {
   private logger: Logger
@@ -11,33 +29,22 @@ export class AgentManager {
     this.logger = new LoggerClass(config.logLevel)
   }
 
+  /** Definition files found on disk but unusable, keyed by file name. */
+  private readonly skippedDefinitions = new Map<string, string>()
+
+  /**
+   * Definition files that were discovered but cannot be exposed, with the reason.
+   * Surfaced to the caller so "the file is there but the agent is missing" is
+   * explainable without reading the server log.
+   */
+  getSkippedDefinitions(): { file: string; reason: string }[] {
+    return Array.from(this.skippedDefinitions, ([file, reason]) => ({ file, reason }))
+  }
+
   async getAgent(name: string): Promise<AgentDefinition | undefined> {
-    if (!name || typeof name !== 'string') {
-      throw new Error('Invalid agent name: agent name is required')
-    }
-
-    if (name.trim().length === 0) {
-      throw new Error('Invalid agent name: empty agent name not allowed')
-    }
-
-    if (name.length > 255) {
-      throw new Error('Invalid agent name: too long agent name')
-    }
-
-    const invalidChars = /[<>:"/\\|?*;`$()&|\s]/
-    if (invalidChars.test(name)) {
-      throw new Error('Invalid agent name: forbidden characters detected')
-    }
-
-    for (let i = 0; i < name.length; i++) {
-      const charCode = name.charCodeAt(i)
-      if ((charCode >= 0 && charCode <= 31) || charCode === 127) {
-        throw new Error('Invalid agent name: forbidden characters detected')
-      }
-    }
-
-    if (name.includes('..') || name.includes('./') || name.includes('.\\')) {
-      throw new Error('Invalid agent name: path traversal attempt detected')
+    const problem = agentNameProblem(name)
+    if (problem) {
+      throw new Error(`Invalid agent name: ${problem}`)
     }
 
     const agents = await this.loadAgentsFromDirectory()
@@ -53,6 +60,34 @@ export class AgentManager {
     await this.loadAgentsFromDirectory()
   }
 
+  /**
+   * Resolves an agent file to its real path, returning undefined when the file
+   * cannot be resolved. Throws when the resolved path escapes the agents directory.
+   */
+  private async resolveAgentFilePath(
+    agentsDir: string,
+    filePath: string,
+    file: string
+  ): Promise<string | undefined> {
+    let resolvedFilePath: string
+    try {
+      resolvedFilePath = await fs.promises.realpath(filePath)
+    } catch (error) {
+      this.logger.error(
+        'Failed to resolve agent definition file',
+        error instanceof Error ? error : undefined,
+        { filePath }
+      )
+      return undefined
+    }
+
+    if (!this.isWithinDirectory(agentsDir, resolvedFilePath)) {
+      throw new Error(`Agent definition resolves outside the configured agents directory: ${file}`)
+    }
+
+    return resolvedFilePath
+  }
+
   private async loadAgentsFromDirectory(): Promise<Map<string, AgentDefinition>> {
     try {
       const agentsDir = await fs.promises.realpath(path.resolve(this.config.agentsDir))
@@ -62,15 +97,7 @@ export class AgentManager {
 
       const agentFiles = files
         .filter((file) => file.endsWith('.md') || file.endsWith('.txt'))
-        .sort((left, right) => {
-          const leftName = left.replace(/\.(md|txt)$/, '')
-          const rightName = right.replace(/\.(md|txt)$/, '')
-          const nameOrder = leftName.localeCompare(rightName)
-          if (nameOrder !== 0) return nameOrder
-          if (left.endsWith('.md') && right.endsWith('.txt')) return -1
-          if (left.endsWith('.txt') && right.endsWith('.md')) return 1
-          return left.localeCompare(right)
-        })
+        .sort(compareAgentFiles)
 
       this.logger.info('Agent definition files discovered', {
         totalFiles: files.length,
@@ -79,10 +106,26 @@ export class AgentManager {
       })
 
       const agents = new Map<string, AgentDefinition>()
+      this.skippedDefinitions.clear()
 
       for (const file of agentFiles) {
         const filePath = path.join(agentsDir, file)
         const agentName = file.replace(/\.(md|txt)$/, '')
+
+        // Applying the run_agent naming rule here is what stops a definition from
+        // being listed under a name that would then be rejected on execution.
+        const nameProblem = agentNameProblem(agentName)
+        if (nameProblem) {
+          const extension = file.slice(agentName.length)
+          this.skippedDefinitions.set(file, nameProblem)
+          this.logger.warn('Agent definition skipped: unusable name', {
+            file,
+            reason: nameProblem,
+            suggestedFileName: `${suggestAgentName(agentName)}${extension}`,
+          })
+          continue
+        }
+
         if (agents.has(agentName)) {
           this.logger.warn('Duplicate agent definition ignored', {
             name: agentName,
@@ -92,22 +135,9 @@ export class AgentManager {
           continue
         }
 
-        let resolvedFilePath: string
-        try {
-          resolvedFilePath = await fs.promises.realpath(filePath)
-        } catch (error) {
-          this.logger.error(
-            'Failed to resolve agent definition file',
-            error instanceof Error ? error : undefined,
-            { filePath }
-          )
+        const resolvedFilePath = await this.resolveAgentFilePath(agentsDir, filePath, file)
+        if (!resolvedFilePath) {
           continue
-        }
-
-        if (!this.isWithinDirectory(agentsDir, resolvedFilePath)) {
-          throw new Error(
-            `Agent definition resolves outside the configured agents directory: ${file}`
-          )
         }
 
         const agent = await this.loadAgentFromFile(resolvedFilePath, agentName)
@@ -136,7 +166,9 @@ export class AgentManager {
       if (error instanceof Error && error.message.startsWith('Agent definition resolves outside')) {
         throw error
       }
-      throw new Error(`Failed to load agents from directory: ${this.config.agentsDir}`)
+      throw new Error(`Failed to load agents from directory: ${this.config.agentsDir}`, {
+        cause: error,
+      })
     }
   }
 

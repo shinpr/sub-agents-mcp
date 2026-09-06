@@ -1,16 +1,57 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import * as fs from 'node:fs/promises'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerConfig } from '../../config/ServerConfig.js'
 import { McpServer } from '../../server/McpServer.js'
+import type { MockChildProcess, SpawnMock } from '../helpers/child-process-mock.js'
+
+const mockSpawn: SpawnMock = vi.hoisted(() => vi.fn())
+
+vi.mock('node:child_process', () => ({
+  spawn: mockSpawn,
+}))
+
+/** A spawn double whose agent reports a successful result on stdout. */
+function succeedingProcess(resultText: string): MockChildProcess {
+  return {
+    stdin: { end: vi.fn() },
+    stdout: {
+      on: vi.fn((event: string, callback: (data: Buffer) => void) => {
+        if (event === 'data') {
+          callback(Buffer.from(`${JSON.stringify({ type: 'result', result: resultText })}\n`))
+        }
+      }),
+    },
+    stderr: { on: vi.fn() },
+    on: vi.fn((event: string, callback: (code: number) => void) => {
+      if (event === 'close') {
+        callback(0)
+      }
+    }),
+    kill: vi.fn(),
+  }
+}
 
 describe('McpServer Integration', () => {
   let server: McpServer
   let mockConfig: ServerConfig
+  let testAgentsDir: string
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    mockSpawn.mockImplementation(() => succeedingProcess('Agent finished the task'))
+
+    testAgentsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-server-integration-'))
+    await fs.writeFile(
+      path.join(testAgentsDir, 'test-agent.md'),
+      '# Test Agent\nAn agent used by the integration tests.\n'
+    )
+
     mockConfig = {
       serverName: 'test-mcp-server',
       serverVersion: '1.0.0',
-      agentsDir: './test-agents',
+      agentsDir: testAgentsDir,
       logLevel: 'info',
       agentType: 'cursor',
       agentPermission: 'safe-edit',
@@ -31,6 +72,7 @@ describe('McpServer Integration', () => {
     if (server) {
       await server.close()
     }
+    await fs.rm(testAgentsDir, { recursive: true, force: true })
   })
 
   describe('tool registration', () => {
@@ -60,7 +102,9 @@ describe('McpServer Integration', () => {
       expect(runAgentTool?.inputSchema.properties).toHaveProperty('agent')
       expect(runAgentTool?.inputSchema.properties).toHaveProperty('prompt')
       expect(runAgentTool?.inputSchema.properties).toHaveProperty('cwd')
-      expect(runAgentTool?.inputSchema.properties).toHaveProperty('extra_args')
+      expect(runAgentTool?.inputSchema.properties).toHaveProperty('session_id')
+      // extra_args was accepted but never reached the CLI, so it is no longer advertised.
+      expect(runAgentTool?.inputSchema.properties).not.toHaveProperty('extra_args')
       expect(runAgentTool?.inputSchema.required).toEqual(['agent', 'prompt', 'cwd'])
     })
   })
@@ -89,6 +133,10 @@ describe('McpServer Integration', () => {
         (resource) => resource.uri.startsWith('agents://') && resource.uri !== 'agents://list'
       )
 
+      // Guards the loop below from passing vacuously when discovery finds nothing.
+      expect(agentResources).not.toHaveLength(0)
+      expect(agentResources.map((resource) => resource.uri)).toContain('agents://test-agent')
+
       for (const agentResource of agentResources) {
         expect(agentResource.name).toBeTruthy()
         expect(agentResource.description).toBeTruthy()
@@ -111,14 +159,18 @@ describe('McpServer Integration', () => {
 
       const result = await server.callTool('run_agent', params)
 
-      expect(result).toBeDefined()
-      expect(result.content).toBeDefined()
-      expect(Array.isArray(result.content)).toBe(true)
-      expect(result.content.length).toBeGreaterThan(0)
+      // An error response also carries `content`, so the success criteria have to
+      // be asserted explicitly rather than inferred from the response existing.
+      expect(result.isError).toBe(false)
+      expect(result.structuredContent).toMatchObject({
+        status: 'success',
+        agent: 'test-agent',
+        exit_code: 0,
+      })
 
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent).toBeDefined()
-      expect(textContent?.text).toBeDefined()
+      expect(textContent?.text).toContain('Agent finished the task')
+      expect(mockSpawn).toHaveBeenCalledTimes(1)
     })
 
     it('should validate run_agent tool parameters', async () => {
@@ -126,9 +178,9 @@ describe('McpServer Integration', () => {
         prompt: 'Test prompt',
       }
 
-      const result = (await server.callTool('run_agent', invalidParams)) as any
+      const result = await server.callTool('run_agent', invalidParams)
       expect(result.content).toBeDefined()
-      const textContent = result.content.find((c: any) => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent?.text).toMatch(/agent.*required/i)
     })
 
@@ -247,10 +299,38 @@ describe('McpServer Integration', () => {
     })
 
     it('should provide meaningful error messages', async () => {
-      const result = (await server.callTool('run_agent', {})) as any
+      const result = await server.callTool('run_agent', {})
       expect(result.content).toBeDefined()
-      const textContent = result.content.find((c: any) => c.type === 'text')
+      const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent?.text).toMatch(/agent.*required|prompt.*required/i)
+    })
+  })
+
+  describe('session management wiring', () => {
+    it('should hand back a session_id only when sessions are enabled', async () => {
+      const params = { agent: 'test-agent', prompt: 'Hello', cwd: process.cwd() }
+
+      // Whether a SessionManager was built is only observable through the
+      // response, so that is what is asserted rather than the private field.
+      const withoutSessions = new McpServer(mockConfig)
+      try {
+        const result = await withoutSessions.callTool('run_agent', params)
+        expect(result._meta).toBeUndefined()
+        expect(result.structuredContent).not.toHaveProperty('session_id')
+      } finally {
+        await withoutSessions.close()
+      }
+
+      const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-server-sessions-'))
+      const withSessions = new McpServer({ ...mockConfig, sessionEnabled: true, sessionDir })
+      try {
+        const result = await withSessions.callTool('run_agent', params)
+        expect(result._meta?.session_id).toEqual(expect.any(String))
+        expect(result.structuredContent).toHaveProperty('session_id')
+      } finally {
+        await withSessions.close()
+        await fs.rm(sessionDir, { recursive: true, force: true })
+      }
     })
   })
 })
