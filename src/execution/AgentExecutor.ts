@@ -620,16 +620,13 @@ export class AgentExecutor {
     if (!this.config.agentsSettingsPath) {
       return env
     }
-    switch (this.config.agentType) {
-      case 'cursor':
-        env['CURSOR_CONFIG_DIR'] = this.config.agentsSettingsPath
-        break
-      case 'codex':
-        env['CODEX_HOME'] = this.config.agentsSettingsPath
-        break
-      // Claude uses argv; redirected Claude backends avoid Claude settings.
-      // Other backends use normal config discovery or do not support this override.
+    if (this.config.agentType === 'cursor') {
+      env['CURSOR_CONFIG_DIR'] = this.config.agentsSettingsPath
+    } else if (this.config.agentType === 'codex') {
+      env['CODEX_HOME'] = this.config.agentsSettingsPath
     }
+    // Claude uses argv; redirected Claude backends avoid Claude settings.
+    // Other backends use normal config discovery or do not support this override.
     return env
   }
 

@@ -95,7 +95,7 @@ export function toErrorMessage(error: unknown): string {
     return String(error)
   }
   try {
-    return JSON.stringify(error) ?? 'Unknown error'
+    return JSON.stringify(error) || 'Unknown error'
   } catch {
     return 'Unknown error'
   }
