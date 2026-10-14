@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { AppError, ValidationError } from '../ErrorHandler.js'
+import { AppError, toErrorMessage, ValidationError } from '../ErrorHandler.js'
+
+describe('toErrorMessage', () => {
+  it.each([
+    { label: 'function', value: (): undefined => undefined },
+    {
+      label: 'object whose toJSON returns undefined',
+      value: { toJSON: (): undefined => undefined },
+    },
+  ])('should return a fallback for a $label', ({ value }) => {
+    expect(toErrorMessage(value)).toBe('Unknown error')
+  })
+
+  it('should serialize an object into a message', () => {
+    expect(toErrorMessage({ reason: 'failed' })).toBe('{"reason":"failed"}')
+  })
+})
 
 describe('AppError', () => {
   it('should create error with message, code, and statusCode', () => {

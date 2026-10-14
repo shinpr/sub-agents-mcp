@@ -1,6 +1,6 @@
 {
   "name": "sub-agents-mcp",
-  "version": "0.14.2",
+  "version": "0.14.3",
   "mcpName": "io.github.shinpr/sub-agents-mcp",
   "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude Code, Codex, Command Code, Google Antigravity, Gemini, GLM, Kimi, Grok, and OpenCode",
   "type": "module",
@@ -68,21 +68,21 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0"
+    "@modelcontextprotocol/sdk": "^1.32.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
-    "@types/node": "^26.4.1",
-    "@vitest/ui": "^4.1.11",
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^26.6.4",
+    "@vitest/ui": "^5.0.3",
     "dpdm": "^4.3.0",
     "husky": "^9.1.7",
-    "knip": "^6.34.0",
-    "lint-staged": "^17.4.1",
-    "tsx": "^4.23.13",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "knip": "^6.40.0",
+    "lint-staged": "^17.6.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
   },
-  "packageManager": "pnpm@11.25.0",
+  "packageManager": "pnpm@12.10.1",
   "engines": {
     "node": ">=22.22.2"
   },
