@@ -287,7 +287,7 @@ describe('StreamProcessor', () => {
       })
     })
 
-    it('should preserve OpenCode text as partial when the process exits without a finish event', () => {
+    it('should leave the outcome to the exit code when OpenCode ends without a final finish event', () => {
       processor = new StreamProcessor('opencode')
       expect(processor.processLine('{"type":"text","part":{"text":"work in progress"}}')).toBe(
         false
@@ -299,8 +299,7 @@ describe('StreamProcessor', () => {
       expect(processor.getResult()).toEqual({
         type: 'result',
         result: 'work in progress',
-        status: 'partial',
-        stop_reason: 'process-exit',
+        status: 'success',
       })
     })
 

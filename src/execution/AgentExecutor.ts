@@ -6,6 +6,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { ExecutionParams } from '../types/ExecutionParams.js'
 import { toErrorMessage } from '../utils/ErrorHandler.js'
 import { isLogLevel, Logger, type LogLevel } from '../utils/Logger.js'
+import { isOpenCodeV2 } from './OpenCodeVersion.js'
 import { StreamProcessor } from './StreamProcessor.js'
 
 /**
@@ -58,6 +59,13 @@ const MAX_CAPTURED_OUTPUT_BYTES = 16 * 1024 * 1024
 const TERMINATION_GRACE_MS = 1000
 
 type EnvOverrides = Record<string, string | null>
+
+interface CommandInvocation {
+  command: string
+  args: string[]
+  envOverrides: EnvOverrides
+  isolateXdgState?: boolean
+}
 
 const GLM_BASE_URL = 'https://api.z.ai/api/anthropic'
 const KIMI_BASE_URL = 'https://api.kimi.com/coding/'
@@ -164,7 +172,7 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     'safe-edit': ['--mode', 'accept-edits', '--sandbox'],
     yolo: ['--dangerously-skip-permissions'],
   },
-  // OpenCode permissions are supplied through OPENCODE_PERMISSION.
+  // OpenCode permissions are supplied through the environment.
   opencode: {
     'read-only': [],
     'safe-edit': [],
@@ -584,11 +592,7 @@ export class AgentExecutor {
     }
   }
 
-  private buildCommandArgs(params: ExecutionParams): {
-    command: string
-    args: string[]
-    envOverrides: EnvOverrides
-  } {
+  private async buildCommandArgs(params: ExecutionParams): Promise<CommandInvocation> {
     const envOverrides = this.buildSettingsPathEnv()
 
     switch (this.config.agentType) {
@@ -609,7 +613,7 @@ export class AgentExecutor {
       case 'antigravity':
         return this.buildAntigravityArgs(params, envOverrides)
       case 'opencode':
-        return this.buildOpenCodeArgs(params, envOverrides)
+        return this.buildOpenCodeArgs(params, envOverrides, await isOpenCodeV2())
       case 'command-code':
         return this.buildCommandCodeArgs(params, envOverrides)
     }
@@ -677,10 +681,7 @@ export class AgentExecutor {
     return `[System Context]\n${params.agent}\n\n[User Prompt]\n${params.prompt}`
   }
 
-  private buildCodexArgs(
-    params: ExecutionParams,
-    envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  private buildCodexArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
     const flags = this.invocationFlags()
     // System context is concatenated into the user prompt rather than injected
     // via `-c model_instructions_file=...`: that flag fully replaces codex's
@@ -695,7 +696,7 @@ export class AgentExecutor {
   private buildCommandCodeArgs(
     params: ExecutionParams,
     envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  ): CommandInvocation {
     const flags = this.invocationFlags()
     const formattedPrompt = this.formatSystemUserPrompt(params)
     const args = [
@@ -711,10 +712,7 @@ export class AgentExecutor {
     return { command: 'command-code', args, envOverrides }
   }
 
-  private buildClaudeArgs(
-    params: ExecutionParams,
-    envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  private buildClaudeArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
     const flags = this.invocationFlags()
     const cwd = params.cwd || process.cwd()
     const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
@@ -734,10 +732,7 @@ export class AgentExecutor {
     return { command: 'claude', args, envOverrides }
   }
 
-  private buildGlmArgs(
-    params: ExecutionParams,
-    envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  private buildGlmArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
     const apiKey = this.config.glmApiKey
     if (!apiKey?.trim()) {
       throw new Error(GLM_MISSING_API_KEY_ERROR)
@@ -750,10 +745,7 @@ export class AgentExecutor {
     })
   }
 
-  private buildKimiArgs(
-    params: ExecutionParams,
-    envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  private buildKimiArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
     const apiKey = this.config.kimiApiKey
     if (!apiKey?.trim()) {
       throw new Error(KIMI_MISSING_API_KEY_ERROR)
@@ -770,7 +762,7 @@ export class AgentExecutor {
     params: ExecutionParams,
     envOverrides: EnvOverrides,
     redirect: ClaudeRedirectTarget
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  ): CommandInvocation {
     const { baseUrl, apiKey, credentialEnv } = redirect
     const flags = this.invocationFlags()
     const cwd = params.cwd || process.cwd()
@@ -801,10 +793,7 @@ export class AgentExecutor {
     }
   }
 
-  private buildGeminiArgs(
-    params: ExecutionParams,
-    envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  private buildGeminiArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
     const flags = this.invocationFlags()
     // --skip-trust is unconditional: headless runs in untrusted folders are
     // refused without it (Gemini downgrades to interactive prompts which
@@ -822,10 +811,7 @@ export class AgentExecutor {
     return { command: 'gemini', args, envOverrides }
   }
 
-  private buildCursorArgs(
-    params: ExecutionParams,
-    envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  private buildCursorArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
     const flags = this.invocationFlags()
     const formattedPrompt = this.formatSystemUserPrompt(params)
     const args = [...flags, '--output-format', 'json', '-p', formattedPrompt]
@@ -836,10 +822,7 @@ export class AgentExecutor {
     return { command: 'cursor-agent', args, envOverrides: env }
   }
 
-  private buildGrokArgs(
-    params: ExecutionParams,
-    envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  private buildGrokArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
     const flags = this.invocationFlags()
     const cwd = params.cwd || process.cwd()
     const formattedPrompt = this.formatSystemUserPrompt(params)
@@ -859,7 +842,7 @@ export class AgentExecutor {
   private buildAntigravityArgs(
     params: ExecutionParams,
     envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
+  ): CommandInvocation {
     const flags = this.invocationFlags()
     const formattedPrompt = this.formatSystemUserPrompt(params)
     const args = [...flags, '--output-format', 'stream-json', '-p', formattedPrompt]
@@ -868,19 +851,46 @@ export class AgentExecutor {
 
   private buildOpenCodeArgs(
     params: ExecutionParams,
-    envOverrides: EnvOverrides
-  ): { command: string; args: string[]; envOverrides: EnvOverrides } {
-    const flags = this.invocationFlags()
+    envOverrides: EnvOverrides,
+    isV2: boolean
+  ): CommandInvocation {
+    const flags = isV2 ? this.openCodeV2Flags() : this.invocationFlags()
     const formattedPrompt = this.formatSystemUserPrompt(params)
-    const args = [...flags, 'run', '--format', 'json', '--auto', formattedPrompt]
+    const permission = OPENCODE_PERMISSION_MAPPING[this.config.permission]
+    // OpenCode 2 ignores OPENCODE_PERMISSION and migrates the v1 permission shape.
+    const permissionEnv: EnvOverrides = isV2
+      ? { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission }) }
+      : { OPENCODE_PERMISSION: JSON.stringify(permission) }
     return {
       command: 'opencode',
-      args,
+      // OpenCode 2 rejects run options placed before the subcommand.
+      args: ['run', ...flags, '--format', 'json', '--auto', formattedPrompt],
       envOverrides: {
         ...envOverrides,
-        OPENCODE_PERMISSION: JSON.stringify(OPENCODE_PERMISSION_MAPPING[this.config.permission]),
+        ...permissionEnv,
+        // OpenCode takes its working directory from PWD, not the process cwd.
+        PWD: params.cwd || process.cwd(),
       },
+      // OpenCode 2 stores credentials in the database that isolation would hide.
+      isolateXdgState: !isV2,
     }
+  }
+
+  private openCodeV2Flags(): string[] {
+    // The shared background service ignores this process's environment,
+    // so per-run permissions require a private server.
+    const flags = ['--standalone']
+    const { model, effort } = this.config
+    if (effort && !model) {
+      throw new Error(
+        'OpenCode 2 selects AGENT_EFFORT as a model variant, so it requires AGENT_MODEL. ' +
+          'Set AGENT_MODEL or remove AGENT_EFFORT.'
+      )
+    }
+    if (model) {
+      flags.push('--model', effort ? `${model}#${effort}` : model)
+    }
+    return flags
   }
 
   private buildSpawnEnv(envOverrides: EnvOverrides): NodeJS.ProcessEnv {
@@ -895,11 +905,12 @@ export class AgentExecutor {
     return spawnEnv
   }
 
-  private async prepareSpawnEnvironment(envOverrides: EnvOverrides): Promise<{
+  private async prepareSpawnEnvironment(invocation: CommandInvocation): Promise<{
     env: NodeJS.ProcessEnv
     cleanup: () => Promise<void>
   }> {
-    if (this.config.agentType !== 'opencode') {
+    const { envOverrides } = invocation
+    if (!invocation.isolateXdgState) {
       return { env: this.buildSpawnEnv(envOverrides), cleanup: async (): Promise<void> => {} }
     }
 
@@ -948,8 +959,9 @@ export class AgentExecutor {
     params: ExecutionParams,
     signal?: AbortSignal
   ): Promise<SpawnOutcome> {
-    const { command, args, envOverrides } = this.buildCommandArgs(params)
-    const preparedEnvironment = await this.prepareSpawnEnvironment(envOverrides)
+    const invocation = await this.buildCommandArgs(params)
+    const { command, args } = invocation
+    const preparedEnvironment = await this.prepareSpawnEnvironment(invocation)
 
     this.logger.debug('Executing with spawn', {
       command,

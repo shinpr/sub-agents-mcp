@@ -28,6 +28,12 @@ vi.mock('node:child_process', () => ({
   spawn: mockSpawn,
 }))
 
+const mockIsOpenCodeV2 = vi.hoisted(() => vi.fn<() => Promise<boolean>>())
+
+vi.mock('../OpenCodeVersion.js', () => ({
+  isOpenCodeV2: mockIsOpenCodeV2,
+}))
+
 /** Arguments the executor passed to `spawn` on the given call. */
 function spawnArgs(callIndex = 0): string[] {
   const call = mockSpawn.mock.calls[callIndex]
@@ -109,6 +115,7 @@ describe('AgentExecutor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSpawn.mockImplementation(() => createSuccessMock())
+    mockIsOpenCodeV2.mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -250,16 +257,24 @@ describe('AgentExecutor', () => {
       )
     })
 
-    it('should use opencode run with non-interactive JSON output', async () => {
-      const executor = new AgentExecutor(createExecutionConfig('opencode'))
+    it('should place OpenCode 1 run options after the run subcommand', async () => {
+      const executor = new AgentExecutor(
+        createExecutionConfig('opencode', { model: 'provider/model', effort: 'high' })
+      )
 
       await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
 
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'opencode',
-        expect.arrayContaining(['run', '--format', 'json', '--auto']),
-        expect.any(Object)
-      )
+      expect(mockSpawn.mock.calls[0][0]).toBe('opencode')
+      expect(spawnArgs().slice(0, -1)).toEqual([
+        'run',
+        '--model',
+        'provider/model',
+        '--variant',
+        'high',
+        '--format',
+        'json',
+        '--auto',
+      ])
     })
 
     it('should use Command Code in headless JSON mode without persisting a session', async () => {
@@ -315,7 +330,6 @@ describe('AgentExecutor', () => {
       { agentType: 'kimi', expected: ['--effort', 'high'] },
       { agentType: 'grok', expected: ['--reasoning-effort', 'high'] },
       { agentType: 'antigravity', expected: ['--effort', 'high'] },
-      { agentType: 'opencode', expected: ['--variant', 'high'] },
       { agentType: 'command-code', expected: ['--effort', 'high'] },
     ] as const)('should map effort for $agentType', async ({ agentType, expected }) => {
       const executor = new AgentExecutor(
@@ -405,6 +419,64 @@ describe('AgentExecutor', () => {
         '/user/data/opencode/auth.json',
         expect.stringMatching(/subagent-opencode-.*\/data\/opencode\/auth\.json$/)
       )
+    })
+
+    it('should pass the working directory to OpenCode through PWD', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('opencode'))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/work/dir' })
+
+      expect(mockSpawn.mock.calls[0][2].env.PWD).toBe('/work/dir')
+    })
+
+    it('should run OpenCode 2 on a private server with config permissions and a model variant', async () => {
+      mockIsOpenCodeV2.mockResolvedValue(true)
+      vi.stubEnv('XDG_DATA_HOME', '/user/data')
+      const executor = new AgentExecutor(
+        createExecutionConfig('opencode', {
+          permission: 'read-only',
+          model: 'provider/model',
+          effort: 'high',
+        })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp' })
+
+      expect(spawnArgs().slice(0, -1)).toEqual([
+        'run',
+        '--standalone',
+        '--model',
+        'provider/model#high',
+        '--format',
+        'json',
+        '--auto',
+      ])
+      const env = mockSpawn.mock.calls[0][2].env
+      expect(env.OPENCODE_PERMISSION).toBeUndefined()
+      expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? '{}')).toEqual({
+        permission: {
+          edit: 'deny',
+          task: 'deny',
+          external_directory: 'deny',
+          question: 'deny',
+        },
+      })
+      expect(env.XDG_DATA_HOME).toBe('/user/data')
+    })
+
+    it('should reject OpenCode 2 effort without a model before spawning', async () => {
+      mockIsOpenCodeV2.mockResolvedValue(true)
+      const executor = new AgentExecutor(createExecutionConfig('opencode', { effort: 'high' }))
+
+      const result = await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: 'Test prompt',
+        cwd: '/tmp',
+      })
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toMatch(/requires AGENT_MODEL/)
+      expect(mockSpawn).not.toHaveBeenCalled()
     })
 
     it('should warn and continue when OpenCode authentication cannot be copied', async () => {
@@ -1028,10 +1100,10 @@ describe('AgentExecutor', () => {
       })
     })
 
-    it('should return partial OpenCode text when the finish event is missing', async () => {
+    it('should return OpenCode text when the stream ends without a final finish event', async () => {
       mockSpawn.mockImplementationOnce(() =>
         createMockProcess({
-          stdoutData: '{"type":"text","part":{"text":"partial answer"}}',
+          stdoutData: '{"type":"text","part":{"text":"final answer"}}',
         })
       )
       const executor = new AgentExecutor(createExecutionConfig('opencode'))
@@ -1045,9 +1117,8 @@ describe('AgentExecutor', () => {
       expect(result.hasResult).toBe(true)
       expect(result.resultJson).toEqual({
         type: 'result',
-        result: 'partial answer',
-        status: 'partial',
-        stop_reason: 'process-exit',
+        result: 'final answer',
+        status: 'success',
       })
     })
 
