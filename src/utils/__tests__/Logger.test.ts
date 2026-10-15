@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Logger } from '../Logger.js'
+import { Logger, type LogLevel } from '../Logger.js'
 
 describe('Logger', () => {
   let logger: Logger
@@ -16,55 +16,26 @@ describe('Logger', () => {
   })
 
   describe('Log Level Management', () => {
-    it('should filter logs below warn level when created with warn level', () => {
-      const warnLogger = new Logger('warn')
-      const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    it.each<[string, LogLevel | undefined, string[], string[]]>([
+      ['debug', 'debug', ['DEBUG', 'INFO', 'WARN', 'ERROR'], []],
+      ['default (info)', undefined, ['INFO', 'WARN', 'ERROR'], ['DEBUG']],
+      ['warn', 'warn', ['WARN', 'ERROR'], ['DEBUG', 'INFO']],
+      ['error', 'error', ['ERROR'], ['DEBUG', 'INFO', 'WARN']],
+    ])('should emit only levels at or above the %s level', (_label, level, emitted, suppressed) => {
+      const levelLogger = new Logger(level)
 
-      warnLogger.debug('Debug message')
-      warnLogger.info('Info message')
-      warnLogger.warn('Warning message')
-      warnLogger.error('Error message')
+      levelLogger.debug('Debug message')
+      levelLogger.info('Info message')
+      levelLogger.warn('Warning message')
+      levelLogger.error('Error message')
 
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('WARN: Warning message'))
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
-      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('DEBUG:'))
-      expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('INFO:'))
-
-      warnSpy.mockRestore()
-    })
-
-    it('should log all levels when created with debug level', () => {
-      const debugLogger = new Logger('debug')
-      const debugSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      debugLogger.debug('Debug message')
-      debugLogger.info('Info message')
-      debugLogger.warn('Warning message')
-      debugLogger.error('Error message')
-
-      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('DEBUG: Debug message'))
-      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('INFO: Info message'))
-      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('WARN: Warning message'))
-      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
-
-      debugSpy.mockRestore()
-    })
-
-    it('should only log errors when created with error level', () => {
-      const errorLogger = new Logger('error')
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      errorLogger.debug('Debug message')
-      errorLogger.info('Info message')
-      errorLogger.warn('Warning message')
-      errorLogger.error('Error message')
-
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('ERROR: Error message'))
-      expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('DEBUG:'))
-      expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('INFO:'))
-      expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('WARN:'))
-
-      errorSpy.mockRestore()
+      expect(consoleSpy).toHaveBeenCalledTimes(emitted.length)
+      for (const name of emitted) {
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining(`${name}:`))
+      }
+      for (const name of suppressed) {
+        expect(consoleSpy).not.toHaveBeenCalledWith(expect.stringContaining(`${name}:`))
+      }
     })
   })
 
@@ -91,38 +62,31 @@ describe('Logger', () => {
       )
     })
 
-    it('should handle empty context gracefully', () => {
-      logger.info('Test message', {})
+    it.each([
+      {
+        label: 'an empty context',
+        emit: (target: Logger) => target.info('Test message', {}),
+        message: 'INFO: Test message',
+      },
+      {
+        label: 'no context',
+        emit: (target: Logger) => target.info('Simple message'),
+        message: 'INFO: Simple message',
+      },
+      {
+        label: 'an error call without an error object',
+        emit: (target: Logger) => target.error('Error without exception'),
+        message: 'ERROR: Error without exception',
+      },
+    ])('should log only the message for $label', ({ emit, message }) => {
+      emit(logger)
 
       expect(consoleSpy).toHaveBeenCalledTimes(1)
-      const [message, context] = consoleSpy.mock.calls[0]
-      expect(message).toContain('INFO: Test message')
-      expect(context).toBeUndefined() // Empty context should not be passed
-    })
-
-    it('should not log context when not provided', () => {
-      logger.info('Simple message')
-
-      expect(consoleSpy).toHaveBeenCalledTimes(1)
-      expect(consoleSpy.mock.calls[0]).toHaveLength(1) // Only message, no context
+      expect(consoleSpy.mock.calls[0]).toEqual([expect.stringContaining(message)])
     })
   })
 
   describe('Error Logging', () => {
-    it('should log error messages with error object', () => {
-      const error = new Error('Test error')
-
-      logger.error('Error occurred', error)
-
-      expect(consoleSpy).toHaveBeenCalledTimes(1)
-      const [message, context] = consoleSpy.mock.calls[0]
-      expect(message).toContain('ERROR: Error occurred')
-      expect(context).toMatchObject({
-        error: 'Test error',
-        stack: expect.any(String),
-      })
-    })
-
     it('should log error with both error object and additional context', () => {
       const error = new Error('Test error')
       const additionalContext = { operation: 'file-read', filePath: '/test/file.txt' }
@@ -138,50 +102,6 @@ describe('Logger', () => {
         error: 'Test error',
         stack: expect.any(String),
       })
-    })
-
-    it('should log error without error object when not provided', () => {
-      logger.error('Error without exception')
-
-      expect(consoleSpy).toHaveBeenCalledTimes(1)
-      const [message, context] = consoleSpy.mock.calls[0]
-      expect(message).toContain('ERROR: Error without exception')
-      expect(context).toBeUndefined()
-    })
-  })
-
-  describe('Constructor', () => {
-    it('should use default info level when no level provided', () => {
-      const defaultLogger = new Logger()
-      const infoSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      defaultLogger.debug('Debug msg')
-      defaultLogger.info('Info msg')
-
-      expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining('INFO: Info msg'))
-      expect(infoSpy).not.toHaveBeenCalledWith(expect.stringContaining('DEBUG:'))
-
-      infoSpy.mockRestore()
-    })
-
-    it('should accept custom level in constructor', () => {
-      const debugLogger = new Logger('debug')
-      const errorLogger = new Logger('error')
-      const debugSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      debugLogger.debug('Debug from debug logger')
-      errorLogger.debug('Debug from error logger')
-      errorLogger.error('Error from error logger')
-
-      expect(debugSpy).toHaveBeenCalledWith(
-        expect.stringContaining('DEBUG: Debug from debug logger')
-      )
-      expect(debugSpy).toHaveBeenCalledWith(
-        expect.stringContaining('ERROR: Error from error logger')
-      )
-      expect(debugSpy).not.toHaveBeenCalledWith(expect.stringContaining('Debug from error logger'))
-
-      debugSpy.mockRestore()
     })
   })
 })

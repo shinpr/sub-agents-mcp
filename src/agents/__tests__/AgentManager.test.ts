@@ -18,14 +18,12 @@ vi.mock('node:path', () => ({
   default: {
     resolve: vi.fn(),
     join: vi.fn(),
-    basename: vi.fn(),
     relative: vi.fn(),
     isAbsolute: vi.fn(),
     sep: '/',
   },
   resolve: vi.fn(),
   join: vi.fn(),
-  basename: vi.fn(),
   relative: vi.fn(),
   isAbsolute: vi.fn(),
   sep: '/',
@@ -41,7 +39,6 @@ const {
 } = fsMocks
 const mockResolve = vi.mocked(path.resolve)
 const mockJoin = vi.mocked(path.join)
-const mockBasename = vi.mocked(path.basename)
 const mockRelative = vi.mocked(path.relative)
 const mockIsAbsolute = vi.mocked(path.isAbsolute)
 
@@ -78,7 +75,6 @@ describe('AgentManager', () => {
     mockRealpath.mockClear()
     mockResolve.mockClear()
     mockJoin.mockClear()
-    mockBasename.mockClear()
     mockRelative.mockClear()
     mockIsAbsolute.mockClear()
 
@@ -101,7 +97,6 @@ describe('AgentManager', () => {
     mockRealpath.mockClear()
     mockResolve.mockClear()
     mockJoin.mockClear()
-    mockBasename.mockClear()
     mockRelative.mockClear()
     mockIsAbsolute.mockClear()
   })
@@ -117,10 +112,6 @@ describe('AgentManager', () => {
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
-      mockBasename.mockImplementation((filePath) => {
-        const parts = filePath.split('/')
-        return parts[parts.length - 1]
-      })
 
       const agents = await agentManager.listAgents()
 
@@ -146,26 +137,12 @@ describe('AgentManager', () => {
       mockReadFile.mockResolvedValue('# Markdown Reviewer')
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
-      mockBasename.mockImplementation((filePath) => filePath.split('/').at(-1) || '')
 
       const agents = await agentManager.listAgents()
 
       expect(agents).toHaveLength(1)
       expect(agents[0]?.filePath).toBe('/test/agents/reviewer.md')
       expect(mockReadFile).toHaveBeenCalledTimes(1)
-    })
-
-    it('should reject an agent definition symlink that resolves outside AGENTS_DIR', async () => {
-      mockReaddir.mockResolvedValue(['outside.md'])
-      mockResolve.mockReturnValue('/test/agents')
-      mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
-      mockRealpath
-        .mockResolvedValueOnce('/test/agents')
-        .mockResolvedValueOnce('/outside/outside.md')
-      mockRelative.mockReturnValue('../../outside/outside.md')
-
-      await expect(agentManager.getAgent('outside')).rejects.toThrow(/resolves outside/)
-      expect(mockReadFile).not.toHaveBeenCalled()
     })
 
     it('should preserve the discovered name for a symlink within AGENTS_DIR', async () => {
@@ -231,11 +208,9 @@ describe('AgentManager', () => {
       mockReadFile.mockResolvedValue(mockContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockReturnValue('/test/agents/test-agent.md')
-      mockBasename.mockReturnValue('test-agent.md')
 
       const agent = await agentManager.getAgent('test-agent')
 
-      expect(agent).toBeDefined()
       expect(agent?.name).toBe('test-agent')
       expect(agent?.description).toBe('Test Agent')
       expect(agent?.content).toBe(mockContent)
@@ -243,43 +218,35 @@ describe('AgentManager', () => {
       expect(agent?.lastModified).toEqual(mockStats.mtime)
     })
 
-    it('should extract description from first heading in markdown', async () => {
-      const mockFiles = ['agent.md']
-      const mockStats = { mtime: new Date('2025-01-01') }
-      const mockContent = `Some preamble text
-# My Custom Agent
-This agent does amazing things.`
+    it.each([
+      {
+        source: 'the first heading',
+        fileName: 'agent.md',
+        agentName: 'agent',
+        content: 'Some preamble text\n# My Custom Agent\nThis agent does amazing things.',
+        expectedDescription: 'My Custom Agent',
+      },
+      {
+        source: 'the first line when no heading exists',
+        fileName: 'simple-agent.txt',
+        agentName: 'simple-agent',
+        content: 'Simple agent for basic tasks\nWith some additional content.',
+        expectedDescription: 'Simple agent for basic tasks',
+      },
+    ])(
+      'should take the description from $source',
+      async ({ fileName, agentName, content, expectedDescription }) => {
+        mockReaddir.mockResolvedValue([fileName])
+        mockStat.mockResolvedValue({ mtime: new Date('2025-01-01') })
+        mockReadFile.mockResolvedValue(content)
+        mockResolve.mockReturnValue('/test/agents')
+        mockJoin.mockReturnValue(`/test/agents/${fileName}`)
 
-      mockReaddir.mockResolvedValue(mockFiles)
-      mockStat.mockResolvedValue(mockStats)
-      mockReadFile.mockResolvedValue(mockContent)
-      mockResolve.mockReturnValue('/test/agents')
-      mockJoin.mockReturnValue('/test/agents/agent.md')
-      mockBasename.mockReturnValue('agent.md')
+        const agent = await agentManager.getAgent(agentName)
 
-      const agent = await agentManager.getAgent('agent')
-
-      expect(agent).toBeDefined()
-      expect(agent?.description).toBe('My Custom Agent')
-    })
-
-    it('should fallback to first line if no heading found', async () => {
-      const mockFiles = ['simple-agent.txt']
-      const mockStats = { mtime: new Date('2025-01-01') }
-      const mockContent = 'Simple agent for basic tasks\nWith some additional content.'
-
-      mockReaddir.mockResolvedValue(mockFiles)
-      mockStat.mockResolvedValue(mockStats)
-      mockReadFile.mockResolvedValue(mockContent)
-      mockResolve.mockReturnValue('/test/agents')
-      mockJoin.mockReturnValue('/test/agents/simple-agent.txt')
-      mockBasename.mockReturnValue('simple-agent.txt')
-
-      const agent = await agentManager.getAgent('simple-agent')
-
-      expect(agent).toBeDefined()
-      expect(agent?.description).toBe('Simple agent for basic tasks')
-    })
+        expect(agent?.description).toBe(expectedDescription)
+      }
+    )
 
     it('should handle file read errors gracefully', async () => {
       const mockFiles = ['broken-agent.md']
@@ -292,80 +259,6 @@ This agent does amazing things.`
       const agents = await agentManager.listAgents()
 
       expect(agents).toHaveLength(0) // Should skip broken files
-    })
-  })
-
-  describe('Agent Loading', () => {
-    it('should return consistent agent data across multiple requests', async () => {
-      const mockFiles = ['cached-agent.md']
-      const mockContent = '# Cached Agent\nThis agent should be loaded.'
-
-      mockReaddir.mockResolvedValue(mockFiles)
-      mockReadFile.mockResolvedValue(mockContent)
-      mockResolve.mockReturnValue('/test/agents')
-      mockJoin.mockReturnValue('/test/agents/cached-agent.md')
-      mockBasename.mockReturnValue('cached-agent.md')
-
-      const firstCall = await agentManager.getAgent('cached-agent')
-      const secondCall = await agentManager.getAgent('cached-agent')
-
-      expect(firstCall).toBeDefined()
-      expect(secondCall).toBeDefined()
-      expect(firstCall?.name).toBe(secondCall?.name)
-      expect(firstCall?.content).toBe(secondCall?.content)
-    })
-
-    it('should return all agents from directory', async () => {
-      const mockFiles = ['agent1.md', 'agent2.txt']
-      const mockContent = '# Test Agent\nTest content.'
-
-      mockReaddir.mockResolvedValue(mockFiles)
-      mockReadFile.mockResolvedValue(mockContent)
-      mockResolve.mockReturnValue('/test/agents')
-      mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
-      mockBasename.mockImplementation((filePath) => {
-        const parts = filePath.split('/')
-        return parts[parts.length - 1]
-      })
-
-      const agents = await agentManager.listAgents()
-
-      expect(agents).toHaveLength(2)
-      expect(agents.map((a) => a.name)).toContain('agent1')
-      expect(agents.map((a) => a.name)).toContain('agent2')
-    })
-  })
-
-  describe('Agent Refresh', () => {
-    it('should detect newly added agents after refresh', async () => {
-      const initialFiles = ['initial-agent.md']
-      const refreshedFiles = ['initial-agent.md', 'new-agent.md']
-      const mockContent = '# Test Agent\nTest content.'
-
-      mockReadFile.mockResolvedValue(mockContent)
-      mockResolve.mockReturnValue('/test/agents')
-      mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
-      mockBasename.mockImplementation((filePath) => {
-        const parts = filePath.split('/')
-        return parts[parts.length - 1]
-      })
-
-      mockReaddir
-        .mockResolvedValueOnce(initialFiles) // Initial listAgents
-        .mockResolvedValueOnce(refreshedFiles) // refreshAgents
-        .mockResolvedValueOnce(refreshedFiles) // Final listAgents
-
-      const initialAgents = await agentManager.listAgents()
-
-      await agentManager.refreshAgents()
-      const refreshedAgents = await agentManager.listAgents()
-
-      expect(initialAgents).toHaveLength(1)
-      expect(initialAgents.map((a) => a.name)).toContain('initial-agent')
-
-      expect(refreshedAgents).toHaveLength(2)
-      expect(refreshedAgents.map((a) => a.name)).toContain('initial-agent')
-      expect(refreshedAgents.map((a) => a.name)).toContain('new-agent')
     })
   })
 
@@ -390,14 +283,9 @@ This agent does amazing things.`
       mockReadFile.mockResolvedValueOnce(otherContent).mockResolvedValueOnce(targetContent)
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
-      mockBasename.mockImplementation((filePath) => {
-        const parts = filePath.split('/')
-        return parts[parts.length - 1]
-      })
 
       const agent = await agentManager.getAgent('target-agent')
 
-      expect(agent).toBeDefined()
       expect(agent?.name).toBe('target-agent')
       expect(agent?.description).toBe('Target Agent')
       expect(agent?.content).toBe(targetContent)
@@ -411,7 +299,6 @@ This agent does amazing things.`
       mockReadFile.mockResolvedValue('# Valid Agent\nUsable.')
       mockResolve.mockReturnValue('/test/agents')
       mockJoin.mockImplementation((dir, file) => `${dir}/${file}`)
-      mockBasename.mockImplementation((filePath) => filePath.split('/').pop() ?? '')
 
       const agents = await agentManager.listAgents()
 

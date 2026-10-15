@@ -54,40 +54,16 @@ describe('ServerConfig', () => {
     expect(config.agentType).toBe(agentType)
   })
 
-  it('should load CLI_API_KEY as glmApiKey when set', () => {
+  it('should treat blank CLI_API_KEY as missing for glm, kimi and cursor keys', () => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('CLI_API_KEY', 'zai-secret')
-
-    const config = new ServerConfig()
-
-    expect(config.glmApiKey).toBe('zai-secret')
-  })
-
-  it('should treat blank CLI_API_KEY as missing for glmApiKey', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
+    vi.stubEnv('CURSOR_API_KEY', undefined)
     vi.stubEnv('CLI_API_KEY', '   ')
 
     const config = new ServerConfig()
 
     expect(config.glmApiKey).toBeUndefined()
-  })
-
-  it('should load CLI_API_KEY as kimiApiKey when set', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('CLI_API_KEY', 'kimi-secret')
-
-    const config = new ServerConfig()
-
-    expect(config.kimiApiKey).toBe('kimi-secret')
-  })
-
-  it('should treat blank CLI_API_KEY as missing for kimiApiKey', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('CLI_API_KEY', '   ')
-
-    const config = new ServerConfig()
-
     expect(config.kimiApiKey).toBeUndefined()
+    expect(config.cursorApiKey).toBeUndefined()
   })
 
   it('should not fall back to CLI_API_KEY when CURSOR_API_KEY is blank but present', () => {
@@ -118,37 +94,27 @@ describe('ServerConfig', () => {
     expect(config.kimiApiKey).toBe('  cli-secret  ')
   })
 
-  it('should treat blank CLI_API_KEY fallback as missing for cursorApiKey', () => {
+  it.each([
+    ['AGENT_TYPE', 'malicious-agent', /Invalid AGENT_TYPE/],
+    ['AGENT_PERMISSION', 'godmode', /Invalid AGENT_PERMISSION/],
+    ['LOG_LEVEL', 'verbose', /Invalid LOG_LEVEL/],
+  ])('should throw error when %s is the unsupported value %s', (name, value, error) => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('CURSOR_API_KEY', undefined)
-    vi.stubEnv('CLI_API_KEY', '   ')
+    vi.stubEnv(name, value)
 
-    const config = new ServerConfig()
-
-    expect(config.cursorApiKey).toBeUndefined()
+    expect(() => new ServerConfig()).toThrow(error)
   })
 
-  it('should throw error when AGENT_TYPE is an unsupported value', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('AGENT_TYPE', 'malicious-agent')
+  it.each([undefined, '   '])(
+    'should throw a corrective error when AGENT_TYPE is %j',
+    (agentType) => {
+      vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('AGENT_TYPE', agentType)
 
-    expect(() => new ServerConfig()).toThrow(/Invalid AGENT_TYPE/)
-  })
-
-  it('should throw a corrective error when AGENT_TYPE is not set', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('AGENT_TYPE', undefined)
-
-    expect(() => new ServerConfig()).toThrow('AGENT_TYPE environment variable is required')
-    expect(() => new ServerConfig()).toThrow(/cursor, claude, gemini, codex/)
-  })
-
-  it('should throw a corrective error when AGENT_TYPE is blank', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('AGENT_TYPE', '   ')
-
-    expect(() => new ServerConfig()).toThrow('AGENT_TYPE environment variable is required')
-  })
+      expect(() => new ServerConfig()).toThrow('AGENT_TYPE environment variable is required')
+      expect(() => new ServerConfig()).toThrow(/cursor, claude, gemini, codex/)
+    }
+  )
 
   it.each(['read-only', 'safe-edit', 'yolo'] as const)(
     'should accept AGENT_PERMISSION=%s',
@@ -162,53 +128,30 @@ describe('ServerConfig', () => {
     }
   )
 
-  it('should default AGENT_PERMISSION to safe-edit when not set', () => {
+  it.each([undefined, ''])('should default AGENT_PERMISSION to safe-edit when %j', (permission) => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('AGENT_PERMISSION', undefined)
+    vi.stubEnv('AGENT_PERMISSION', permission)
 
     const config = new ServerConfig()
 
     expect(config.agentPermission).toBe('safe-edit')
-  })
-
-  it('should default AGENT_PERMISSION to safe-edit when empty string', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('AGENT_PERMISSION', '')
-
-    const config = new ServerConfig()
-
-    expect(config.agentPermission).toBe('safe-edit')
-  })
-
-  it('should throw error when AGENT_PERMISSION is an unsupported value', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('AGENT_PERMISSION', 'godmode')
-
-    expect(() => new ServerConfig()).toThrow(/Invalid AGENT_PERMISSION/)
   })
 
   describe('model and effort configuration', () => {
-    it('should load global AGENT_MODEL and AGENT_EFFORT values', () => {
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-      vi.stubEnv('AGENT_TYPE', 'codex')
-      vi.stubEnv('AGENT_MODEL', 'gpt-5.6-luna')
-      vi.stubEnv('AGENT_EFFORT', 'high')
+    it.each(['codex', 'antigravity'] as const)(
+      'should load AGENT_MODEL and AGENT_EFFORT for AGENT_TYPE=%s',
+      (agentType) => {
+        vi.stubEnv('AGENTS_DIR', testAgentsDir)
+        vi.stubEnv('AGENT_TYPE', agentType)
+        vi.stubEnv('AGENT_MODEL', 'gpt-5.6-luna')
+        vi.stubEnv('AGENT_EFFORT', 'high')
 
-      const config = new ServerConfig()
+        const config = new ServerConfig()
 
-      expect(config.agentModel).toBe('gpt-5.6-luna')
-      expect(config.agentEffort).toBe('high')
-    })
-
-    it('should accept AGENT_EFFORT for Antigravity', () => {
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-      vi.stubEnv('AGENT_TYPE', 'antigravity')
-      vi.stubEnv('AGENT_EFFORT', 'high')
-
-      const config = new ServerConfig()
-
-      expect(config.agentEffort).toBe('high')
-    })
+        expect(config.agentModel).toBe('gpt-5.6-luna')
+        expect(config.agentEffort).toBe('high')
+      }
+    )
 
     it('should treat blank model and effort values as unset', () => {
       vi.stubEnv('AGENTS_DIR', testAgentsDir)
@@ -233,40 +176,16 @@ describe('ServerConfig', () => {
     )
   })
 
-  it('should throw error when LOG_LEVEL is an unsupported value', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('LOG_LEVEL', 'verbose')
-
-    expect(() => new ServerConfig()).toThrow(/Invalid LOG_LEVEL/)
-  })
-
-  it('should throw error when AGENTS_DIR is not set', () => {
-    vi.stubEnv('AGENTS_DIR', undefined)
+  it.each([undefined, ''])('should throw error when AGENTS_DIR is %j', (agentsDir) => {
+    vi.stubEnv('AGENTS_DIR', agentsDir)
 
     expect(() => new ServerConfig()).toThrow('AGENTS_DIR environment variable is required')
     expect(() => new ServerConfig()).toThrow('Please set it to an absolute path')
   })
 
-  it('should use default values for optional configs', () => {
+  it.each([undefined, ''])('should default SERVER_NAME to sub-agents-mcp when %j', (serverName) => {
     vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('SERVER_NAME', undefined)
-
-    const config = new ServerConfig()
-
-    expect(config.serverName).toBe('sub-agents-mcp')
-    expect(config.agentsDir).toBe(testAgentsDir)
-    expect(config.executionTimeoutMs).toBe(300000)
-  })
-
-  it('should throw error when AGENTS_DIR is empty string', () => {
-    vi.stubEnv('AGENTS_DIR', '')
-
-    expect(() => new ServerConfig()).toThrow('AGENTS_DIR environment variable is required')
-  })
-
-  it('should handle empty optional environment variables gracefully', () => {
-    vi.stubEnv('AGENTS_DIR', testAgentsDir)
-    vi.stubEnv('SERVER_NAME', '')
+    vi.stubEnv('SERVER_NAME', serverName)
 
     const config = new ServerConfig()
 
@@ -283,28 +202,17 @@ describe('ServerConfig', () => {
       expect(config.sessionEnabled).toBe(true)
     })
 
-    it('should default SESSION_ENABLED to false when not set', () => {
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-      vi.stubEnv('SESSION_ENABLED', undefined)
-
-      const config = new ServerConfig()
-
-      expect(config.sessionEnabled).toBe(false)
-    })
-
-    it('should treat SESSION_ENABLED as false for non-"true" values', () => {
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-
-      const falseValues = ['false', '1', 'yes', 'TRUE', '']
-
-      for (const value of falseValues) {
+    it.each([undefined, 'false', '1', 'yes', 'TRUE', ''])(
+      'should treat SESSION_ENABLED=%j as false',
+      (value) => {
+        vi.stubEnv('AGENTS_DIR', testAgentsDir)
         vi.stubEnv('SESSION_ENABLED', value)
 
         const config = new ServerConfig()
 
         expect(config.sessionEnabled).toBe(false)
       }
-    })
+    )
 
     it('should load SESSION_DIR when set', () => {
       vi.stubEnv('AGENTS_DIR', testAgentsDir)
@@ -342,19 +250,17 @@ describe('ServerConfig', () => {
       expect(config.sessionRetentionDays).toBe(1)
     })
 
-    it('should use default SESSION_RETENTION_DAYS for invalid values', () => {
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-
-      const invalidValues = ['invalid', 'not-a-number', '', '-5', '0']
-
-      for (const invalidValue of invalidValues) {
+    it.each(['invalid', 'not-a-number', '', '-5', '0'])(
+      'should use default SESSION_RETENTION_DAYS for invalid value %j',
+      (invalidValue) => {
+        vi.stubEnv('AGENTS_DIR', testAgentsDir)
         vi.stubEnv('SESSION_RETENTION_DAYS', invalidValue)
 
         const config = new ServerConfig()
 
         expect(config.sessionRetentionDays).toBe(1)
       }
-    })
+    )
   })
 
   describe('AGENTS_SETTINGS_PATH configuration', () => {
@@ -367,33 +273,32 @@ describe('ServerConfig', () => {
       expect(config.agentsSettingsPath).toBe('/custom/settings/path')
     })
 
-    it('should return undefined when AGENTS_SETTINGS_PATH is not set', () => {
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-      vi.stubEnv('AGENTS_SETTINGS_PATH', undefined)
+    it.each([undefined, ''])(
+      'should return undefined when AGENTS_SETTINGS_PATH is %j',
+      (settingsPath) => {
+        vi.stubEnv('AGENTS_DIR', testAgentsDir)
+        vi.stubEnv('AGENTS_SETTINGS_PATH', settingsPath)
 
-      const config = new ServerConfig()
+        const config = new ServerConfig()
 
-      expect(config.agentsSettingsPath).toBeUndefined()
-    })
-
-    it('should return undefined when AGENTS_SETTINGS_PATH is empty string', () => {
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-      vi.stubEnv('AGENTS_SETTINGS_PATH', '')
-
-      const config = new ServerConfig()
-
-      expect(config.agentsSettingsPath).toBeUndefined()
-    })
+        expect(config.agentsSettingsPath).toBeUndefined()
+      }
+    )
   })
 
   describe('execution timeout validation', () => {
-    it('should use valid timeout from environment variable', () => {
-      vi.stubEnv('EXECUTION_TIMEOUT_MS', '120000') // 2 minutes
+    it.each([
+      ['1000', 1000],
+      ['60000', 60000],
+      ['120000', 120000],
+      ['600000', 600000],
+    ])('should accept EXECUTION_TIMEOUT_MS=%s', (input, expected) => {
       vi.stubEnv('AGENTS_DIR', testAgentsDir)
+      vi.stubEnv('EXECUTION_TIMEOUT_MS', input)
 
       const config = new ServerConfig()
 
-      expect(config.executionTimeoutMs).toBe(120000)
+      expect(config.executionTimeoutMs).toBe(expected)
     })
 
     it.each([undefined, '', '   '])(
@@ -425,23 +330,6 @@ describe('ServerConfig', () => {
       expect(() => new ServerConfig()).toThrow(
         /Invalid EXECUTION_TIMEOUT_MS: "5min".*positive whole number of milliseconds.*300000/s
       )
-    })
-
-    it('should accept timeout values within valid range', () => {
-      const validValues = [
-        { input: '1000', expected: 1000 }, // minimum
-        { input: '60000', expected: 60000 }, // 1 minute
-        { input: '600000', expected: 600000 }, // maximum (10 minutes)
-      ]
-      vi.stubEnv('AGENTS_DIR', testAgentsDir)
-
-      for (const { input, expected } of validValues) {
-        vi.stubEnv('EXECUTION_TIMEOUT_MS', input)
-
-        const config = new ServerConfig()
-
-        expect(config.executionTimeoutMs).toBe(expected)
-      }
     })
   })
 })

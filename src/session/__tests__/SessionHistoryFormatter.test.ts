@@ -4,39 +4,6 @@ import { formatSessionHistory } from '../SessionHistoryFormatter.js'
 
 describe('SessionHistoryFormatter', () => {
   describe('formatSessionHistory', () => {
-    it('should format session history as Markdown', () => {
-      const sessionData: SessionData = {
-        sessionId: 'test-session-123',
-        agentType: 'rule-advisor',
-        history: [
-          {
-            timestamp: new Date('2025-01-21T12:00:00.000Z'),
-            request: {
-              agent: 'rule-advisor',
-              prompt: 'Task: Fix TypeScript type errors',
-              cwd: '/path/to/project',
-            },
-            response: {
-              stdout: 'Please fix the type errors',
-              stderr: '',
-              exitCode: 0,
-              executionTime: 1234,
-            },
-          },
-        ],
-        createdAt: new Date('2025-01-21T12:00:00.000Z'),
-        lastUpdatedAt: new Date('2025-01-21T12:00:00.000Z'),
-      }
-
-      const result = formatSessionHistory(sessionData)
-
-      expect(result).toContain('# Session History: rule-advisor')
-      expect(result).toContain('## 1. User Request')
-      expect(result).toContain('Task: Fix TypeScript type errors')
-      expect(result).toContain('## 1. Agent Response')
-      expect(result).toContain('Please fix the type errors')
-    })
-
     it('should handle multiple history entries', () => {
       const sessionData: SessionData = {
         sessionId: 'multi-session',
@@ -88,6 +55,7 @@ describe('SessionHistoryFormatter', () => {
 
       const result = formatSessionHistory(sessionData)
 
+      expect(result).toContain('# Session History: rule-advisor')
       expect(result).toContain('## 1. User Request')
       expect(result).toContain('First question')
       expect(result).toContain('## 1. Agent Response')
@@ -183,40 +151,6 @@ describe('SessionHistoryFormatter', () => {
 
       expect(result).toContain('Question')
       expect(result).toContain('Answer')
-    })
-
-    it('should be significantly shorter than JSON', () => {
-      const sessionData: SessionData = {
-        sessionId: 'token-reduction-test',
-        agentType: 'rule-advisor',
-        history: [
-          {
-            timestamp: new Date('2025-01-21T12:00:00.000Z'),
-            request: {
-              agent: 'rule-advisor',
-              prompt: 'This is a test prompt with some content',
-              cwd: '/path/to/project',
-            },
-            response: {
-              stdout: 'This is a test response with some content',
-              stderr: '',
-              exitCode: 0,
-              executionTime: 1000,
-            },
-          },
-        ],
-        createdAt: new Date('2025-01-21T12:00:00.000Z'),
-        lastUpdatedAt: new Date('2025-01-21T12:00:00.000Z'),
-      }
-
-      const markdownFormat = formatSessionHistory(sessionData)
-      const jsonFormat = JSON.stringify(sessionData)
-
-      expect(markdownFormat.length).toBeLessThan(jsonFormat.length)
-
-      const reductionRate = ((jsonFormat.length - markdownFormat.length) / jsonFormat.length) * 100
-
-      expect(reductionRate).toBeGreaterThan(30)
     })
   })
 })

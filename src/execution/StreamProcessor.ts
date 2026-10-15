@@ -66,12 +66,13 @@ export class StreamProcessor {
       return false
     }
 
+    // OpenCode 2 emits step_finish only for steps that end in tool calls, so the
+    // exit code decides the outcome of a stream without a final one.
     if (this.agentType === 'opencode' && this.openCodeResponseParts.length > 0) {
       this.resultJson = {
         type: 'result',
         result: this.openCodeResponseParts.join(''),
-        status: 'partial',
-        stop_reason: 'process-exit',
+        status: 'success',
       }
       return true
     }
