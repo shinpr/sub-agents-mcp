@@ -84,8 +84,6 @@ describe('McpServer Integration', () => {
       const tools = await server.listTools()
       const runAgentTool = tools.find((tool) => tool.name === 'run_agent')
 
-      expect(runAgentTool).toBeDefined()
-      expect(runAgentTool?.inputSchema).toBeDefined()
       expect(runAgentTool?.inputSchema.type).toBe('object')
       expect(runAgentTool?.inputSchema.properties).toHaveProperty('agent')
       expect(runAgentTool?.inputSchema.properties).toHaveProperty('prompt')
@@ -105,11 +103,7 @@ describe('McpServer Integration', () => {
     it('should publish agent list resource', async () => {
       const resources = await server.listResources()
 
-      expect(resources).toBeDefined()
-      expect(Array.isArray(resources)).toBe(true)
-
       const agentListResource = resources.find((resource) => resource.uri === 'agents://list')
-      expect(agentListResource).toBeDefined()
       expect(agentListResource?.name).toBe('Agent List')
       expect(agentListResource?.description).toContain('List of available Claude Code sub-agents')
     })

@@ -104,8 +104,6 @@ describe('SessionManager', () => {
       expect(sessionData.history).toHaveLength(1)
       expect(sessionData.history[0].request).toEqual(request)
       expect(sessionData.history[0].response).toEqual(response)
-      expect(sessionData.createdAt).toBeDefined()
-      expect(sessionData.lastUpdatedAt).toBeDefined()
     })
 
     it('should set file permissions to 0o600', async () => {

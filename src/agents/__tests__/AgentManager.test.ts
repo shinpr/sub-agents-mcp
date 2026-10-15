@@ -211,7 +211,6 @@ describe('AgentManager', () => {
 
       const agent = await agentManager.getAgent('test-agent')
 
-      expect(agent).toBeDefined()
       expect(agent?.name).toBe('test-agent')
       expect(agent?.description).toBe('Test Agent')
       expect(agent?.content).toBe(mockContent)
@@ -287,7 +286,6 @@ describe('AgentManager', () => {
 
       const agent = await agentManager.getAgent('target-agent')
 
-      expect(agent).toBeDefined()
       expect(agent?.name).toBe('target-agent')
       expect(agent?.description).toBe('Target Agent')
       expect(agent?.content).toBe(targetContent)

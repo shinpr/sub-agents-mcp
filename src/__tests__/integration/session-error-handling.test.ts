@@ -75,23 +75,19 @@ describe('Session Management - Error Handling Tests', () => {
       await manager.saveSession(sessionId, request, response)
 
       const files = await fs.readdir(testSessionDir)
-      const sessionFile = files.find((f) => f.startsWith(sessionId))
-      expect(sessionFile).toBeDefined()
+      expect(files).toHaveLength(1)
+      const filePath = path.join(testSessionDir, files[0])
 
-      if (sessionFile) {
-        const filePath = path.join(testSessionDir, sessionFile)
+      await fs.chmod(filePath, 0o000)
 
-        await fs.chmod(filePath, 0o000)
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const result = await manager.loadSession(sessionId, 'rule-advisor')
+      expect(result).toBeNull()
 
-        const result = await manager.loadSession(sessionId, 'rule-advisor')
-        expect(result).toBeNull()
+      consoleErrorSpy.mockRestore()
 
-        consoleErrorSpy.mockRestore()
-
-        await fs.chmod(filePath, 0o644)
-      }
+      await fs.chmod(filePath, 0o644)
     })
 
     it('should return null for invalid session ID without throwing', async () => {

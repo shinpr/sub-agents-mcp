@@ -152,13 +152,7 @@ describe('RunAgentTool', () => {
 
       const result = await runAgentTool.execute(params)
 
-      expect(result).toBeDefined()
-      expect(result.content).toBeDefined()
-      expect(Array.isArray(result.content)).toBe(true)
-      expect(result.content.length).toBeGreaterThan(0)
-
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent).toBeDefined()
       expect(textContent?.text).toContain('Agent execution result')
       expect(result.isError).toBe(false)
     })
@@ -213,9 +207,6 @@ describe('RunAgentTool', () => {
       vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue(undefined)
 
       const result = await runAgentTool.execute(params)
-
-      expect(result).toBeDefined()
-      expect(result.content).toBeDefined()
 
       const textContent = result.content.find((c) => c.type === 'text')
       const parsedContent = JSON.parse(textContent?.text || '{}')
@@ -320,7 +311,6 @@ describe('RunAgentTool', () => {
 
       const result = await runAgentTool.execute(params)
 
-      expect(result).toBeDefined()
       const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent?.text).toMatch(/error|failed/i)
     })
@@ -336,7 +326,6 @@ describe('RunAgentTool', () => {
 
       const result = await runAgentTool.execute(params)
 
-      expect(result).toBeDefined()
       const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent?.text).toMatch(/error.*loading|failed.*load/i)
     })

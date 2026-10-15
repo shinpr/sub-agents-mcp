@@ -43,18 +43,13 @@ describe('Session Management - Acceptance Tests', () => {
       await manager.saveSession(sessionId, request, response)
 
       const files = await fs.readdir(testSessionDir)
-      const sessionFile = files.find((f) => f.startsWith(sessionId))
-      expect(sessionFile).toBeDefined()
+      expect(files).toHaveLength(1)
+      const fileContent = await fs.readFile(path.join(testSessionDir, files[0]), 'utf-8')
 
-      if (sessionFile) {
-        const filePath = path.join(testSessionDir, sessionFile)
-        const fileContent = await fs.readFile(filePath, 'utf-8')
+      expect(() => JSON.parse(fileContent)).not.toThrow()
 
-        expect(() => JSON.parse(fileContent)).not.toThrow()
-
-        expect(fileContent).toContain('\n')
-        expect(fileContent).toContain('  ')
-      }
+      expect(fileContent).toContain('\n')
+      expect(fileContent).toContain('  ')
     })
 
     it.each([

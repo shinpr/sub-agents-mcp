@@ -914,7 +914,7 @@ describe('AgentExecutor', () => {
 
       expect(result.exitCode).toBe(143)
       expect(result.hasResult).toBe(true)
-      expect(result.resultJson).toBeDefined()
+      expect(result.resultJson).toMatchObject({ result: 'Success' })
     })
 
     it('should preserve a result when SIGTERM escalates to SIGKILL', async () => {
