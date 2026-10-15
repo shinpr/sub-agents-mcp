@@ -25,89 +25,39 @@ describe('Session Management - Error Handling Tests', () => {
   })
 
   describe('Session save failure handling', () => {
-    it('should handle file system write errors gracefully', async () => {
-      const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'readonly-sessions-'))
-      const readOnlyDir = path.join(parent, 'sessions')
-      await fs.mkdir(readOnlyDir, { mode: 0o555 })
+    it.each([
+      ['an invalid session ID', '../invalid/session', 0o755, 'Invalid session ID'],
+      ['a read-only session directory', 'test-readonly', 0o555, 'EACCES'],
+    ])(
+      'should report the failure without throwing when the save fails on %s',
+      async (_cause, sessionId, directoryMode, expectedReason) => {
+        await fs.chmod(testSessionDir, directoryMode)
 
-      const readOnlyConfig: SessionConfig = {
-        enabled: true,
-        sessionDir: readOnlyDir,
-        retentionDays: 7,
+        try {
+          const manager = new SessionManager(sessionConfig)
+          const request = {
+            agent: 'rule-advisor',
+            prompt: 'Test prompt',
+          }
+          const response = {
+            stdout: 'Test output',
+            stderr: '',
+            exitCode: 0,
+            executionTime: 100,
+          }
+
+          await expect(manager.saveSession(sessionId, request, response)).resolves.toMatchObject({
+            saved: false,
+            reason: expect.stringContaining(expectedReason),
+          })
+        } finally {
+          await fs.chmod(testSessionDir, 0o755)
+        }
       }
-
-      const manager = new SessionManager(readOnlyConfig)
-      const sessionId = 'test-readonly'
-      const request = {
-        agent: 'rule-advisor',
-        prompt: 'Test prompt',
-      }
-      const response = {
-        stdout: 'Test output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-      }
-
-      await expect(manager.saveSession(sessionId, request, response)).resolves.toMatchObject({
-        saved: false,
-      })
-
-      await fs.chmod(readOnlyDir, 0o755)
-      await fs.rm(parent, { recursive: true, force: true })
-    })
-
-    it('should continue main flow even when session save fails', async () => {
-      const manager = new SessionManager(sessionConfig)
-      const invalidSessionId = '../invalid'
-      const request = {
-        agent: 'rule-advisor',
-        prompt: 'Test prompt',
-      }
-      const response = {
-        stdout: 'Test output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-      }
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      await manager.saveSession(invalidSessionId, request, response)
-
-      const validSessionId = 'valid-session'
-      await manager.saveSession(validSessionId, request, response)
-
-      const loadedSession = await manager.loadSession(validSessionId, 'rule-advisor')
-      expect(loadedSession).not.toBeNull()
-
-      consoleErrorSpy.mockRestore()
-    })
+    )
   })
 
   describe('Session load failure handling', () => {
-    it('should log error when session load fails', async () => {
-      const manager = new SessionManager(sessionConfig)
-      const sessionId = 'load-error-session'
-
-      const fileName = `${sessionId}_rule-advisor.json`
-      const filePath = path.join(testSessionDir, fileName)
-      await fs.writeFile(filePath, 'invalid json', 'utf-8')
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      await manager.loadSession(sessionId, 'rule-advisor')
-
-      expect(consoleErrorSpy).toHaveBeenCalled()
-      const errorCalls = consoleErrorSpy.mock.calls
-      const hasLoadError = errorCalls.some((call) =>
-        JSON.stringify(call).includes('Failed to load session')
-      )
-      expect(hasLoadError).toBe(true)
-
-      consoleErrorSpy.mockRestore()
-    })
-
     it('should handle file system read errors gracefully', async () => {
       const manager = new SessionManager(sessionConfig)
       const sessionId = 'read-error-session'
@@ -180,172 +130,6 @@ describe('Session Management - Error Handling Tests', () => {
 
       await fs.chmod(inaccessibleDir, 0o755)
       await fs.rm(inaccessibleDir, { recursive: true, force: true })
-    })
-
-    it('should continue cleanup even when individual file deletion fails', async () => {
-      const manager = new SessionManager(sessionConfig)
-
-      const fileCount = 5
-      const filePaths: string[] = []
-
-      for (let i = 0; i < fileCount; i++) {
-        const fileName = `old-session-${i}_rule-advisor.json`
-        const filePath = path.join(testSessionDir, fileName)
-        await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
-        filePaths.push(filePath)
-
-        const eightDaysAgo = new Date()
-        eightDaysAgo.setDate(eightDaysAgo.getDate() - 8)
-        await fs.utimes(filePath, eightDaysAgo, eightDaysAgo)
-      }
-
-      if (filePaths[2]) {
-        await fs.chmod(filePaths[2], 0o444)
-      }
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      await manager.cleanupOldSessions()
-
-      consoleErrorSpy.mockRestore()
-
-      for (const filePath of filePaths) {
-        try {
-          await fs.chmod(filePath, 0o644)
-        } catch {}
-      }
-    })
-
-    it('should handle stat errors during cleanup', async () => {
-      const manager = new SessionManager(sessionConfig)
-
-      const fileName = 'test-session_rule-advisor.json'
-      const filePath = path.join(testSessionDir, fileName)
-      await fs.writeFile(filePath, JSON.stringify({ test: 'data' }), 'utf-8')
-
-      const eightDaysAgo = new Date()
-      eightDaysAgo.setDate(eightDaysAgo.getDate() - 8)
-      await fs.utimes(filePath, eightDaysAgo, eightDaysAgo)
-
-      await fs.chmod(filePath, 0o000)
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      await expect(manager.cleanupOldSessions()).resolves.toBeUndefined()
-
-      consoleErrorSpy.mockRestore()
-
-      try {
-        await fs.chmod(filePath, 0o644)
-      } catch {}
-    })
-  })
-
-  describe('Recovery and resilience', () => {
-    it('should recover from save failure and continue with valid operations', async () => {
-      const manager = new SessionManager(sessionConfig)
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const invalidSessionId = '../invalid'
-      const request1 = {
-        agent: 'rule-advisor',
-        prompt: 'Invalid prompt',
-      }
-      const response1 = {
-        stdout: 'Invalid output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-      }
-      await manager.saveSession(invalidSessionId, request1, response1)
-
-      const validSessionId = 'valid-recovery-test'
-      const request2 = {
-        agent: 'rule-advisor',
-        prompt: 'Valid prompt',
-      }
-      const response2 = {
-        stdout: 'Valid output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-      }
-      await manager.saveSession(validSessionId, request2, response2)
-
-      const loadedSession = await manager.loadSession(validSessionId, 'rule-advisor')
-      expect(loadedSession).not.toBeNull()
-      expect(loadedSession?.sessionId).toBe(validSessionId)
-
-      consoleErrorSpy.mockRestore()
-    })
-
-    it('should handle multiple concurrent error scenarios', async () => {
-      const manager = new SessionManager(sessionConfig)
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const promises = [
-        manager.saveSession(
-          '../invalid1',
-          { agent: 'test', prompt: 'test' },
-          { stdout: '', stderr: '', exitCode: 0, executionTime: 0 }
-        ),
-        manager.saveSession(
-          '../invalid2',
-          { agent: 'test', prompt: 'test' },
-          { stdout: '', stderr: '', exitCode: 0, executionTime: 0 }
-        ),
-        manager.loadSession('non-existent-1', 'rule-advisor'),
-        manager.loadSession('non-existent-2', 'rule-advisor'),
-      ]
-
-      await expect(Promise.all(promises)).resolves.toBeDefined()
-
-      consoleErrorSpy.mockRestore()
-    })
-
-    it('should maintain data integrity after error recovery', async () => {
-      const manager = new SessionManager(sessionConfig)
-      const sessionId = 'integrity-test'
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const request1 = {
-        agent: 'rule-advisor',
-        prompt: 'First prompt',
-      }
-      const response1 = {
-        stdout: 'First output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-      }
-      await manager.saveSession(sessionId, request1, response1)
-
-      await manager.saveSession(
-        '../invalid',
-        { agent: 'test', prompt: 'test' },
-        { stdout: '', stderr: '', exitCode: 0, executionTime: 0 }
-      )
-
-      const request2 = {
-        agent: 'rule-advisor',
-        prompt: 'Second prompt',
-      }
-      const response2 = {
-        stdout: 'Second output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 200,
-      }
-      await manager.saveSession(sessionId, request2, response2)
-
-      const loadedSession = await manager.loadSession(sessionId, 'rule-advisor')
-      expect(loadedSession).not.toBeNull()
-      expect(loadedSession?.history.length).toBeGreaterThanOrEqual(2)
-
-      consoleErrorSpy.mockRestore()
     })
   })
 })

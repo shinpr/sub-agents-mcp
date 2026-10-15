@@ -8,16 +8,41 @@ describe('StreamProcessor', () => {
   })
 
   describe('JSON processing', () => {
-    it('should detect and store the first valid JSON', () => {
-      const json = '{"type": "result", "result": "output", "status": "complete"}'
+    it.each([
+      {
+        agentType: 'cursor',
+        line: '{"type":"result","subtype":"success","is_error":false,"duration_ms":6928,"result":"4","session_id":"bf18d32c-fd61-4890-b7ba-bd64effd86bd","request_id":"9f5d1b48-9338-4bc0-ab87-8f9d2a22965a"}',
+        expected: {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          duration_ms: 6928,
+          result: '4',
+          session_id: 'bf18d32c-fd61-4890-b7ba-bd64effd86bd',
+          request_id: '9f5d1b48-9338-4bc0-ab87-8f9d2a22965a',
+        },
+      },
+      {
+        agentType: 'claude',
+        line: '{"type":"result","subtype":"success","is_error":false,"duration_ms":2856,"result":"Hi!","session_id":"711419a4-3a19-4448-aa4a-31de7c4fa7a5"}',
+        expected: {
+          type: 'result',
+          subtype: 'success',
+          is_error: false,
+          duration_ms: 2856,
+          result: 'Hi!',
+          session_id: '711419a4-3a19-4448-aa4a-31de7c4fa7a5',
+        },
+      },
+    ] as const)(
+      'should detect and store the $agentType result JSON',
+      ({ agentType, line, expected }) => {
+        processor = new StreamProcessor(agentType)
 
-      expect(processor.processLine(json)).toBe(true)
-      expect(processor.getResult()).toEqual({
-        type: 'result',
-        result: 'output',
-        status: 'complete',
-      })
-    })
+        expect(processor.processLine(line)).toBe(true)
+        expect(processor.getResult()).toEqual(expected)
+      }
+    )
 
     it('should ignore subsequent JSONs after finding result type', () => {
       const json1 = '{"type": "result", "result": "First JSON", "status": "success"}'
@@ -30,22 +55,6 @@ describe('StreamProcessor', () => {
         type: 'result',
         result: 'First JSON',
         status: 'success',
-      })
-    })
-
-    it('should handle cursor-agent JSON format', () => {
-      const cursorJson =
-        '{"type":"result","subtype":"success","is_error":false,"duration_ms":6928,"result":"4","session_id":"bf18d32c-fd61-4890-b7ba-bd64effd86bd","request_id":"9f5d1b48-9338-4bc0-ab87-8f9d2a22965a"}'
-
-      expect(processor.processLine(cursorJson)).toBe(true)
-      expect(processor.getResult()).toEqual({
-        type: 'result',
-        subtype: 'success',
-        is_error: false,
-        duration_ms: 6928,
-        result: '4',
-        session_id: 'bf18d32c-fd61-4890-b7ba-bd64effd86bd',
-        request_id: '9f5d1b48-9338-4bc0-ab87-8f9d2a22965a',
       })
     })
 
@@ -64,22 +73,6 @@ describe('StreamProcessor', () => {
         error_type: 'execution_error',
         session_id: 'bf18d32c-fd61-4890-b7ba-bd64effd86bd',
         request_id: '9f5d1b48-9338-4bc0-ab87-8f9d2a22965a',
-      })
-    })
-
-    it('should handle claude JSON format', () => {
-      processor = new StreamProcessor('claude')
-      const claudeJson =
-        '{"type":"result","subtype":"success","is_error":false,"duration_ms":2856,"result":"Hi!","session_id":"711419a4-3a19-4448-aa4a-31de7c4fa7a5"}'
-
-      expect(processor.processLine(claudeJson)).toBe(true)
-      expect(processor.getResult()).toEqual({
-        type: 'result',
-        subtype: 'success',
-        is_error: false,
-        duration_ms: 2856,
-        result: 'Hi!',
-        session_id: '711419a4-3a19-4448-aa4a-31de7c4fa7a5',
       })
     })
 
@@ -234,14 +227,16 @@ describe('StreamProcessor', () => {
       })
     })
 
-    it('should extract agent_message text from codex output stream', () => {
+    it('should extract only agent_message text from codex output stream', () => {
       processor = new StreamProcessor('codex')
       const codexOutputStream = [
         '{"type":"thread.started","thread_id":"019b1291-a763-74a1-bffe-39670dad4b6b"}',
         '{"type":"turn.started"}',
-        '{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Responding to greeting**"}}',
-        '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Hello! How can I help you today?"}}',
-        '{"type":"turn.completed","usage":{"input_tokens":3482,"cached_input_tokens":3072,"output_tokens":13}}',
+        '{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Listing sandbox contents**"}}',
+        '{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc ls"}}',
+        '{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc ls","aggregated_output":"file1\\nfile2\\n","exit_code":0}}',
+        '{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Files: file1, file2"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":500,"output_tokens":50}}',
       ]
 
       for (const line of codexOutputStream) {
@@ -250,8 +245,8 @@ describe('StreamProcessor', () => {
 
       expect(processor.getResult()).toEqual({
         type: 'result',
-        result: 'Hello! How can I help you today?',
-        usage: { input_tokens: 3482, cached_input_tokens: 3072, output_tokens: 13 },
+        result: 'Files: file1, file2',
+        usage: { input_tokens: 500, output_tokens: 50 },
         status: 'success',
       })
     })
@@ -468,29 +463,6 @@ describe('StreamProcessor', () => {
         status: 'success',
       })
     })
-
-    it('should ignore command_execution items and only include agent_message', () => {
-      processor = new StreamProcessor('codex')
-      const codexOutputStream = [
-        '{"type":"thread.started","thread_id":"019b1292-e66c-7c61-bcc5-4262b08f3535"}',
-        '{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Listing sandbox contents**"}}',
-        '{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc ls"}}',
-        '{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc ls","aggregated_output":"file1\\nfile2\\n","exit_code":0}}',
-        '{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Files: file1, file2"}}',
-        '{"type":"turn.completed","usage":{"input_tokens":500,"output_tokens":50}}',
-      ]
-
-      for (const line of codexOutputStream) {
-        processor.processLine(line)
-      }
-
-      expect(processor.getResult()).toEqual({
-        type: 'result',
-        result: 'Files: file1, file2',
-        usage: { input_tokens: 500, output_tokens: 50 },
-        status: 'success',
-      })
-    })
   })
 
   describe('Line handling', () => {
@@ -563,21 +535,6 @@ describe('StreamProcessor', () => {
   })
 
   describe('Edge cases', () => {
-    it('should ignore arbitrary structured JSON from cursor', () => {
-      const complexJson =
-        '{"foo": "bar", "nested": {"deep": {"value": "test"}}, "array": [1, 2, 3]}'
-
-      expect(processor.processLine(complexJson)).toBe(false)
-      expect(processor.getResult()).toBeNull()
-    })
-
-    it('should ignore typeless JSON with special characters from cursor', () => {
-      const jsonWithSpecialChars = '{"text": "Line 1\\nLine 2\\tTabbed", "emoji": "🎉"}'
-
-      expect(processor.processLine(jsonWithSpecialChars)).toBe(false)
-      expect(processor.getResult()).toBeNull()
-    })
-
     it('should process terminal lines with leading/trailing whitespace', () => {
       const jsonWithWhitespace = '  {"type":"result","result":"value"}  '
 

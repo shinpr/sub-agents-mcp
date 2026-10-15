@@ -53,7 +53,7 @@ export interface ExecutionConfig {
   effort?: string
 }
 
-export const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
+const DEFAULT_EXECUTION_TIMEOUT = 300000 // 5 minutes
 const MAX_CAPTURED_OUTPUT_BYTES = 16 * 1024 * 1024
 
 const TERMINATION_GRACE_MS = 1000

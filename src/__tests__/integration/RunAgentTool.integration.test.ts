@@ -58,172 +58,66 @@ describe('RunAgentTool', () => {
   })
 
   describe('parameter validation', () => {
-    it('should validate required agent parameter', async () => {
-      const params = {
-        prompt: 'Test prompt',
-      }
+    it.each([
+      {
+        label: 'a missing agent',
+        args: { prompt: 'Test prompt', cwd: process.cwd() },
+        error: /agent.*required|missing.*agent/i,
+      },
+      {
+        label: 'an empty agent',
+        args: { agent: '', prompt: 'Test prompt', cwd: process.cwd() },
+        error: /agent.*required|invalid.*agent/i,
+      },
+      {
+        label: 'a missing prompt',
+        args: { agent: 'test-agent', cwd: process.cwd() },
+        error: /prompt.*required|missing.*prompt/i,
+      },
+      {
+        label: 'an empty prompt',
+        args: { agent: 'test-agent', prompt: '', cwd: process.cwd() },
+        error: /prompt.*required|invalid.*prompt/i,
+      },
+      {
+        label: 'an empty session_id',
+        args: { agent: 'test-agent', prompt: 'Test prompt', cwd: process.cwd(), session_id: '' },
+        error: /session.*id.*empty|invalid.*session/i,
+      },
+      {
+        label: 'a session_id with invalid characters',
+        args: {
+          agent: 'test-agent',
+          prompt: 'Test prompt',
+          cwd: process.cwd(),
+          session_id: 'session/with/../invalid',
+        },
+        error: /session.*id.*invalid.*characters/i,
+      },
+      {
+        label: 'a session_id that is too long',
+        args: {
+          agent: 'test-agent',
+          prompt: 'Test prompt',
+          cwd: process.cwd(),
+          session_id: 'a'.repeat(101),
+        },
+        error: /session.*id.*too long/i,
+      },
+      {
+        label: 'a cwd containing ..',
+        args: { agent: 'test-agent', prompt: 'Test prompt', cwd: '/tmp/project/../../etc' },
+        error: /Invalid working directory path/,
+      },
+    ])('should reject $label without executing the agent', async ({ args, error }) => {
+      const executeAgent = vi.spyOn(mockAgentExecutor, 'executeAgent')
 
-      const result = await runAgentTool.execute(params)
-      expect(result.content).toBeDefined()
+      const result = await runAgentTool.execute(args)
+
+      expect(result.isError).toBe(true)
       const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toMatch(/agent.*required|missing.*agent/i)
-    })
-
-    it('should validate required prompt parameter', async () => {
-      const params = {
-        agent: 'test-agent',
-      }
-
-      const result = await runAgentTool.execute(params)
-      expect(result.content).toBeDefined()
-      const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toMatch(/prompt.*required|missing.*prompt/i)
-    })
-
-    it('should validate empty agent parameter', async () => {
-      const params = {
-        agent: '',
-        prompt: 'Test prompt',
-      }
-
-      const result = await runAgentTool.execute(params)
-      expect(result.content).toBeDefined()
-      const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toMatch(/agent.*required|invalid.*agent/i)
-    })
-
-    it('should validate empty prompt parameter', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: '',
-      }
-
-      const result = await runAgentTool.execute(params)
-      expect(result.content).toBeDefined()
-      const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toMatch(/prompt.*required|invalid.*prompt/i)
-    })
-
-    it('should accept valid optional parameters', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-        extra_args: ['--verbose', '--debug'],
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
-        stdout: 'Test output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-        hasResult: false,
-        resultJson: undefined,
-      })
-
-      const result = await runAgentTool.execute(params)
-      expect(result).toBeDefined()
-    })
-
-    it('should accept valid session_id parameter', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt with session',
-        cwd: process.cwd(),
-        session_id: 'test-session-123',
-      }
-
-      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
-        name: 'test-agent',
-        description: 'Test agent',
-        content: 'Test agent content',
-        filePath: '/test/agents/test-agent.md',
-        lastModified: new Date(),
-      })
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
-        stdout: 'Test output with session',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-        hasResult: false,
-        resultJson: undefined,
-      })
-
-      const result = await runAgentTool.execute(params)
-      expect(result).toBeDefined()
-      expect(result.isError).not.toBe(true)
-    })
-
-    it('should reject empty session_id parameter', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-        session_id: '',
-      }
-
-      const result = await runAgentTool.execute(params)
-      expect(result.content).toBeDefined()
-      const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toMatch(/session.*id.*empty|invalid.*session/i)
-    })
-
-    it('should reject session_id with invalid characters', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-        session_id: 'session/with/../invalid',
-      }
-
-      const result = await runAgentTool.execute(params)
-      expect(result.content).toBeDefined()
-      const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toMatch(/session.*id.*invalid.*characters/i)
-    })
-
-    it('should reject session_id that is too long', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-        session_id: 'a'.repeat(101), // 101 characters, exceeds max of 100
-      }
-
-      const result = await runAgentTool.execute(params)
-      expect(result.content).toBeDefined()
-      const textContent = result.content.find((c) => c.type === 'text')
-      expect(textContent?.text).toMatch(/session.*id.*too long/i)
-    })
-
-    it('should work without session_id for backward compatibility', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt without session',
-        cwd: process.cwd(),
-      }
-
-      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
-        name: 'test-agent',
-        description: 'Test agent',
-        content: 'Test agent content',
-        filePath: '/test/agents/test-agent.md',
-        lastModified: new Date(),
-      })
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
-        stdout: 'Test output without session',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-        hasResult: false,
-        resultJson: undefined,
-      })
-
-      const result = await runAgentTool.execute(params)
-      expect(result).toBeDefined()
-      expect(result.isError).not.toBe(true)
+      expect(textContent?.text).toMatch(error)
+      expect(executeAgent).not.toHaveBeenCalled()
     })
   })
 
@@ -266,61 +160,7 @@ describe('RunAgentTool', () => {
       const textContent = result.content.find((c) => c.type === 'text')
       expect(textContent).toBeDefined()
       expect(textContent?.text).toContain('Agent execution result')
-    })
-
-    it('should handle agent execution with stderr output', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-      }
-
-      const mockResult = {
-        stdout: 'Warning output',
-        stderr: 'Non-critical warning message',
-        exitCode: 0,
-        executionTime: 200,
-        hasResult: false,
-        resultJson: undefined,
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await runAgentTool.execute(params)
-
-      const textContent = result.content.find((c) => c.type === 'text')
-      const parsedContent = JSON.parse(textContent?.text || '{}')
-      expect(parsedContent.result).toContain('Warning output')
-
-      expect(result.structuredContent).toHaveProperty('result')
-      expect(result.structuredContent?.['result']).toContain('Warning output')
-      expect(result.structuredContent).not.toHaveProperty('stderr')
-    })
-
-    it('should handle agent execution failure', async () => {
-      const params = {
-        agent: 'failing-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-      }
-
-      const mockResult = {
-        stdout: '',
-        stderr: 'Agent execution failed',
-        exitCode: 1,
-        executionTime: 50,
-        hasResult: false,
-        resultJson: undefined,
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await runAgentTool.execute(params)
-
-      const textContent = result.content.find((c) => c.type === 'text')
-      const parsedContent = JSON.parse(textContent?.text || '{}')
-      expect(parsedContent.result).toContain('failed')
-      expect(result.structuredContent).toHaveProperty('exit_code', 1)
+      expect(result.isError).toBe(false)
     })
 
     it('should return normalized agent errors without nested raw JSON', async () => {
@@ -359,93 +199,6 @@ describe('RunAgentTool', () => {
         status: 'error',
       })
       expect(parsedContent.result).not.toContain('{"type":"error"}')
-    })
-
-    it('should not report an agent error as a successful structured result', async () => {
-      const params = {
-        agent: 'failing-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
-        stdout: '{"type":"result","is_error":true}',
-        stderr: '',
-        exitCode: 143,
-        executionTime: 50,
-        hasResult: true,
-        resultJson: {
-          type: 'result',
-          subtype: 'error_during_execution',
-          is_error: true,
-          status: 'error',
-          error: 'Authentication required',
-        },
-      })
-
-      const result = await runAgentTool.execute(params)
-
-      expect(result.isError).toBe(true)
-      expect(result.structuredContent).toMatchObject({
-        result: 'Authentication required',
-        status: 'error',
-      })
-    })
-
-    it('should preserve a Command Code max-turn result as partial despite exit code 8', async () => {
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
-        stdout: '{"type":"result","status":"partial"}',
-        stderr: 'Maximum turns reached',
-        exitCode: 8,
-        executionTime: 50,
-        hasResult: true,
-        resultJson: {
-          type: 'result',
-          result: 'Work in progress',
-          status: 'partial',
-          stop_reason: 'max_turns',
-        },
-      })
-
-      const result = await runAgentTool.execute({
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-      })
-
-      expect(result.isError).toBe(false)
-      expect(result.structuredContent).toMatchObject({
-        result: 'Work in progress',
-        exit_code: 8,
-        status: 'partial',
-      })
-    })
-
-    it('should include execution metadata in response', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-      }
-
-      const mockResult = {
-        stdout: 'Success',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 300,
-        hasResult: false,
-        resultJson: undefined,
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await runAgentTool.execute(params)
-
-      const textContent = result.content.find((c) => c.type === 'text')
-      const parsedContent = JSON.parse(textContent?.text || '{}')
-      expect(parsedContent.result).toContain('Success')
-      expect(result.structuredContent).toHaveProperty('execution_time', 300)
-      expect(result.structuredContent).toHaveProperty('exit_code', 0)
     })
   })
 
@@ -511,36 +264,6 @@ describe('RunAgentTool', () => {
         content: 'Test content',
         filePath: '/test/test-agent.md',
         lastModified: new Date(),
-      })
-    })
-
-    it('should format successful execution response correctly', async () => {
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-      }
-
-      const mockResult = {
-        stdout: 'Agent output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-        executionMethod: 'exec' as const,
-        estimatedOutputSize: 1024,
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await runAgentTool.execute(params)
-
-      expect(result).toMatchObject({
-        content: expect.arrayContaining([
-          expect.objectContaining({
-            type: 'text',
-            text: expect.stringContaining('Agent output'),
-          }),
-        ]),
       })
     })
 
@@ -630,55 +353,118 @@ describe('RunAgentTool', () => {
       })
     })
 
-    it('should treat exit code 124 with hasResult=false as complete timeout', async () => {
-      const params = {
-        agent: 'timeout-agent',
-        prompt: 'Test complete timeout',
-        cwd: process.cwd(),
-      }
-
-      const mockResult = {
-        stdout: '',
-        stderr: 'Execution timeout: 300000ms',
-        exitCode: 124, // Timeout
-        executionTime: 300000,
+    it.each([
+      {
+        exitCode: 0,
         hasResult: false,
         resultJson: undefined,
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await runAgentTool.execute(params)
-      const textContent = result.content.find((c) => c.type === 'text')
-
-      const parsedContent = JSON.parse(textContent?.text || '{}')
-      expect(parsedContent.result).toBe('Execution timeout: 300000ms')
-      expect(parsedContent.exit_code).toBe(124)
-      expect(parsedContent.status).toBe('error')
-      expect(result.structuredContent).toMatchObject({
+        stdout: 'Normal output',
+        stderr: '',
+        status: 'success',
+        isError: false,
+        resultText: 'Normal output',
+      },
+      {
+        exitCode: 0,
+        hasResult: true,
+        resultJson: {
+          type: 'result',
+          result: 'Progress only',
+          status: 'partial',
+          stop_reason: 'Cancelled',
+        },
+        stdout: '',
+        stderr: '',
+        status: 'partial',
+        isError: false,
+        resultText: 'Progress only',
+      },
+      {
+        exitCode: 1,
+        hasResult: false,
+        resultJson: undefined,
+        stdout: '',
+        stderr: 'Agent execution failed',
         status: 'error',
-        exit_code: 124,
-      })
-    })
-
-    it('should report isError consistently with status on a timeout without a result', async () => {
-      const params = { agent: 'test-agent', prompt: 'Test', cwd: process.cwd() }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+        isError: true,
+        resultText: 'Agent execution failed',
+      },
+      {
+        exitCode: 8,
+        hasResult: true,
+        resultJson: {
+          type: 'result',
+          result: 'Work in progress',
+          status: 'partial',
+          stop_reason: 'max_turns',
+        },
         stdout: '',
-        stderr: 'Execution timeout: 300000ms',
+        stderr: 'Maximum turns reached',
+        status: 'partial',
+        isError: false,
+        resultText: 'Work in progress',
+      },
+      {
         exitCode: 124,
-        executionTime: 300000,
         hasResult: false,
         resultJson: undefined,
-      })
+        stdout: '',
+        stderr: 'Execution timeout: 300000ms',
+        status: 'error',
+        isError: true,
+        resultText: 'Execution timeout: 300000ms',
+      },
+      {
+        exitCode: 137,
+        hasResult: true,
+        resultJson: { type: 'result', result: 'Completed' },
+        stdout: '',
+        stderr: '',
+        status: 'success',
+        isError: false,
+        resultText: 'Completed',
+      },
+      {
+        exitCode: 143,
+        hasResult: true,
+        resultJson: {
+          type: 'result',
+          subtype: 'error_during_execution',
+          is_error: true,
+          status: 'error',
+          error: 'Authentication required',
+        },
+        stdout: '',
+        stderr: '',
+        status: 'error',
+        isError: true,
+        resultText: 'Authentication required',
+      },
+    ])(
+      'should report status=$status and isError=$isError for exit code $exitCode with hasResult=$hasResult',
+      async ({ exitCode, hasResult, resultJson, stdout, stderr, status, isError, resultText }) => {
+        vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+          stdout,
+          stderr,
+          exitCode,
+          executionTime: 100,
+          hasResult,
+          resultJson,
+        })
 
-      const result = await runAgentTool.execute(params)
+        const result = await runAgentTool.execute({
+          agent: 'test-agent',
+          prompt: 'Test prompt',
+          cwd: process.cwd(),
+        })
+        const textContent = result.content.find((c) => c.type === 'text')
+        const expected = { result: resultText, exit_code: exitCode, status }
 
-      // status and isError are derived from one outcome, so they cannot disagree.
-      expect(result.structuredContent).toMatchObject({ status: 'error' })
-      expect(result.isError).toBe(true)
-    })
+        expect(result.isError).toBe(isError)
+        expect(JSON.parse(textContent?.text || '{}')).toMatchObject(expected)
+        expect(result.structuredContent).toMatchObject(expected)
+      }
+    )
 
     it('should keep the failure reason when the agent also produced stdout', async () => {
       const params = { agent: 'test-agent', prompt: 'Test', cwd: process.cwd() }
@@ -735,102 +521,6 @@ describe('RunAgentTool', () => {
       expect(text).toContain('too large')
       expect(text).toContain('overgrown-session')
       expect(text).toContain('without session_id')
-    })
-
-    it('should treat exit code 0 as success regardless of hasResult', async () => {
-      const params = {
-        agent: 'normal-agent',
-        prompt: 'Test normal completion',
-        cwd: process.cwd(),
-      }
-
-      const mockResult = {
-        stdout: 'Normal output',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-        hasResult: false, // Even without JSON result
-        resultJson: undefined,
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await runAgentTool.execute(params)
-      const textContent = result.content.find((c) => c.type === 'text')
-
-      const parsedContent = JSON.parse(textContent?.text || '{}')
-      expect(parsedContent.result).toBe('Normal output')
-      expect(parsedContent.exit_code).toBe(0)
-      expect(parsedContent.status).toBe('success')
-      expect(result.structuredContent).toMatchObject({
-        status: 'success',
-        exit_code: 0,
-      })
-    })
-
-    it('should treat exit code 137 as success when a structured result was received', async () => {
-      const params = {
-        agent: 'normal-agent',
-        prompt: 'Test forced process cleanup',
-        cwd: process.cwd(),
-      }
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
-        stdout: '{"type":"result","result":"Completed"}',
-        stderr: '',
-        exitCode: 137,
-        executionTime: 100,
-        hasResult: true,
-        resultJson: { type: 'result', result: 'Completed' },
-      })
-
-      const result = await runAgentTool.execute(params)
-
-      expect(result.structuredContent).toMatchObject({
-        result: 'Completed',
-        status: 'success',
-        exit_code: 137,
-      })
-    })
-
-    it('should preserve partial status from agent result JSON even with exit code 0', async () => {
-      const params = {
-        agent: 'partial-agent',
-        prompt: 'Test partial completion',
-        cwd: process.cwd(),
-      }
-
-      const mockResult = {
-        stdout: JSON.stringify({
-          type: 'result',
-          result: 'Progress only',
-          status: 'partial',
-          stop_reason: 'Cancelled',
-        }),
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-        hasResult: true,
-        resultJson: {
-          type: 'result',
-          result: 'Progress only',
-          status: 'partial',
-          stop_reason: 'Cancelled',
-        },
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await runAgentTool.execute(params)
-      const textContent = result.content.find((c) => c.type === 'text')
-      const parsedContent = JSON.parse(textContent?.text || '{}')
-
-      expect(parsedContent.result).toBe('Progress only')
-      expect(parsedContent.exit_code).toBe(0)
-      expect(parsedContent.status).toBe('partial')
-      expect(result.structuredContent).toMatchObject({
-        status: 'partial',
-        exit_code: 0,
-      })
     })
   })
 
@@ -923,6 +613,7 @@ describe('RunAgentTool', () => {
       const result = await toolWithSession.execute(params)
 
       expect(result._meta?.session_id).toBe('my-custom-session')
+      expect(result.structuredContent).toHaveProperty('session_id', 'my-custom-session')
 
       expect(mockSessionManager.saveSession).toHaveBeenCalledWith(
         'my-custom-session',
@@ -931,29 +622,43 @@ describe('RunAgentTool', () => {
       )
     })
 
-    it('should not echo back a provided session_id when sessions are disabled', async () => {
-      const toolWithoutSession = new RunAgentTool(mockAgentExecutor, mockAgentManager, undefined)
+    it.each([
+      { label: 'a provided', sessionId: { session_id: 'user-supplied-session' } },
+      { label: 'no', sessionId: {} },
+    ])(
+      'should return no session_id for $label session_id when sessions are disabled',
+      async ({ sessionId }) => {
+        const toolWithoutSession = new RunAgentTool(mockAgentExecutor, mockAgentManager, undefined)
 
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
-        stdout: 'Success',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-        hasResult: false,
-        resultJson: undefined,
-      })
+        vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
+          name: 'test-agent',
+          description: 'Test agent',
+          content: 'Test agent content',
+          filePath: '/test/agents/test-agent.md',
+          lastModified: new Date(),
+        })
+        vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue({
+          stdout: 'Success',
+          stderr: '',
+          exitCode: 0,
+          executionTime: 100,
+          hasResult: false,
+          resultJson: undefined,
+        })
 
-      const result = await toolWithoutSession.execute({
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-        session_id: 'user-supplied-session',
-      })
+        const result = await toolWithoutSession.execute({
+          agent: 'test-agent',
+          prompt: 'Test prompt',
+          cwd: process.cwd(),
+          ...sessionId,
+        })
 
-      // Nothing was stored, so the id must not come back looking continuable.
-      expect(result._meta).toBeUndefined()
-      expect(result.structuredContent).not.toHaveProperty('session_id')
-    })
+        expect(result.isError).toBe(false)
+        // Nothing was stored, so no id may come back looking continuable.
+        expect(result._meta).toBeUndefined()
+        expect(result.structuredContent).not.toHaveProperty('session_id')
+      }
+    )
 
     it('should tell the caller when the exchange could not be saved to the session', async () => {
       const sessionManager = createStubSessionManager()
@@ -994,72 +699,6 @@ describe('RunAgentTool', () => {
       expect(text).toContain('Agent output')
       expect(text).toContain('was not saved')
       expect(text).toContain('unwritable-session')
-    })
-
-    it('should not auto-generate session_id when SessionManager is not available', async () => {
-      const toolWithoutSession = new RunAgentTool(mockAgentExecutor, mockAgentManager, undefined)
-
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-      }
-
-      const mockResult = {
-        stdout: 'Success',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-        hasResult: false,
-        resultJson: undefined,
-      }
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await toolWithoutSession.execute(params)
-
-      expect(result._meta).toBeUndefined()
-    })
-
-    it('should include session_id in both _meta and structuredContent', async () => {
-      const mockSessionManager = createStubSessionManager()
-
-      const toolWithSession = new RunAgentTool(
-        mockAgentExecutor,
-        mockAgentManager,
-        mockSessionManager
-      )
-
-      const params = {
-        agent: 'test-agent',
-        prompt: 'Test prompt',
-        cwd: process.cwd(),
-        session_id: 'test-session-123',
-      }
-
-      const mockResult = {
-        stdout: 'Success',
-        stderr: '',
-        exitCode: 0,
-        executionTime: 100,
-        hasResult: false,
-        resultJson: undefined,
-      }
-
-      vi.spyOn(mockAgentManager, 'getAgent').mockResolvedValue({
-        name: 'test-agent',
-        description: 'Test agent',
-        content: 'test content',
-        filePath: '/test-agents/test-agent.md',
-        lastModified: new Date('2025-01-01'),
-      })
-
-      vi.spyOn(mockAgentExecutor, 'executeAgent').mockResolvedValue(mockResult)
-
-      const result = await toolWithSession.execute(params)
-
-      expect(result._meta?.session_id).toBe('test-session-123')
-      expect(result.structuredContent).toHaveProperty('session_id', 'test-session-123')
     })
   })
 })

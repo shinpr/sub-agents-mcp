@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ServerConfig } from '../../config/ServerConfig.js'
+import { AgentExecutor } from '../../execution/AgentExecutor.js'
 import { McpServer } from '../../server/McpServer.js'
 
 describe('McpServer', () => {
@@ -17,16 +18,10 @@ describe('McpServer', () => {
     if (server) {
       await server.close()
     }
+    vi.restoreAllMocks()
   })
 
   describe('instantiation', () => {
-    it('should create McpServer instance with valid configuration', () => {
-      expect(() => {
-        server = new McpServer(mockConfig)
-      }).not.toThrow()
-      expect(server).toBeDefined()
-    })
-
     it('should throw error with invalid configuration', () => {
       const invalidConfig: ServerConfig = {
         ...mockConfig,
@@ -40,43 +35,14 @@ describe('McpServer', () => {
     })
   })
 
-  describe('server info', () => {
-    beforeEach(() => {
-      server = new McpServer(mockConfig)
-    })
-
-    it('should return server name from configuration', () => {
-      const info = server.getServerInfo()
-      expect(info.name).toBe(mockConfig.serverName)
-    })
-
-    it('should return server version from configuration', () => {
-      const info = server.getServerInfo()
-      expect(info.version).toBe(mockConfig.serverVersion)
-    })
-  })
-
-  describe('transport setup', () => {
-    beforeEach(() => {
-      server = new McpServer(mockConfig)
-    })
-
-    it('should configure StdioServerTransport', () => {
-      expect(server.hasTransport()).toBe(true)
-    })
-
-    it('should be ready to start server', () => {
-      expect(server.isReady()).toBe(true)
-    })
-  })
-
   describe('server lifecycle', () => {
-    beforeEach(() => {
+    it('should terminate running agent processes on close', async () => {
+      const terminateAll = vi.spyOn(AgentExecutor.prototype, 'terminateAll')
       server = new McpServer(mockConfig)
-    })
 
-    it('should handle graceful shutdown', async () => {
-      await expect(server.close()).resolves.not.toThrow()
+      await server.close()
+
+      expect(terminateAll).toHaveBeenCalledTimes(1)
     })
   })
 })

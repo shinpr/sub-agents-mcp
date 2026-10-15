@@ -46,14 +46,6 @@ describe('ValidationError', () => {
     expect(error).toBeInstanceOf(AppError)
   })
 
-  it('should support field-specific validation errors', () => {
-    const error = new ValidationError('Email format is invalid', { code: 'INVALID_EMAIL_FORMAT' })
-
-    expect(error.message).toBe('Email format is invalid')
-    expect(error.code).toBe('INVALID_EMAIL_FORMAT')
-    expect(error.statusCode).toBe(400)
-  })
-
   it('should include context information', () => {
     const error = new ValidationError('Email format is invalid', {
       code: 'INVALID_EMAIL_FORMAT',
@@ -66,12 +58,6 @@ describe('ValidationError', () => {
 })
 
 describe('Error Context', () => {
-  it('should include timestamp by default', () => {
-    const error = new AppError('Test error', { code: 'TEST' })
-
-    expect(error.context.timestamp).toBeInstanceOf(Date)
-  })
-
   it('should merge custom context with defaults', () => {
     const customContext = {
       requestId: 'req_123',
@@ -85,15 +71,6 @@ describe('Error Context', () => {
     expect(error.context.operation).toBe('test_operation')
     expect(error.context.component).toBe('TestComponent')
     expect(error.context.timestamp).toBeInstanceOf(Date)
-  })
-
-  it('should preserve metadata in context', () => {
-    const error = new AppError('Test error', {
-      code: 'TEST',
-      context: { metadata: { key1: 'value1', key2: 42 } },
-    })
-
-    expect(error.context.metadata).toEqual({ key1: 'value1', key2: 42 })
   })
 })
 

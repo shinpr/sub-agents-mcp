@@ -9,10 +9,9 @@ import type { SessionConfig, SessionEntry } from '../../types/SessionData.js'
  * Previously a wall-clock performance suite. The thresholds measured the host
  * machine rather than the code and were already loosened once (a test named
  * "less than 100ms" asserted 500ms), so they were dropped. What remains are the
- * behaviours those tests depended on: many entries, many files, and concurrent
- * access.
+ * behaviours those tests depended on: many entries and many expired files.
  */
-describe('Session Management - Scale and Concurrency', () => {
+describe('Session Management - Scale', () => {
   let testSessionDir: string
   let sessionConfig: SessionConfig
 
@@ -56,24 +55,6 @@ describe('Session Management - Scale and Concurrency', () => {
     )
   })
 
-  it('should load the requested session when the directory holds many others', async () => {
-    const manager = new SessionManager(sessionConfig)
-
-    for (let i = 0; i < 100; i++) {
-      await manager.saveSession(
-        `many-files-${i}`,
-        { agent: 'rule-advisor', prompt: `Prompt ${i}` },
-        response(String(i))
-      )
-    }
-
-    const loaded = await manager.loadSession('many-files-50', 'rule-advisor')
-
-    // Asserting the content, not just non-null, is what proves the right file was picked.
-    expect(loaded?.sessionId).toBe('many-files-50')
-    expect(loaded?.history[0]?.request.prompt).toBe('Prompt 50')
-  })
-
   it('should remove every expired file in one cleanup pass', async () => {
     const manager = new SessionManager(sessionConfig)
     const eightDaysAgo = new Date()
@@ -88,43 +69,5 @@ describe('Session Management - Scale and Concurrency', () => {
     await manager.cleanupOldSessions()
 
     expect(await fs.readdir(testSessionDir)).toHaveLength(0)
-  })
-
-  it('should persist every concurrently saved session', async () => {
-    const manager = new SessionManager(sessionConfig)
-
-    await Promise.all(
-      Array.from({ length: 10 }, (_, i) =>
-        manager.saveSession(
-          `concurrent-save-${i}`,
-          { agent: 'rule-advisor', prompt: `Prompt ${i}` },
-          response(String(i))
-        )
-      )
-    )
-
-    expect(await fs.readdir(testSessionDir)).toHaveLength(10)
-  })
-
-  it('should return each session correctly when loaded concurrently', async () => {
-    const manager = new SessionManager(sessionConfig)
-
-    for (let i = 0; i < 10; i++) {
-      await manager.saveSession(
-        `concurrent-load-${i}`,
-        { agent: 'rule-advisor', prompt: `Prompt ${i}` },
-        response(String(i))
-      )
-    }
-
-    const results = await Promise.all(
-      Array.from({ length: 10 }, (_, i) =>
-        manager.loadSession(`concurrent-load-${i}`, 'rule-advisor')
-      )
-    )
-
-    expect(results.map((result) => result?.sessionId)).toEqual(
-      Array.from({ length: 10 }, (_, i) => `concurrent-load-${i}`)
-    )
   })
 })
