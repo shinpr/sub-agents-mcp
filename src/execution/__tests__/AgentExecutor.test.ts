@@ -197,6 +197,61 @@ describe('AgentExecutor', () => {
         expect.any(Object)
       )
     })
+
+    it('should place MCode options after exec and the prompt after the option separator', async () => {
+      const executor = new AgentExecutor(
+        createExecutionConfig('mcode', { permission: 'read-only' })
+      )
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: '- list files', cwd: '/tmp' })
+
+      expect(mockSpawn.mock.calls[0][0]).toBe('mcode')
+      expect(spawnArgs()).toEqual([
+        'exec',
+        '--permission',
+        'smart',
+        '--append-system-prompt',
+        'cwd: /tmp\n\ntest-agent',
+        '--output-format',
+        'json',
+        '--',
+        '- list files',
+      ])
+    })
+
+    it('should limit Pi read-only tools and place the prompt after the option separator', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('pi', { permission: 'read-only' }))
+
+      await executor.executeAgent({ agent: 'test-agent', prompt: '- list files', cwd: '/tmp' })
+
+      expect(mockSpawn.mock.calls[0][0]).toBe('pi')
+      expect(spawnArgs()).toEqual([
+        '--tools',
+        'read,grep,find,ls',
+        '--exclude-tools',
+        'mcp__*',
+        '--append-system-prompt',
+        'cwd: /tmp\n\ntest-agent',
+        '--no-session',
+        '--mode',
+        'json',
+        '--print',
+        '--',
+        '- list files',
+      ])
+    })
+
+    it('should keep a Pi prompt starting with @ from being read as a file', async () => {
+      const executor = new AgentExecutor(createExecutionConfig('pi'))
+
+      await executor.executeAgent({
+        agent: 'test-agent',
+        prompt: '@src/app.ts review',
+        cwd: '/tmp',
+      })
+
+      expect(spawnArgs().at(-1)).toBe(' @src/app.ts review')
+    })
   })
 
   describe('global model and effort options', () => {
@@ -224,6 +279,8 @@ describe('AgentExecutor', () => {
       { agentType: 'grok', expected: ['--reasoning-effort', 'high'] },
       { agentType: 'antigravity', expected: ['--effort', 'high'] },
       { agentType: 'command-code', expected: ['--effort', 'high'] },
+      { agentType: 'mcode', expected: ['--effort', 'high'] },
+      { agentType: 'pi', expected: ['--thinking', 'high'] },
     ] as const)('should map effort for $agentType', async ({ agentType, expected }) => {
       const executor = new AgentExecutor(
         createExecutionConfig(agentType, {

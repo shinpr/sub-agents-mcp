@@ -12,25 +12,30 @@ vi.mock('node:child_process', () => ({
   spawn: mockSpawn,
 }))
 
-/** A spawn double whose agent reports a successful result on stdout. */
-function succeedingProcess(resultText: string): MockChildProcess {
+/** A spawn double that prints `stdout` and exits with `exitCode`. */
+function processPrinting(stdout: string, exitCode: number): MockChildProcess {
   return {
     stdin: { end: vi.fn() },
     stdout: {
       on: vi.fn((event: string, callback: (data: Buffer) => void) => {
         if (event === 'data') {
-          callback(Buffer.from(`${JSON.stringify({ type: 'result', result: resultText })}\n`))
+          callback(Buffer.from(stdout))
         }
       }),
     },
     stderr: { on: vi.fn() },
     on: vi.fn((event: string, callback: (code: number) => void) => {
       if (event === 'close') {
-        callback(0)
+        callback(exitCode)
       }
     }),
     kill: vi.fn(),
   }
+}
+
+/** A spawn double whose agent reports a successful result on stdout. */
+function succeedingProcess(resultText: string): MockChildProcess {
+  return processPrinting(`${JSON.stringify({ type: 'result', result: resultText })}\n`, 0)
 }
 
 describe('McpServer Integration', () => {
@@ -154,6 +159,52 @@ describe('McpServer Integration', () => {
       expect(textContent?.text).toContain('Agent finished the task')
       expect(mockSpawn).toHaveBeenCalledTimes(1)
     })
+  })
+
+  describe('backend run outcomes', () => {
+    it.each([
+      {
+        agentType: 'mcode',
+        stdout: '{"type":"exec.result","status":"succeeded","output":"DONE"}\n',
+        exitCode: 0,
+        status: 'success',
+        text: 'DONE',
+      },
+      {
+        agentType: 'mcode',
+        stdout:
+          '{"type":"exec.result","status":"failed","error":{"category":"runtime","message":"Model is not available"}}\n',
+        exitCode: 4,
+        status: 'error',
+        text: 'Model is not available',
+      },
+      {
+        // Pi exits 0 after provider errors.
+        agentType: 'pi',
+        stdout:
+          '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"OpenAI API error (404)"}}\n' +
+          '{"type":"agent_settled","aborted":false}\n',
+        exitCode: 0,
+        status: 'error',
+        text: 'OpenAI API error (404)',
+      },
+    ] as const)(
+      'should report $agentType $status through run_agent',
+      async ({ agentType, stdout, exitCode, status, text }) => {
+        mockSpawn.mockImplementation(() => processPrinting(stdout, exitCode))
+        server = new McpServer({ ...mockConfig, agentType })
+
+        const result = await server.callTool('run_agent', {
+          agent: 'test-agent',
+          prompt: 'x',
+          cwd: process.cwd(),
+        })
+
+        expect(result.isError).toBe(status === 'error')
+        expect(result.structuredContent).toMatchObject({ status, exit_code: exitCode })
+        expect(result.content.find((c) => c.type === 'text')?.text).toContain(text)
+      }
+    )
   })
 
   describe('resource access', () => {

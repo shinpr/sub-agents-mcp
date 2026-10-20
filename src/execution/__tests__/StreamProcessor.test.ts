@@ -371,6 +371,64 @@ describe('StreamProcessor', () => {
       })
     })
 
+    it('should report an unfinished MCode run as an error naming its status', () => {
+      processor = new StreamProcessor('mcode')
+
+      expect(processor.processLine('{"type":"exec.result","status":"limit_exceeded"}')).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        status: 'error',
+        error: 'MCode execution failed with status: limit_exceeded',
+      })
+    })
+
+    it('should take the Pi result from the last assistant message once Pi settles', () => {
+      processor = new StreamProcessor('pi')
+
+      expect(
+        processor.processLine(
+          '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"529 overloaded"}}'
+        )
+      ).toBe(false)
+      expect(
+        processor.processLine(
+          '{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"errorMessage":"529 overloaded"}'
+        )
+      ).toBe(false)
+      expect(
+        processor.processLine(
+          '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"DONE"}],"stopReason":"stop"}}'
+        )
+      ).toBe(false)
+      expect(
+        processor.processLine('{"type":"message_end","message":{"role":"toolResult","content":[]}}')
+      ).toBe(false)
+      expect(processor.processLine('{"type":"agent_settled","aborted":false}')).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'DONE',
+        status: 'success',
+        stop_reason: 'stop',
+      })
+    })
+
+    it('should report a Pi length stop as partial', () => {
+      processor = new StreamProcessor('pi')
+
+      processor.processLine(
+        '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"progress"}],"stopReason":"length"}}'
+      )
+      expect(processor.processLine('{"type":"agent_settled","aborted":false}')).toBe(true)
+      expect(processor.getResult()).toEqual({
+        type: 'result',
+        result: 'progress',
+        status: 'partial',
+        stop_reason: 'length',
+      })
+    })
+
     it('should normalize Codex turn.failed events', () => {
       processor = new StreamProcessor('codex')
       expect(

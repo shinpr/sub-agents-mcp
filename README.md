@@ -109,6 +109,8 @@ Set `AGENT_TYPE` to the backend you already use:
 | `antigravity` | Google Antigravity | `agy` 1.1.12+ |
 | `gemini` | Gemini CLI (compatibility) | `gemini` |
 | `opencode` | OpenCode | `opencode` |
+| `mcode` | MiniMax Code | `mcode` |
+| `pi` | Pi | `pi` |
 
 The selected CLI must be installed and configured before the MCP server starts.
 
@@ -127,6 +129,8 @@ Set `AGENT_MODEL` to use one model for every agent. Omit it to use the backend's
 - `yolo` — unrestricted execution
 
 If an agent reports that an action was blocked, choose a less restrictive mode.
+
+How strictly each level is enforced depends on the backend, so treat it as guidance rather than a security boundary.
 
 ## Continue Work Across Calls
 

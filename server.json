@@ -8,13 +8,13 @@
     "url": "https://github.com/shinpr/sub-agents-mcp",
     "source": "github"
   },
-  "version": "0.14.4",
+  "version": "0.15.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sub-agents-mcp",
-      "version": "0.14.4",
+      "version": "0.15.0",
       "transport": {
         "type": "stdio"
       },
@@ -28,7 +28,7 @@
         },
         {
           "name": "AGENT_TYPE",
-          "description": "Type of AI CLI to use: 'cursor', 'claude', 'gemini', 'codex', 'command-code', 'glm', 'kimi', 'grok', 'antigravity', or 'opencode'",
+          "description": "Type of AI CLI to use: 'cursor', 'claude', 'gemini', 'codex', 'command-code', 'glm', 'kimi', 'grok', 'antigravity', 'opencode', 'mcode', or 'pi'",
           "isRequired": true,
           "format": "string",
           "isSecret": false
@@ -49,7 +49,7 @@
         },
         {
           "name": "AGENT_EFFORT",
-          "description": "Optional backend-specific reasoning effort or model variant. Supported by codex, claude, command-code, glm, kimi, grok, antigravity, and opencode.",
+          "description": "Optional backend-specific reasoning effort or model variant. Supported by codex, claude, command-code, glm, kimi, grok, antigravity, opencode, mcode, and pi.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -98,7 +98,7 @@
         },
         {
           "name": "AGENTS_SETTINGS_PATH",
-          "description": "Path to CLI settings file/directory. Claude: --settings arg, Cursor: CURSOR_CONFIG_DIR, Codex: CODEX_HOME. GLM/Kimi/Gemini/Grok/Antigravity/OpenCode/Command Code not supported.",
+          "description": "Path to CLI settings file/directory. Claude: --settings arg, Cursor: CURSOR_CONFIG_DIR, Codex: CODEX_HOME. GLM/Kimi/Gemini/Grok/Antigravity/OpenCode/Command Code/MiniMax Code/Pi not supported.",
           "isRequired": false,
           "format": "string",
           "isSecret": false
@@ -137,6 +137,9 @@
     "antigravity",
     "opencode",
     "command-code",
+    "minimax-code",
+    "mcode",
+    "pi",
     "llm",
     "cli",
     "agent-orchestration"
