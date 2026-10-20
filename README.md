@@ -130,7 +130,7 @@ Set `AGENT_MODEL` to use one model for every agent. Omit it to use the backend's
 
 If an agent reports that an action was blocked, choose a less restrictive mode.
 
-MiniMax Code runs `read-only` and `safe-edit` with `--permission smart`, which still allows direct edits and keeps the run going after it denies a tool call. Pi has no permission modes: `read-only` gives the agent only `read`, `grep`, `find`, and `ls`, while `safe-edit` and `yolo` both give it Pi's default tools, including `bash`.
+How strictly each level is enforced depends on the backend, so treat it as guidance rather than a security boundary.
 
 ## Continue Work Across Calls
 
