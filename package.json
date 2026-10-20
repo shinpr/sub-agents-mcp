@@ -2,7 +2,7 @@
   "name": "sub-agents-mcp",
   "version": "0.14.4",
   "mcpName": "io.github.shinpr/sub-agents-mcp",
-  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude Code, Codex, Command Code, Google Antigravity, Gemini, GLM, Kimi, Grok, and OpenCode",
+  "description": "MCP server for delegating tasks to specialized AI assistants in Cursor, Claude Code, Codex, Command Code, Google Antigravity, Gemini, GLM, Kimi, Grok, OpenCode, MiniMax Code, and Pi",
   "type": "module",
   "main": "dist/index.js",
   "files": [
@@ -31,6 +31,9 @@
     "antigravity",
     "opencode",
     "command-code",
+    "minimax-code",
+    "mcode",
+    "pi",
     "llm",
     "cli",
     "agent-orchestration"

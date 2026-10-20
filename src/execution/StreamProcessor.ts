@@ -15,6 +15,7 @@ export class StreamProcessor {
   private geminiResponseParts: string[] = []
   private codexAgentMessages: string[] = []
   private openCodeResponseParts: string[] = []
+  private piLastAssistantMessage: Record<string, unknown> | null = null
 
   constructor(private readonly agentType: AgentType) {}
 
@@ -54,6 +55,10 @@ export class StreamProcessor {
         return this.processOpenCodeLine(json)
       case 'command-code':
         return this.processCommandCodeLine(json)
+      case 'mcode':
+        return this.processMCodeLine(json)
+      case 'pi':
+        return this.processPiLine(json)
       default: {
         const unsupportedAgentType: never = agentType
         throw new Error(`Unsupported agent type: ${String(unsupportedAgentType)}`)
@@ -313,6 +318,83 @@ export class StreamProcessor {
         typeof json['error'] === 'string'
           ? json['error']
           : `Command Code execution failed${typeof subtype === 'string' ? `: ${subtype}` : ''}`,
+    }
+    return true
+  }
+
+  private processMCodeLine(json: Record<string, unknown>): boolean {
+    if (json['type'] !== 'exec.result') {
+      return false
+    }
+
+    const status = json['status']
+    if (status === 'succeeded') {
+      this.resultJson = {
+        type: 'result',
+        result: typeof json['output'] === 'string' ? json['output'] : '',
+        status: 'success',
+      }
+      return true
+    }
+
+    // Unfinished runs omit output and leave the reason on stderr.
+    const error = this.isRecord(json['error']) ? json['error'] : undefined
+    this.resultJson = {
+      type: 'result',
+      subtype: 'error',
+      is_error: true,
+      status: 'error',
+      error:
+        firstNonEmptyString(error?.['message']) ??
+        `MCode execution failed with status: ${typeof status === 'string' ? status : 'unknown'}`,
+    }
+    return true
+  }
+
+  private processPiLine(json: Record<string, unknown>): boolean {
+    const message = json['message']
+    if (json['type'] === 'message_end' && this.isRecord(message)) {
+      if (message['role'] === 'assistant') {
+        this.piLastAssistantMessage = message
+      }
+      return false
+    }
+    // Pi can retry or recover after a failed message until it settles.
+    if (json['type'] !== 'agent_settled' || this.piLastAssistantMessage === null) {
+      return false
+    }
+
+    const lastMessage = this.piLastAssistantMessage
+    const errorMessage = firstNonEmptyString(lastMessage['errorMessage'])
+    const stopReason = lastMessage['stopReason']
+    const completed = stopReason === 'stop'
+    // Pi pairs an aborted stop with errorMessage, so only a length stop is partial.
+    const truncated = stopReason === 'length'
+    if (errorMessage !== undefined || !(completed || truncated)) {
+      this.resultJson = {
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        status: 'error',
+        error:
+          errorMessage ??
+          `Pi execution failed with stop reason: ${typeof stopReason === 'string' ? stopReason : 'unknown'}`,
+      }
+      return true
+    }
+
+    const content = lastMessage['content']
+    const text = Array.isArray(content)
+      ? content
+          .filter((part) => this.isRecord(part) && part['type'] === 'text')
+          .map((part) => (typeof part['text'] === 'string' ? part['text'] : ''))
+          .join('')
+      : ''
+    this.resultJson = {
+      type: 'result',
+      result: text,
+      status: completed ? 'success' : 'partial',
+      stop_reason: stopReason,
     }
     return true
   }

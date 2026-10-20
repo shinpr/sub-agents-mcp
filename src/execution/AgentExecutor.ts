@@ -93,6 +93,8 @@ export const AGENT_TYPES = [
   'antigravity',
   'opencode',
   'command-code',
+  'mcode',
+  'pi',
 ] as const
 
 export type AgentType = (typeof AGENT_TYPES)[number]
@@ -110,6 +112,8 @@ export const AGENT_EFFORT_SUPPORTED_TYPES = [
   'antigravity',
   'opencode',
   'command-code',
+  'mcode',
+  'pi',
 ] as const
 
 export function supportsAgentEffort(
@@ -182,6 +186,18 @@ const PERMISSION_FLAGS: Record<AgentType, Record<AgentPermission, readonly strin
     'read-only': ['--permission-mode', 'plan'],
     'safe-edit': ['--yolo', '--permission-mode', 'auto-accept'],
     yolo: ['--yolo'],
+  },
+  // MCode's headless exec has no mode that blocks direct edits.
+  mcode: {
+    'read-only': ['--permission', 'smart'],
+    'safe-edit': ['--permission', 'smart'],
+    yolo: ['--permission', 'full'],
+  },
+  // Pi cannot confine its shell, so read-only leaves out bash and MCP tools.
+  pi: {
+    'read-only': ['--tools', 'read,grep,find,ls', '--exclude-tools', 'mcp__*'],
+    'safe-edit': [],
+    yolo: [],
   },
 }
 
@@ -616,6 +632,10 @@ export class AgentExecutor {
         return this.buildOpenCodeArgs(params, envOverrides, await isOpenCodeV2())
       case 'command-code':
         return this.buildCommandCodeArgs(params, envOverrides)
+      case 'mcode':
+        return this.buildMCodeArgs(params, envOverrides)
+      case 'pi':
+        return this.buildPiArgs(params, envOverrides)
     }
   }
 
@@ -658,7 +678,11 @@ export class AgentExecutor {
       case 'kimi':
       case 'antigravity':
       case 'command-code':
+      case 'mcode':
         flags.push('--effort', this.config.effort)
+        break
+      case 'pi':
+        flags.push('--thinking', this.config.effort)
         break
       case 'grok':
         flags.push('--reasoning-effort', this.config.effort)
@@ -710,6 +734,44 @@ export class AgentExecutor {
       formattedPrompt,
     ]
     return { command: 'command-code', args, envOverrides }
+  }
+
+  private buildMCodeArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
+    const flags = this.invocationFlags()
+    const cwd = params.cwd || process.cwd()
+    const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
+    const args = [
+      // MCode rejects run options placed before the exec subcommand.
+      'exec',
+      ...flags,
+      '--append-system-prompt',
+      systemPrompt,
+      '--output-format',
+      'json',
+      '--',
+      params.prompt,
+    ]
+    return { command: 'mcode', args, envOverrides }
+  }
+
+  private buildPiArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
+    const flags = this.invocationFlags()
+    const cwd = params.cwd || process.cwd()
+    const systemPrompt = `cwd: ${cwd}\n\n${params.agent}`
+    // Pi attaches an argument starting with @ as a file, even after --.
+    const prompt = params.prompt.startsWith('@') ? ` ${params.prompt}` : params.prompt
+    const args = [
+      ...flags,
+      '--append-system-prompt',
+      systemPrompt,
+      '--no-session',
+      '--mode',
+      'json',
+      '--print',
+      '--',
+      prompt,
+    ]
+    return { command: 'pi', args, envOverrides }
   }
 
   private buildClaudeArgs(params: ExecutionParams, envOverrides: EnvOverrides): CommandInvocation {
