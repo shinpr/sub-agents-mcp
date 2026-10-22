@@ -56,7 +56,6 @@
     "dev": "tsx src/index.ts",
     "watch": "tsx watch src/index.ts",
     "test": "vitest run",
-    "test:ui": "vitest --ui",
     "test:watch": "vitest",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "format": "biome format --write src",
@@ -76,7 +75,6 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@types/node": "^26.6.4",
-    "@vitest/ui": "^5.0.3",
     "dpdm": "^4.3.0",
     "husky": "^9.1.7",
     "knip": "^6.40.0",
@@ -87,7 +85,7 @@
   },
   "packageManager": "pnpm@12.10.1",
   "engines": {
-    "node": ">=22.22.2"
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx}": [

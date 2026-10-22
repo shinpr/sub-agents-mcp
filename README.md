@@ -15,7 +15,7 @@ Write a reviewer, test writer, or investigator in Markdown, then ask your assist
 
 ## Quick Start
 
-You need Node.js 22 or later, an MCP-compatible client, and one supported coding CLI installed and signed in. This example uses Codex.
+Use Node.js 22.23.4+ (22.x), 24.22.1+ (24.x), or 26.12.1 or later. You also need an MCP-compatible client and one supported coding CLI installed and signed in. This example uses Codex.
 
 ### 1. Create an Agent
 
